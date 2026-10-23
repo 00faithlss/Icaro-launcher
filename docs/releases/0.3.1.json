@@ -1,0 +1,17 @@
+{
+  "version": "0.3.1",
+  "notas": [
+    {
+      "tipo": "mejora",
+      "texto": "Reduce el tiempo de aplicación de parches al instalar Forge, conservando las verificaciones y los archivos del cliente."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "Muestra el avance y el tiempo transcurrido durante la instalación de Forge y NeoForge."
+    },
+    {
+      "tipo": "correccion",
+      "texto": "Corrige la detección de Minecraft en Discord al jugar desde el launcher en Windows."
+    }
+  ]
+}

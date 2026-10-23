@@ -18,6 +18,8 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 
+mod forge;
+
 const METADATA_LIMIT: u64 = 8 * 1024 * 1024;
 const FILE_LIMIT: u64 = 1024 * 1024 * 1024;
 const MAX_FILES: usize = 100_000;
@@ -85,6 +87,10 @@ pub enum Error {
     NoSoportada(String),
     #[error("La versión no aparece en el catálogo oficial de Minecraft.")]
     Version,
+    #[error("El instalador oficial de {0} no pudo completar el cliente. Revisa instalador.log en la preparación de meta/loaders y vuelve a intentarlo.")]
+    Instalador(String),
+    #[error("No se pudo instalar Fabric API: {0}")]
+    FabricApi(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -448,6 +454,8 @@ fn oficial(value: &str) -> Result<reqwest::Url, Error> {
                     | "resources.download.minecraft.net"
                     | "meta.fabricmc.net"
                     | "maven.fabricmc.net"
+                    | "maven.minecraftforge.net"
+                    | "maven.neoforged.net"
                     | "meta.quiltmc.org"
                     | "maven.quiltmc.org"
             )
@@ -1163,13 +1171,26 @@ fn migrar_directorio_bloqueado(store: &Almacen, instance: &Instancia) -> Result<
 
 /// Loaders que Ícaro sabe instalar y ejecutar con su perfil oficial.
 pub fn loader_instalable(loader: &str) -> bool {
-    loader == "vanilla" || Familia::de(loader).is_some()
+    matches!(loader, "vanilla" | "forge" | "neoforge") || Familia::de(loader).is_some()
 }
 
 /// Instala o repara todos los archivos necesarios y publica el marcador al final.
 pub async fn instalar(
     store: &Almacen,
     instance: &Instancia,
+    cancel: CancellationToken,
+    progress: impl Fn(Progreso) + Send + Sync,
+) -> Result<Instalado, Error> {
+    instalar_con_java(store, instance, None, true, cancel, progress).await
+}
+
+/// Los instaladores que ejecutan procesadores respetan la selección y el permiso
+/// de descarga de Java de la instancia, igual que el lanzamiento posterior.
+pub async fn instalar_con_java(
+    store: &Almacen,
+    instance: &Instancia,
+    java_preferida: Option<&Path>,
+    descargar_java: bool,
     cancel: CancellationToken,
     progress: impl Fn(Progreso) + Send + Sync,
 ) -> Result<Instalado, Error> {
@@ -1209,6 +1230,22 @@ pub async fn instalar(
         return Err(Error::Datos);
     }
     let marker_path = private.join(MARKER);
+    // Solo la primera instalación normal añade el mod sugerido. Las reparaciones
+    // y los modpacks conservan el conjunto que eligió el usuario o el autor.
+    let default_fabric_api = instance.loader == "fabric"
+        && !marker_path.exists()
+        && !folder.join("modpack.json").exists();
+    let loader_selected = if instance.loader != "vanilla" {
+        Some(
+            crate::versiones_instancia::leer_loader(store, instance).ok_or_else(|| {
+                Error::NoSoportada(
+                    "selecciona una versión oficial del loader para esta instancia".into(),
+                )
+            })?,
+        )
+    } else {
+        None
+    };
     let mut migrated = Vec::new();
     progress(Progreso {
         etapa: "Comprobando archivos de Minecraft".into(),
@@ -1512,13 +1549,7 @@ pub async fn instalar(
     }
     let familia = Familia::de(&instance.loader);
     let fabric = if let Some(familia) = familia {
-        let selected =
-            crate::versiones_instancia::leer_loader(store, instance).ok_or_else(|| {
-                Error::NoSoportada(format!(
-                    "selecciona una versión oficial de {} para esta instancia",
-                    familia.nombre()
-                ))
-            })?;
+        let selected = loader_selected.as_deref().ok_or(Error::Datos)?;
         progress(Progreso {
             etapa: format!("Preparando el perfil oficial de {}", familia.nombre()),
             completados: 0,
@@ -1672,6 +1703,57 @@ pub async fn instalar(
         });
     }
     cancelado(&cancel)?;
+    let fallback_java = version
+        .java_version
+        .as_ref()
+        .map(|java| crate::java::Perfil {
+            majors: vec![java.major_version],
+            component: java.component.clone(),
+            prism: false,
+        })
+        .unwrap_or(crate::java::Perfil {
+            majors: vec![8],
+            component: "jre-legacy".into(),
+            prism: false,
+        });
+    let mut forge_java = None;
+    let forge = if matches!(instance.loader.as_str(), "forge" | "neoforge") {
+        let runtime_profile = crate::java::perfil_minecraft(&version.id, fallback_java, &cancel)
+            .await
+            .map_err(|e| match e {
+                crate::java::Error::Cancelada => Error::Cancelada,
+                _ => Error::Datos,
+            })?;
+        let vanilla_jar = root
+            .join("meta/minecraft/clients")
+            .join(&version.downloads.get("client").ok_or(Error::Datos)?.sha1)
+            .join("client.jar");
+        let bundle = forge::preparar(
+            &client,
+            &root,
+            instance,
+            loader_selected.as_deref().ok_or(Error::Datos)?,
+            &version_path,
+            &vanilla_jar,
+            &runtime_profile,
+            (java_preferida, descargar_java),
+            &cancel,
+            &progress,
+        )
+        .await?;
+        bundle.combinar(
+            &version.libraries,
+            &mut classpath,
+            &mut jvm,
+            &mut game_arguments,
+            os,
+            &os_version,
+        )?;
+        forge_java = Some(runtime_profile);
+        Some(bundle)
+    } else {
+        None
+    };
     progress(Progreso {
         etapa: "Preparando componentes nativos".into(),
         completados: completed,
@@ -1744,14 +1826,11 @@ pub async fn instalar(
     };
     let cached = leer_json::<Marcador>(&root, &marker_path)
         .ok()
-        .filter(|m| {
-            m.loader == instance.loader
-                && m.loader_version == fabric.as_ref().map(|b| b.loader.clone())
-        })
+        .filter(|m| m.loader == instance.loader && m.loader_version == loader_selected)
         .filter(|m| m.instalado.version == version.id)
         .and_then(|m| m.instalado.java_perfil)
         .filter(|p| p.prism && p.validar().is_ok());
-    let mut java_perfil = if let Some(perfil) = cached {
+    let mut java_perfil = if let Some(perfil) = forge_java.or(cached) {
         perfil
     } else {
         crate::java::perfil_minecraft(&version.id, fallback, &cancel)
@@ -1776,10 +1855,15 @@ pub async fn instalar(
     let installed = Instalado {
         quick_play_multiplayer: Some(quick_play),
         version: version.id,
-        perfil_id: fabric.as_ref().map(|b| b.profile.id.clone()),
-        main_class: fabric
+        perfil_id: forge
             .as_ref()
-            .map_or(version.main_class, |b| b.profile.main_class.clone()),
+            .map(|b| b.perfil.id.clone())
+            .or_else(|| fabric.as_ref().map(|b| b.profile.id.clone())),
+        main_class: forge
+            .as_ref()
+            .map(|b| b.perfil.main_class.clone())
+            .or_else(|| fabric.as_ref().map(|b| b.profile.main_class.clone()))
+            .unwrap_or(version.main_class),
         classpath,
         natives,
         assets,
@@ -1791,11 +1875,28 @@ pub async fn instalar(
         jvm_arguments: jvm,
     };
     cancelado(&cancel)?;
+    if default_fabric_api {
+        crate::mods::fabric_api::instalar_por_defecto(store, instance, cancel.clone(), |text| {
+            progress(Progreso {
+                etapa: text.into(),
+                completados: 0,
+                total: 0,
+            })
+        })
+        .await
+        .map_err(|e| {
+            if cancel.is_cancelled() {
+                Error::Cancelada
+            } else {
+                Error::FabricApi(e)
+            }
+        })?;
+    }
+    cancelado(&cancel)?;
     let current = store.leer(&instance.id).map_err(|_| Error::Disco)?;
     if current.minecraft != instance.minecraft
         || current.loader != instance.loader
-        || crate::versiones_instancia::leer_loader(store, &current)
-            != fabric.as_ref().map(|b| b.loader.clone())
+        || crate::versiones_instancia::leer_loader(store, &current) != loader_selected
     {
         return Err(Error::Datos);
     }
@@ -1804,7 +1905,7 @@ pub async fn instalar(
         &marker_path,
         &Marcador {
             loader: instance.loader.clone(),
-            loader_version: fabric.as_ref().map(|b| b.loader.clone()),
+            loader_version: loader_selected,
             schema: 2,
             sistema: format!("{os}-x86_64"),
             instalado: installed.clone(),
@@ -2023,6 +2124,11 @@ pub fn listo(store: &Almacen, instance: &Instancia) -> bool {
             && fs::symlink_metadata(&file.ruta).is_ok_and(|meta| {
                 meta.is_file() && !enlace(&meta) && meta.len() == file.descarga.size
             })
+    }) && marker.instalado.classpath.iter().all(|path| {
+        let base = if marker.schema == 1 { &root } else { &shared };
+        segura(base, path, false).is_ok()
+            && fs::symlink_metadata(path)
+                .is_ok_and(|meta| meta.is_file() && !enlace(&meta) && meta.len() > 0)
     }) && segura(&root, &marker.instalado.natives, false).is_ok()
         && marker.instalado.natives.is_dir()
         && marker.nativos.iter().all(|(path, size, _)| {

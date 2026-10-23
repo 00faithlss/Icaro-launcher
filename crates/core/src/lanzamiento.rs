@@ -856,6 +856,22 @@ async fn proceso(
     Ok(salida)
 }
 
+fn java_del_juego(java: &Path) -> std::path::PathBuf {
+    #[cfg(windows)]
+    if java
+        .file_name()
+        .is_some_and(|name| name.eq_ignore_ascii_case("java.exe"))
+    {
+        // Discord reconoce Minecraft mediante javaw.exe. Solo se utiliza el
+        // acompañante del mismo runtime; las sondas e instaladores usan java.
+        let ventana = java.with_file_name("javaw.exe");
+        if ventana.is_file() {
+            return ventana;
+        }
+    }
+    java.to_path_buf()
+}
+
 /// Espera hasta que Java termina o hasta que se cancela y se recoge el proceso.
 /// No guarda ni publica la línea de comandos que contiene la credencial.
 pub async fn ejecutar(
@@ -903,7 +919,7 @@ pub async fn ejecutar(
         cuenta.xbox_user_id().unwrap_or(""),
         &config,
     )?;
-    let mut comando = Command::new(java);
+    let mut comando = Command::new(java_del_juego(&java));
     let skin = if cuenta.es_local() {
         if let Some(raiz)=&config.cuentas_locales {
             on_event(Evento::Linea {origen:Origen::Stdout,nivel:Nivel::Info,texto:"Preparando la skin local…".into()});
@@ -939,6 +955,90 @@ pub async fn ejecutar(
 mod tests {
     use super::*;
     use std::{path::PathBuf, sync::Mutex};
+
+    #[cfg(windows)]
+    #[test]
+    fn juego_prefiere_javaw_del_mismo_runtime_y_conserva_java_si_falta() {
+        let root = std::env::temp_dir().join(format!(
+            "icaro-javaw-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let java = root.join("java.exe");
+        let javaw = root.join("javaw.exe");
+        assert_eq!(java_del_juego(&java), java);
+        std::fs::write(&javaw, b"fixture").unwrap();
+        assert_eq!(java_del_juego(&java), javaw);
+        let personalizado = root.join("otro.exe");
+        assert_eq!(java_del_juego(&personalizado), personalizado);
+        std::fs::remove_file(javaw).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "Requiere ICARO_PRUEBA_JAVA con la ruta a java.exe de un JDK local; no ejecuta Minecraft"]
+    async fn javaw_real_conserva_stdout_stderr_y_cancelacion() {
+        let java = PathBuf::from(std::env::var_os("ICARO_PRUEBA_JAVA").expect("ICARO_PRUEBA_JAVA"));
+        let javaw = java_del_juego(&java);
+        assert!(javaw.file_name().unwrap().eq_ignore_ascii_case("javaw.exe"));
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/qa-javaw");
+        std::fs::create_dir_all(&root).unwrap();
+        let root = root.canonicalize().unwrap();
+        let source = root.join("IcaroPruebaRegistros.java");
+        std::fs::write(
+            &source,
+            r#"class IcaroPruebaRegistros {
+            public static void main(String[] args) throws Exception {
+                System.out.println("salida-javaw");
+                System.err.println("error-javaw");
+                if (args.length > 0) Thread.sleep(60000);
+            }
+        }"#,
+        )
+        .unwrap();
+        let status = Command::new(java.with_file_name("javac.exe"))
+            .arg(&source)
+            .creation_flags(0x0800_0000)
+            .status()
+            .await
+            .unwrap();
+        assert!(status.success());
+        let eventos = Mutex::new(Vec::new());
+        let mut command = Command::new(&javaw);
+        command.arg("-cp").arg(&root).arg("IcaroPruebaRegistros");
+        let salida = proceso(command, "", CancellationToken::new(), &|event| {
+            eventos.lock().unwrap().push(event);
+        })
+        .await
+        .unwrap();
+        assert!(salida.exito);
+        let eventos = eventos.into_inner().unwrap();
+        assert!(eventos.iter().any(|event| matches!(event, Evento::Linea { origen: Origen::Stdout, texto, .. } if texto == "salida-javaw")));
+        assert!(eventos.iter().any(|event| matches!(event, Evento::Linea { origen: Origen::Stderr, texto, .. } if texto == "error-javaw")));
+        let cancel = CancellationToken::new();
+        let mut command = Command::new(&javaw);
+        command
+            .arg("-cp")
+            .arg(&root)
+            .args(["IcaroPruebaRegistros", "esperar"]);
+        let salida = tokio::time::timeout(
+            Duration::from_secs(10),
+            proceso(command, "", cancel.clone(), &|event| {
+                if matches!(event, Evento::Linea { .. }) {
+                    cancel.cancel();
+                }
+            }),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(salida.cancelado && !salida.exito);
+    }
 
     fn instalado() -> Instalado {
         Instalado {

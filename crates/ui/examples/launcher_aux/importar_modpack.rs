@@ -408,7 +408,7 @@ pub(super) fn vista(app: &App) -> Element<'_, Mensaje> {
         }
         // Los ZIP completos sin manifiesto siguen admitiendo el perfil manual.
         if s.error.as_ref().is_some_and(|e| {
-            e.contains("Escribe su versión") || e.contains("Indica la versión de Fabric")
+            e.contains("Escribe su versión") || e.contains("Indica la versión del loader")
         }) {
             cuerpo = cuerpo
                 .push(
@@ -428,18 +428,23 @@ pub(super) fn vista(app: &App) -> Element<'_, Mensaje> {
                         c::etiqueta(p, "Loader"),
                         c::selector(
                             p,
-                            vec!["vanilla".into(), "fabric".into()],
+                            vec![
+                                "vanilla".into(),
+                                "fabric".into(),
+                                "forge".into(),
+                                "neoforge".into()
+                            ],
                             Some(s.loader.clone()),
                             |v| m(Accion::Loader(v))
                         )
                     ]
                     .spacing(8),
                 );
-            if s.loader == "fabric" {
+            if s.loader != "vanilla" {
                 cuerpo = cuerpo.push(
                     column![
-                        c::etiqueta(p, "Versión de Fabric"),
-                        c::campo(p, "0.19.5", &s.loader_version, |v| m(
+                        c::etiqueta(p, "Versión del loader"),
+                        c::campo(p, "Versión exacta", &s.loader_version, |v| m(
                             Accion::LoaderVersion(v)
                         ))
                     ]

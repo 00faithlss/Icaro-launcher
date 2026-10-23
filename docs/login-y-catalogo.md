@@ -1,6 +1,19 @@
 # Inicio de sesión y catálogo
 
-El ejemplo `launcher` conecta Microsoft, guarda instancias, instala Minecraft Vanilla/Fabric y prepara Java según el perfil, ejecuta el juego, consulta Modrinth, instala y actualiza mods compatibles y exporta ZIP. Fabric, Quilt y los MRPACK de Modrinth Vanilla/Fabric están conectados; Forge y NeoForge siguen pendientes. Las secciones usan datos reales; los ejemplos se conservan únicamente con `ICARO_DEMO=1`. El recorrido del juego se describe en [Vanilla y Java](vanilla-y-java.md).
+## Compatibilidad del navegador en Windows
+
+La apertura del inicio de sesión usa `ShellExecuteW` y la asociación HTTPS del sistema. Windows activa el navegador predeterminado, incluidos los que usan `DelegateExecute`, sin reconstruir ni ejecutar su comando del registro. El enlace completo conserva los parámetros PKCE y el retorno `icaro://oauth/microsoft`.
+
+Validación pendiente de esta corrección, antes de publicar:
+
+1. Compilar y ejecutar las comprobaciones de Windows indicadas en `AGENTS.md`.
+2. Probar Dia, Edge, Chrome y Firefox como predeterminados de HTTPS, tanto cerrados como ya abiertos. Cada intento debe abrir Microsoft y regresar al launcher tras autorizar.
+3. Cancelar un intento y comenzar otro; el retorno anterior no debe autenticar el intento nuevo. Probar también el rechazo del consentimiento y el vencimiento.
+4. Comprobar que una asociación HTTPS ausente o dañada muestra el error de apertura, y que Linux conserva su apertura y retorno locales.
+
+Las pruebas de construcción del enlace no acreditan la apertura real ni la autenticación. El éxito del shell solo confirma que aceptó la solicitud; la sesión se confirma al recibir y verificar la respuesta de Microsoft.
+
+El ejemplo `launcher` conecta Microsoft, guarda instancias, instala Minecraft Vanilla/Fabric y prepara Java según el perfil, ejecuta el juego, consulta Modrinth, instala y actualiza mods compatibles y exporta ZIP. Fabric, Quilt, Forge y NeoForge están conectados; los MRPACK admiten Vanilla/Fabric/Forge/NeoForge. Las secciones usan datos reales; los ejemplos se conservan únicamente con `ICARO_DEMO=1`. El recorrido del juego se describe en [Vanilla y Java](vanilla-y-java.md).
 
 ## Iniciar sesión
 

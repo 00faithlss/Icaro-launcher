@@ -510,7 +510,7 @@ pub async fn preparar(
         loader = family.into();
         loader_version = Some(version.clone());
     }
-    if !matches!(loader.as_str(), "vanilla" | "fabric") {
+    if !matches!(loader.as_str(), "vanilla" | "fabric" | "forge" | "neoforge") {
         return Err(format!(
             "Este modpack necesita {loader}; su instalador todavía está pendiente en Ícaro."
         ));
