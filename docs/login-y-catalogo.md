@@ -13,7 +13,7 @@ Validación pendiente de esta corrección, antes de publicar:
 
 Las pruebas de construcción del enlace no acreditan la apertura real ni la autenticación. El éxito del shell solo confirma que aceptó la solicitud; la sesión se confirma al recibir y verificar la respuesta de Microsoft.
 
-El ejemplo `launcher` conecta Microsoft, guarda instancias, instala Minecraft Vanilla/Fabric y prepara Java según el perfil, ejecuta el juego, consulta Modrinth, instala y actualiza mods compatibles y exporta ZIP. Fabric y los MRPACK de Modrinth Vanilla/Fabric están conectados; Quilt, Forge y NeoForge siguen pendientes. Las secciones usan datos reales; los ejemplos se conservan únicamente con `ICARO_DEMO=1`. El recorrido del juego se describe en [Vanilla y Java](vanilla-y-java.md).
+El ejemplo `launcher` conecta Microsoft, guarda instancias, instala Minecraft Vanilla/Fabric y prepara Java según el perfil, ejecuta el juego, consulta Modrinth, instala y actualiza mods compatibles y exporta ZIP. Fabric, Quilt, Forge y NeoForge están conectados; los MRPACK admiten Vanilla/Fabric/Forge/NeoForge. Las secciones usan datos reales; los ejemplos se conservan únicamente con `ICARO_DEMO=1`. El recorrido del juego se describe en [Vanilla y Java](vanilla-y-java.md).
 
 ## Iniciar sesión
 

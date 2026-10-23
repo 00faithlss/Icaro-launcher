@@ -4,13 +4,13 @@ Actualizado el **22-10-2026**. Este documento describe el trabajo que falta; no 
 
 ## 1. Instalación y ejecución de loaders oficiales
 
-**Base de almacenamiento:** Vanilla y Fabric comparten assets, bibliotecas y metadatos. Forge y NeoForge preparan sus clientes y bibliotecas compartidas en meta/loaders, con el instalador oficial y una carpeta aislada por intento. Quilt sigue pendiente; ver [organización de datos](organizacion-datos.md).
+**Base de almacenamiento:** Vanilla y Fabric comparten assets, bibliotecas y metadatos. Forge y NeoForge preparan sus clientes y bibliotecas compartidas en meta/loaders, con el instalador oficial y una carpeta aislada por intento. Quilt utiliza su perfil oficial; ver [organización de datos](organizacion-datos.md).
 
 **Estado actual:** el asistente y Cambiar versión consultan los catálogos oficiales y guardan la versión elegida. Vanilla y Fabric 26.3 tienen confirmación del usuario en Windows. Forge y NeoForge ya conectan instalación, Java y argumentos oficiales con la cola y el lanzamiento; la primera instalación Fabric añade Fabric API compatible respetando mods existentes y modpacks. Se comprobó el procesamiento oficial de Forge 1.20.1, NeoForge 1.21.1 y NeoForge 26.3, la reutilización sin red y el rechazo de una biblioteca alterada. La partida real y las migraciones de estos dos loaders siguen pendientes. Consulta [formatos admitidos y límites](loaders-forge-neoforge.md).
 
 - [x] Conectar Fabric al perfil oficial, versión fijada, bibliotecas verificadas, argumentos y mínimo de Java.
 - [x] Conectar Forge y NeoForge mediante sus instaladores oficiales spec 1, versión fijada, preparación aislada, Java, bibliotecas verificadas y argumentos del perfil.
-- [ ] Conectar Quilt y ampliar los formatos históricos de Forge todavía no admitidos.
+- [ ] Validar Quilt en una partida real y ampliar los formatos históricos de Forge todavía no admitidos.
 - [ ] Respetar la versión concreta guardada en la instancia y su compatibilidad con Minecraft; resolver Java y dependencias del perfil resultante.
 - [ ] Preparar la instalación fuera de la carpeta activa, verificar las descargas y publicar el resultado solo al terminar. Conservar la instalación anterior ante error o cancelación.
 - [ ] Integrar el avance con la cola, pausa/cancelación, consola y estados estables del botón; comprobar archivos existentes sin mostrar una instalación ficticia.

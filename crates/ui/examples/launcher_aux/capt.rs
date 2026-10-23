@@ -7,6 +7,7 @@
 #[path = "capturas_disco.rs"]
 mod disco;
 
+use std::collections::HashSet;
 use std::time::Instant;
 
 use icaro_ui::capturas::{Captura, MensajesCapturas, VistaCapturas, galeria};
@@ -19,6 +20,8 @@ use icaro_ui::vacios::{self, Contexto};
 use icaro_ui::visor::{
     EstadoVisor, ItemImagenVisor, ItemVisor, MensajesVisor, visor, visor_imagen,
 };
+use iced::futures::SinkExt;
+use iced::widget::image::Handle;
 use iced::widget::{column, container, text};
 use iced::{Element, Padding, Subscription, Task};
 
@@ -57,6 +60,10 @@ pub struct Estado {
     leyendo: bool,
     solicitud: u64,
     error_lectura: Option<String>,
+    /// Miniaturas en preparación o que no se pudieron generar; evita
+    /// repetirlas en cada refresco.
+    miniaturas_pendientes: HashSet<disco::Clave>,
+    miniaturas_fallidas: HashSet<disco::Clave>,
 }
 
 pub struct Aviso {
@@ -69,6 +76,7 @@ pub struct Aviso {
 pub enum Accion {
     Refrescar,
     Listadas(u64, Result<Vec<Captura>, String>),
+    Miniatura(disco::Clave, Result<Handle, String>),
     Copiada(Result<(), String>),
     Copiadas(usize, Result<(), String>),
     Filtrar(String),
@@ -129,6 +137,8 @@ impl Estado {
             leyendo: false,
             solicitud: 0,
             error_lectura: None,
+            miniaturas_pendientes: HashSet::new(),
+            miniaturas_fallidas: HashSet::new(),
         }
     }
     pub fn nuevo() -> Self {
@@ -234,6 +244,8 @@ impl Estado {
             leyendo: false,
             solicitud: 0,
             error_lectura: None,
+            miniaturas_pendientes: HashSet::new(),
+            miniaturas_fallidas: HashSet::new(),
         }
     }
 
@@ -291,6 +303,42 @@ pub fn refrescar(app: &mut App) -> Task<Mensaje> {
     )
 }
 
+fn clave(c: &Captura) -> Option<disco::Clave> {
+    c.original
+        .as_ref()
+        .map(|o| (o.ruta.clone(), c.bytes, o.modificada))
+}
+
+/// Prepara en segundo plano las miniaturas que faltan, de la más reciente a
+/// la más antigua; cada una aparece en la cuadrícula en cuanto está lista.
+fn pedir_miniaturas(est: &mut Estado) -> Task<Mensaje> {
+    let claves: Vec<disco::Clave> = est
+        .capturas
+        .iter()
+        .filter(|c| c.original.as_ref().is_some_and(|o| o.miniatura.is_none()))
+        .filter_map(clave)
+        .filter(|k| !est.miniaturas_pendientes.contains(k) && !est.miniaturas_fallidas.contains(k))
+        .collect();
+    if claves.is_empty() {
+        return Task::none();
+    }
+    est.miniaturas_pendientes.extend(claves.iter().cloned());
+    Task::run(
+        iced::stream::channel(16, async move |mut salida| {
+            let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+            let trabajo = tokio::task::spawn_blocking(move || disco::miniaturas(claves, tx));
+            while let Some((clave, resultado)) = rx.recv().await {
+                if salida.send(Accion::Miniatura(clave, resultado)).await.is_err() {
+                    break;
+                }
+            }
+            drop(rx);
+            let _ = trabajo.await;
+        }),
+        Mensaje::Capt,
+    )
+}
+
 fn identidad(c: &Captura) -> (&str, &str) {
     (
         c.original
@@ -335,6 +383,7 @@ fn incorporar(est: &mut Estado, capturas: Vec<Captura>) {
             }) {
                 if let (Some(n), Some(a)) = (&mut nueva.original, &anterior.original) {
                     n.imagen = a.imagen.clone();
+                    n.miniatura = a.miniatura.clone();
                 }
             }
             nueva
@@ -454,12 +503,35 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                 Ok(capturas) => {
                     incorporar(&mut app.capt, capturas);
                     app.capt.error_lectura = None;
+                    return pedir_miniaturas(&mut app.capt);
                 }
                 Err(error) => {
                     if app.capt.error_lectura.as_ref() != Some(&error) {
                         app.capt.avisar(error.clone(), false);
                     }
                     app.capt.error_lectura = Some(error);
+                }
+            }
+        }
+        Accion::Miniatura(k, resultado) => {
+            app.capt.miniaturas_pendientes.remove(&k);
+            match resultado {
+                // Si el original cambió mientras tanto, la clave ya no coincide
+                // y el siguiente refresco pide la miniatura nueva.
+                Ok(miniatura) => {
+                    if let Some(c) = app
+                        .capt
+                        .capturas
+                        .iter_mut()
+                        .find(|c| clave(c).as_ref() == Some(&k))
+                    {
+                        if let Some(o) = &mut c.original {
+                            o.miniatura = Some(miniatura);
+                        }
+                    }
+                }
+                Err(_) => {
+                    app.capt.miniaturas_fallidas.insert(k);
                 }
             }
         }
@@ -1137,6 +1209,7 @@ mod tests {
                 ruta: std::path::PathBuf::from(id).join(archivo),
                 instancia_id: id.into(),
                 imagen: Handle::from_rgba(2, 2, vec![255; 16]),
+                miniatura: None,
                 modificada: None,
             }),
         }

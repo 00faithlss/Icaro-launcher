@@ -1,10 +1,21 @@
 name: Empaquetar Windows
+# Canales de publicación:
+# - develop: beta, prerelease `v<versión>-beta.<compilación>` que solo ve el
+#   canal Beta del launcher. La versión de Cargo debe ser mayor que la última
+#   estable.
+# - main: estable, release `v<versión>-build.<compilación>` marcada como la
+#   más reciente, y tag fuente `v<versión>`. Cada estable exige subir la
+#   versión de Cargo y sus notas en docs/releases.
+# Otras ramas y los tags no publican. Una ejecución manual solo entrega
+# artefactos.
 on:
   workflow_dispatch:
   push:
-    branches: ['main', 'v*']
-    tags: ['v*']
-  create:
+    branches: ['main', 'develop']
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.github/workflows/sync-host-linux.yml'
 permissions:
   contents: write
 concurrency:
@@ -12,30 +23,14 @@ concurrency:
   cancel-in-progress: false
 jobs:
   windows:
-    if: github.event_name != 'create' || (github.event.ref_type == 'branch' && startsWith(github.event.ref, 'v'))
     runs-on: windows-latest
     timeout-minutes: 45
     env:
       ICARO_COMPILACION: ${{ github.run_id }}
-      ICARO_REF: ${{ github.event_name == 'create' && github.event.ref || github.ref_name }}
+      ICARO_CANAL: ${{ github.ref_name == 'develop' && 'beta' || 'estable' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ env.ICARO_REF }}
-      - name: Comprobar rama o tag de versión
-        if: startsWith(env.ICARO_REF, 'v')
-        shell: pwsh
-        run: |
-          $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0) { throw 'No se pudo leer la versión de Cargo' }
-          $version = ($metadata.packages | Where-Object name -EQ 'icaro-ui').version
-          if ($env:ICARO_REF -match '^v(\d+)\.(\d+)\.x$') {
-            $linea = "$($Matches[1]).$($Matches[2])."
-            if (-not $version.StartsWith($linea)) { throw 'La rama de mantenimiento no coincide con la versión de Cargo' }
-          } elseif ($env:ICARO_REF -ne "v$version") {
-            throw 'La rama o tag no coincide con la versión de Cargo'
-          }
-      - name: Reutilizar una publicación idéntica
+      - name: Comprobar la versión del canal
         id: publicacion
         shell: pwsh
         env:
@@ -43,18 +38,37 @@ jobs:
         run: |
           'repetida=false' >> $env:GITHUB_OUTPUT
           if ('${{ github.event_name }}' -eq 'workflow_dispatch') { exit 0 }
-          $previous = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" 2>$null
-          if ($LASTEXITCODE -ne 0) { exit 0 }
-          $previous = $previous | ConvertFrom-Json
-          $version = (Select-String -LiteralPath Cargo.toml -Pattern '^version = "(\d+\.\d+\.\d+)"$').Matches.Groups[1].Value
-          if ($previous.tag_name -notmatch ('^v' + [regex]::Escape($version) + '-build\.\d+$')) { exit 0 }
-          $assets = @($previous.assets.name)
-          if ('latest.json' -notin $assets -or "icaro-$version-windows-x86_64.exe" -notin $assets -or "icaro-$version-windows-x86_64-setup.exe" -notin $assets) { exit 0 }
-          $previousTree = gh api "repos/$env:GITHUB_REPOSITORY/commits/$($previous.tag_name)" --jq '.commit.tree.sha'
-          if ($LASTEXITCODE -ne 0) { throw 'No se pudo comprobar la revisión publicada' }
-          if ($previousTree.Trim() -eq (git rev-parse 'HEAD^{tree}').Trim()) {
-            'repetida=true' >> $env:GITHUB_OUTPUT
-            Write-Output 'El mismo contenido ya pasó las comprobaciones y tiene su actualización publicada.'
+          $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudo leer la versión de Cargo' }
+          $version = ($metadata.packages | Where-Object name -EQ 'icaro-ui').version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Versión de Cargo no admitida: $version" }
+          $tree = (git rev-parse 'HEAD^{tree}').Trim()
+          $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudieron consultar las releases' }
+          $patron = if ($env:ICARO_CANAL -eq 'beta') { '^v(\d+\.\d+\.\d+)-beta\.\d+$' } else { '^v(\d+\.\d+\.\d+)-build\.\d+$' }
+          $estables = @($releases | Where-Object { -not $_.draft -and -not $_.prerelease -and $_.tag_name -match '^v(\d+\.\d+\.\d+)-build\.\d+$' })
+          $ultimaEstable = $estables | Sort-Object { [version]($_.tag_name -replace '^v(\d+\.\d+\.\d+)-build\.(\d+)$', '$1') }, { [long]($_.tag_name -replace '^.*\.', '') } | Select-Object -Last 1
+          $previa = $releases | Where-Object { -not $_.draft -and ($_.prerelease -eq ($env:ICARO_CANAL -eq 'beta')) -and $_.tag_name -match $patron -and $Matches[1] -eq $version } | Sort-Object { [long]($_.tag_name -replace '^.*\.', '') } | Select-Object -Last 1
+          # El mismo contenido ya publicado en este canal no se vuelve a compilar.
+          if ($previa) {
+            $assets = @($previa.assets.name)
+            $completa = 'latest.json' -in $assets -and "icaro-$version-windows-x86_64.exe" -in $assets -and "icaro-$version-windows-x86_64-setup.exe" -in $assets
+            $previousTree = gh api "repos/$env:GITHUB_REPOSITORY/commits/$($previa.tag_name)" --jq '.commit.tree.sha'
+            if ($LASTEXITCODE -ne 0) { throw 'No se pudo comprobar la revisión publicada' }
+            if ($completa -and $previousTree.Trim() -eq $tree) {
+              'repetida=true' >> $env:GITHUB_OUTPUT
+              Write-Output "El mismo contenido ya está publicado como $($previa.tag_name)."
+              exit 0
+            }
+          }
+          if ($ultimaEstable) {
+            $estable = [version]($ultimaEstable.tag_name -replace '^v(\d+\.\d+\.\d+)-build\.\d+$', '$1')
+            if ($env:ICARO_CANAL -eq 'beta' -and [version]$version -le $estable) {
+              throw "develop tiene la versión $version y la última estable es $estable. Sube la versión de Cargo a la próxima entrega para publicar betas."
+            }
+            if ($env:ICARO_CANAL -eq 'estable' -and [version]$version -le $estable) {
+              throw "main tiene la versión $version y la última estable es $estable. Cada estable exige subir la versión de Cargo y sus notas."
+            }
           }
       - name: Verificar núcleo e interfaz
         if: steps.publicacion.outputs.repetida != 'true'
@@ -94,7 +108,8 @@ jobs:
         run: |
           $metadata = Get-Content target/dist/windows/icaro-*-artefactos.json -Raw | ConvertFrom-Json
           $version = $metadata.version
-          $tag = "v$version-build.$env:ICARO_COMPILACION"
+          $beta = $env:ICARO_CANAL -eq 'beta'
+          $tag = if ($beta) { "v$version-beta.$env:ICARO_COMPILACION" } else { "v$version-build.$env:ICARO_COMPILACION" }
           $notesFile = "docs/releases/$version.md"
           $notesData = Get-Content "docs/releases/$version.json" -Raw | ConvertFrom-Json
           if (-not (Test-Path -LiteralPath $notesFile) -or $notesData.version -ne $version -or $notesData.notas.Count -lt 1 -or $notesData.notas.Count -gt 200) { throw 'Faltan notas de versión válidas' }
@@ -107,6 +122,7 @@ jobs:
           $manifest = @{
             version = $version
             compilacion = [long]$env:ICARO_COMPILACION
+            canal = $env:ICARO_CANAL
             notas = @($notesData.notas)
             plataformas = @{
               'windows-x86_64' = @{archivo=$portable.Name;sha256=(Get-FileHash -LiteralPath $portable.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
@@ -116,23 +132,20 @@ jobs:
           $manifest | ConvertTo-Json -Depth 6 | Set-Content target/dist/windows/latest.json -Encoding utf8
           $files = @(Get-ChildItem target/dist/windows -File | ForEach-Object FullName)
           $revision = (git rev-parse HEAD).Trim()
-          $latest = 'true'
-          $previous = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            $previous = $previous | ConvertFrom-Json
-            if ($previous.tag_name -match '^v(\d+\.\d+\.\d+)(?:-build\.\d+)?$') {
-              $previousVersion = [version]$Matches[1]
-              if ($previousVersion -gt [version]$version) { $latest = 'false' }
-              if ($previousVersion -eq [version]$version) {
-                $previousTree = gh api "repos/$env:GITHUB_REPOSITORY/commits/$($previous.tag_name)" --jq '.commit.tree.sha'
-                if ($LASTEXITCODE -ne 0) { throw 'No se pudo comprobar la revisión ya publicada' }
-                $currentTree = (git rev-parse 'HEAD^{tree}').Trim()
-                if ($previousTree.Trim() -eq $currentTree) {
-                  Write-Output 'Este contenido ya está publicado; se conservan su versión y compilación.'
-                  exit 0
-                }
-              }
-            }
+          if ($beta) {
+            # Las prereleases nunca son la más reciente: los launchers estables,
+            # también los anteriores a los canales, no las ven.
+            gh release create $tag @files --target $revision --title "Icaro Launcher $version beta" --notes-file $notesFile --prerelease --latest=false
+            if ($LASTEXITCODE -ne 0) { throw 'No se pudo publicar la beta' }
+            exit 0
           }
-          gh release create $tag @files --target $revision --title "Icaro Launcher $version" --notes-file $notesFile "--latest=$latest"
+          gh release create $tag @files --target $revision --title "Icaro Launcher $version" --notes-file $notesFile --latest=true
           if ($LASTEXITCODE -ne 0) { throw 'No se pudo publicar la actualización' }
+          # Tag fuente de la estable, sobre la misma revisión que la release.
+          $existente = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/v$version" --jq '.object.sha' 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Output "El tag v$version ya existe ($($existente.Trim()))."
+          } else {
+            gh api "repos/$env:GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/v$version" -f "sha=$revision" | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "No se pudo crear el tag v$version" }
+          }

@@ -1090,9 +1090,8 @@ pub fn actualizar(app: &mut App, action: Accion) -> Task<Mensaje> {
                     app.avisar(format!("Instancia {name} creada y guardada."));
                     crate::arrancar(app);
                     let index = app.servicios.instancias.registros.len() - 1;
-                    if matches!(
-                        app.servicios.instancias.registros[index].loader.as_str(),
-                        "vanilla" | "fabric" | "forge" | "neoforge"
+                    if icaro_core::minecraft::loader_instalable(
+                        &app.servicios.instancias.registros[index].loader,
                     ) {
                         return crate::juego_real::iniciar(app, index, false);
                     }

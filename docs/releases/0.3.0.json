@@ -1,11 +1,45 @@
 {
   "version": "0.3.0",
   "notas": [
-    {"tipo":"nuevo","texto":"Forge y NeoForge: instalación y preparación mediante sus instaladores oficiales, respetando la versión elegida y la configuración de Java."},
-    {"tipo":"nuevo","texto":"Fabric API compatible se instala por defecto en nuevas instancias Fabric. Se conservan copias locales o desactivadas y el contenido de modpacks; no se vuelve a añadir si lo retiras después."},
-    {"tipo":"mejora","texto":"Los MRPACK y ZIP reconocen Forge y NeoForge y conservan la versión del loader indicada por el paquete."},
-    {"tipo":"mejora","texto":"Forge y NeoForge se preparan en una carpeta aparte y reutilizan archivos verificados. Un intento fallido conserva la instalación anterior."},
-    {"tipo":"mejora","texto":"Alcance de esta entrega: siguen pendientes la validación manual del inicio de sesión con distintos navegadores, partidas con mods, migraciones y Linux. No se admiten todos los formatos históricos de Forge."},
-    {"tipo":"correccion","texto":"Corrige la apertura del inicio de sesión en Windows para utilizar cualquier navegador configurado como predeterminado del sistema."}
+    {
+      "tipo": "nuevo",
+      "texto": "Canal de actualizaciones: en Ajustes → Acerca de puedes elegir recibir también las versiones beta, que llegan antes y pueden tener errores."
+    },
+    {
+      "tipo": "nuevo",
+      "texto": "Quilt ya se instala y se ejecuta como loader: crear la instancia, jugar y cambiar de versión usan su perfil oficial, igual que Fabric."
+    },
+    {
+      "tipo": "nuevo",
+      "texto": "Forge y NeoForge: instalación y preparación mediante sus instaladores oficiales, respetando la versión elegida y la configuración de Java."
+    },
+    {
+      "tipo": "nuevo",
+      "texto": "Fabric API compatible se instala por defecto en nuevas instancias Fabric. Se conservan copias locales o desactivadas y el contenido de modpacks; no se vuelve a añadir si lo retiras después."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "Al elegir la versión de un loader, las estables aparecen antes que las betas."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "La sección Capturas ya no se congela al abrirse: las miniaturas se preparan en segundo plano y aparecen a medida que están listas."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "Los MRPACK y ZIP reconocen Forge y NeoForge y conservan la versión del loader indicada por el paquete."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "Forge y NeoForge se preparan en una carpeta aparte y reutilizan archivos verificados. Un intento fallido conserva la instalación anterior."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "Alcance de esta entrega: siguen pendientes la validación manual del inicio de sesión con distintos navegadores, partidas con mods, migraciones y Linux. No se admiten todos los formatos históricos de Forge."
+    },
+    {
+      "tipo": "correccion",
+      "texto": "Corrige la apertura del inicio de sesión en Windows para utilizar cualquier navegador configurado como predeterminado del sistema."
+    }
   ]
 }

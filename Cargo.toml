@@ -25,6 +25,19 @@ opt-level = 3
 [profile.dev.package.sha1]
 opt-level = 3
 
+# Las miniaturas de capturas decodifican PNG; sin optimizar tardan segundos.
+[profile.dev.package.image]
+opt-level = 3
+
+[profile.dev.package.png]
+opt-level = 3
+
+[profile.dev.package.fdeflate]
+opt-level = 3
+
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+
 [profile.release]
 opt-level = "z"
 lto = true

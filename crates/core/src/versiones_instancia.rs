@@ -29,9 +29,15 @@ fn version_segura(v: &str) -> bool {
     crate::minecraft::version_minecraft_valida(v)
 }
 
+/// Las versiones finales van antes que las preliminares (`0.30.1` antes que
+/// `0.31.0-beta.4`) para que la primera de la lista sea siempre una estable.
 fn ordenar(versiones: &mut Vec<String>) {
-    versiones.sort_by(|a, b| partes(b).cmp(&partes(a)).then_with(|| b.cmp(a)));
+    versiones.sort_by(|a, b| clave(b).cmp(&clave(a)).then_with(|| b.cmp(a)));
     versiones.dedup();
+}
+fn clave(v: &str) -> (bool, Vec<u64>, Vec<u64>) {
+    let (base, pre) = v.split_once('-').map_or((v, None), |(b, p)| (b, Some(p)));
+    (pre.is_none(), partes(base), pre.map(partes).unwrap_or_default())
 }
 fn partes(v: &str) -> Vec<u64> {
     v.split(|c: char| !c.is_ascii_digit())
@@ -920,6 +926,18 @@ pub async fn aplicar_con_mods(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn las_versiones_estables_van_antes_que_las_preliminares() {
+        let mut versiones: Vec<String> = ["0.31.0-beta.4", "0.24.0-beta.2", "0.24.0", "0.30.1", "0.30.1-beta.1", "0.24.0-beta.10", "0.30.1"]
+            .map(String::from)
+            .to_vec();
+        ordenar(&mut versiones);
+        assert_eq!(
+            versiones,
+            ["0.30.1", "0.24.0", "0.31.0-beta.4", "0.30.1-beta.1", "0.24.0-beta.10", "0.24.0-beta.2"]
+        );
+    }
+
     use super::*;
     fn store() -> (Almacen, PathBuf) {
         let root = std::env::temp_dir().join(format!("icaro-version-test-{}", nonce().unwrap()));

@@ -48,6 +48,9 @@ pub struct Guardado {
     pub modpacks: Vec<String>,
     #[serde(default)]
     configs: Vec<JavaGuardado>,
+    /// Canal elegido en Ajustes; sin valor se usa el de la compilación.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canal: Option<icaro_core::actualizacion::Canal>,
 }
 
 /// Preferencias de Apariencia compatibles con estados anteriores.
@@ -118,6 +121,7 @@ impl Guardado {
                     argumentos: c.argumentos.clone(),
                 })
                 .collect(),
+            canal: None,
         }
     }
 

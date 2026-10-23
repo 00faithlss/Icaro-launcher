@@ -11,7 +11,7 @@ La pantalla **Importar modpack** conserva el grabado y los iconos del diseño en
 - **Prism/MultiMC:** reconoce los componentes Vanilla/Fabric/Forge/NeoForge de `mmc-pack.json` y la carpeta de juego incluida.
 - **Manifiesto de CurseForge:** reconoce el perfil y la carpeta de overrides si el archivo contiene el paquete completo. Los ZIP que solo referencian archivos de CurseForge mediante IDs no están admitidos; necesitan esos archivos completos o una exportación MRPACK.
 
-Si el ZIP no indica su perfil, escribe la versión de Minecraft, selecciona Vanilla, Fabric, Forge o NeoForge e indica la versión exacta del loader correspondiente. Pulsa **Volver a revisar** y comprueba el resumen antes de **Instalar en nueva instancia**. Quilt sigue pendiente. Consulta el [alcance de Forge y NeoForge](loaders-forge-neoforge.md), incluidos sus formatos de instalador admitidos y la validación de juego pendiente. Los modpacks conservan su conjunto de mods: no se añade Fabric API automáticamente.
+Si el ZIP no indica su perfil, escribe la versión de Minecraft, selecciona Vanilla, Fabric, Forge o NeoForge e indica la versión exacta del loader correspondiente. Pulsa **Volver a revisar** y comprueba el resumen antes de **Instalar en nueva instancia**. Quilt ya se instala en instancias propias; su importación de modpacks y la partida real siguen pendientes. Consulta el [alcance de Forge y NeoForge](loaders-forge-neoforge.md), incluidos sus formatos de instalador admitidos y la validación de juego pendiente. Los modpacks conservan su conjunto de mods: no se añade Fabric API automáticamente.
 
 ## Paquetes grandes y recuperación
 

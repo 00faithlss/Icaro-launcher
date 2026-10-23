@@ -476,10 +476,7 @@ pub fn iniciar_con_servidor(app:&mut App,index:usize,jugar:bool,servidor:Option<
         app.avisar("Esta instancia exportada usaba un Java manual. Selecciona una instalación o Automático en su pestaña Java.".into());
         return Task::none();
     }
-    if !matches!(
-        i.loader.as_str(),
-        "vanilla" | "fabric" | "forge" | "neoforge"
-    ) {
+    if !minecraft::loader_instalable(&i.loader) {
         app.avisar("La instalación de este loader será la siguiente etapa. Puedes seguir gestionando sus mods.".into());
         return Task::none();
     }
@@ -2241,6 +2238,7 @@ pub fn preparar_diseno(app: &mut App, scene: &str) {
                         imagen: Lamina::Umbral,
                         original: Some(icaro_ui::capturas::OriginalCaptura {
                             imagen: iced::widget::image::Handle::from_path(&ruta),
+                            miniatura: Some(iced::widget::image::Handle::from_path(&ruta)),
                             ruta,
                             instancia_id: id.clone(),
                             modificada: meta.modified().ok(),

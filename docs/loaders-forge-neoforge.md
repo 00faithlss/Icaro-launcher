@@ -2,7 +2,7 @@
 
 ## Instalación y lanzamiento
 
-Crear una instancia, Instalar/Jugar y preparar una nueva versión admiten Vanilla, Fabric, Forge y NeoForge. Se conserva la versión exacta guardada en loader.json; sincronizar no selecciona automáticamente otra versión. Quilt conserva su catálogo, pero su instalador sigue pendiente.
+Crear una instancia, Instalar/Jugar y preparar una nueva versión admiten Vanilla, Fabric, Forge y NeoForge. Se conserva la versión exacta guardada en loader.json; sincronizar no selecciona automáticamente otra versión. Quilt conserva su instalación mediante el perfil oficial.
 
 Forge y NeoForge se descargan de sus Maven oficiales. Se verifica el SHA-1 del instalador antes de ejecutarlo. El instalador oficial prepara el cliente, las bibliotecas y los procesadores dentro de meta/loaders, en una carpeta nueva por intento. Recibe una copia independiente del cliente de Mojang y un perfil de launcher vacío; no recibe cuentas, tokens, mundos ni mods.
 
@@ -30,4 +30,4 @@ Las pruebas locales cubren perfiles oficiales, argumentos de módulos, sustituci
 
 Compilar y preparar el cliente no acredita una partida: siguen pendientes las pruebas con un mod compatible, migración, reinicio, cancelación durante procesadores y recorrido nativo en Linux.
 
-Validación local del 22-10-2026: compilación del launcher completada; 58 pruebas de UI y 67 del launcher aprobadas; 2 del actualizador aprobadas. El núcleo obtuvo 238 aprobadas y un fallo en la recuperación desde la papelera de Windows (resourcepacks_bulk_activation_removal_preserves_unselected_and_renamed_update), cuyo código no se modificó. Pasaron las pruebas reales de los tres instaladores indicados, la caché sin red, la biblioteca alterada y la descarga/reutilización de Fabric API de Modrinth. Esto no informa el estado del CI remoto.
+Validación local del 22-10-2026: compilación del launcher completada; 58 pruebas de UI y 67 del launcher aprobadas; 2 del actualizador aprobadas. Tras integrar Quilt y los canales, el núcleo obtuvo 245 aprobadas, excluyendo resourcepacks_bulk_activation_removal_preserves_unselected_and_renamed_update: había fallado antes y se bloqueó al repetirla, por lo que se interrumpió esa ejecución. Su código no se modificó. Pasaron las pruebas reales de los tres instaladores indicados, la caché sin red, la biblioteca alterada y la descarga/reutilización de Fabric API de Modrinth. Esto no informa el estado del CI remoto.

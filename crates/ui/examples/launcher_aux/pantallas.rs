@@ -61,6 +61,7 @@ pub struct Ajustes {
     pub escala: i32,
     pub metal: usize,
     pub cache_limpia: bool,
+    pub canal: icaro_core::actualizacion::Canal,
 }
 
 impl Default for Ajustes {
@@ -77,6 +78,7 @@ impl Default for Ajustes {
             escala: 100,
             metal: 0,
             cache_limpia: false,
+            canal: crate::actualizacion_real::canal_compilado(),
         }
     }
 }
@@ -207,6 +209,7 @@ pub enum Accion {
     MostrarExportacion(std::path::PathBuf),
     AbrirListaEnlace(String),
     AbrirRepositorio,
+    Canal(String),
 
     ExportarCancelar,
     ExportarConfirmar,
@@ -727,6 +730,16 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
         // La dirección sale de `workspace.package.repository`, igual que la versión.
         Accion::AbrirRepositorio => {
             return crate::servicios::actualizar(app, crate::servicios::Accion::Enlace(env!("CARGO_PKG_REPOSITORY").into()));
+        }
+        // Cambiar de canal vuelve a comprobar: una descarga preparada de otro
+        // canal se descarta al recibir el resultado.
+        Accion::Canal(v) => {
+            let canal = if v == "Beta" { icaro_core::actualizacion::Canal::Beta } else { icaro_core::actualizacion::Canal::Estable };
+            if canal != app.aj.canal {
+                app.aj.canal = canal;
+                app.actualizacion.disponible = None;
+                return crate::actualizacion_real::actualizar(app, crate::actualizacion_real::Accion::Comprobar);
+            }
         }
         Accion::Exportada(result) => match result {
             Ok(path)=>{
@@ -1843,11 +1856,15 @@ pub fn pagina_ajustes<'a>(app: &'a App) -> Element<'a, Mensaje> {
         }
         _ => {
             col = col
-                .push(text(concat!("Icaro Launcher ", env!("CARGO_PKG_VERSION"))).font(fuentes::TITULO).size(texto::HEADING.0).color(p.text))
+                .push(text(format!("Icaro Launcher {}", crate::actualizacion_real::version_visible())).font(fuentes::TITULO).size(texto::HEADING.0).color(p.text))
                 .push(text("Un launcher de Minecraft escrito en Rust, ligero y optimizado, para Windows y Arch Linux.").size(texto::BODY.0).color(p.text_muted))
                 .push(text("Licencia GPL-3.0. Grabados de dominio público (CC0) de The Met, la National Gallery of Art y el Art Institute of Chicago. Íconos Pixelarticons (MIT).").size(texto::BODY.0).color(p.text_muted))
                 .push(Space::with_height(espacio::S2))
-                .push(row![componentes::boton_con_icono(p, Icono::Externo, "Código fuente en GitHub", Variante::Secundario, Some(m(Accion::AbrirRepositorio)), false)]);
+                .push(row![componentes::boton_con_icono(p, Icono::Externo, "Código fuente en GitHub", Variante::Secundario, Some(m(Accion::AbrirRepositorio)), false)])
+                .push(Space::with_height(espacio::S2))
+                .push(fila_ajuste(p, "Canal de actualizaciones", "Beta recibe antes las versiones en desarrollo; pueden tener errores.",
+                    componentes::selector(p, vec!["Estable".to_owned(), "Beta".to_owned()],
+                        Some(if a.canal == icaro_core::actualizacion::Canal::Beta { "Beta" } else { "Estable" }.to_owned()), |v| m(Accion::Canal(v)))));
             if app.servicios.demo {
                 col = col.push(Space::with_height(espacio::S3))
                 .push(text("Pantallas de ejemplo").font(fuentes::TITULO).size(texto::BODY.0 + 1.0).color(p.text))

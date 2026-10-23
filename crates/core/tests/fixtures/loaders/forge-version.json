@@ -11,7 +11,7 @@
     "mainClass": "cpw.mods.bootstraplauncher.BootstrapLauncher",
     "inheritsFrom": "1.20.1",
     "logging": {
-        
+
     },
     "arguments": {
         "game": [
