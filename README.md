@@ -6,7 +6,7 @@ La primera entrega pública es **0.1.0**, con paquetes para Windows. Descarga el
 
 La versión **0.2.0** incorpora la sincronización con servidores dedicados y corrige dependencias, Java y navegación, con caché persistente de Modrinth. Consulta las [notas de 0.2.0](docs/releases/0.2.0.md) y el [changelog](CHANGELOG.md).
 
-La actualización **0.2.1** añade importación local de MRPACK/ZIP, corrige el scroll del selector y la consola de fondo en Windows, y comparte las consultas de Modrinth entre instalaciones. Consulta las [notas de 0.2.1](docs/releases/0.2.1.md). La línea de mantenimiento es `v0.2.x`.
+La actualización **0.2.1** añade importación local de MRPACK/ZIP, corrige el scroll del selector y la consola de fondo en Windows, y comparte las consultas de Modrinth entre instalaciones. Consulta las [notas de 0.2.1](docs/releases/0.2.1.md). Las versiones estables se publican desde `main` y las betas desde `develop`.
 
 La versión **0.2.3** acelera la sincronización con servidores: revisa los mods leyéndolos una sola vez, aplica los cambios moviendo solo los archivos afectados con un diario recuperable y registra cada fase en `logs/sincronizacion.log`. Acerca de muestra la versión real y enlaza el repositorio. Consulta las [notas de 0.2.3](docs/releases/0.2.3.md).
 

@@ -18,7 +18,7 @@ Al cargar el almacén, las carpetas antiguas cuyo nombre es el ID se migran medi
 
 Renombrar una instancia cambia su carpeta y conserva el ID y todos sus archivos. Si falla la publicación de los metadatos, se revierte el cambio de carpeta y la configuración anterior. Mientras Minecraft o una instalación usan la instancia, la interfaz impide este cambio. Eliminar envía la carpeta a la papelera del sistema; Deshacer restaura durante la sesión y elige un nombre disponible. Un fallo no provoca borrado permanente.
 
-**Cambiar versión** modifica únicamente Minecraft y conserva la familia del loader. **Cambiar versión del loader** conserva Minecraft, la familia, los mods y los mundos; permite elegir otra versión publicada del mismo loader y respaldar los archivos. Fabric se prepara con la versión guardada; Quilt, Forge y NeoForge requieren sus instaladores pendientes.
+**Cambiar versión** modifica únicamente Minecraft y conserva la familia del loader. **Cambiar versión del loader** conserva Minecraft, la familia, los mods y los mundos; permite elegir otra versión publicada del mismo loader y respaldar los archivos. Fabric y Quilt se preparan con la versión guardada; Forge y NeoForge requieren sus instaladores pendientes.
 
 ## ArchivosNoVerificados
 

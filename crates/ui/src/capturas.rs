@@ -37,7 +37,11 @@ pub struct Captura {
 pub struct OriginalCaptura {
     pub ruta: PathBuf,
     pub instancia_id: String,
+    /// Original a resolución completa; solo lo decodifica el visor.
     pub imagen: Handle,
+    /// Miniatura reducida para la cuadrícula, generada fuera del hilo de la
+    /// interfaz. Mientras falta se muestra un hueco vacío.
+    pub miniatura: Option<Handle>,
     pub modificada: Option<SystemTime>,
 }
 
@@ -224,12 +228,24 @@ fn miniatura<'a, M: Clone + 'a>(
     let grosor = if elegida { borde::MEDIO } else { borde::FINO };
     let tinta = if elegida || encima { p.text } else { p.border };
     let alto = (ancho * 9.0 / 16.0).round();
+    // La cuadrícula nunca usa el original: decodificar y subir decenas de
+    // PNG a resolución completa en el primer cuadro congela la interfaz.
     let imagen: Element<'a, M> = if let Some(original) = &c.original {
-        iced::widget::image(original.imagen.clone())
-            .content_fit(iced::ContentFit::Cover)
-            .width(Length::Fill)
-            .height(alto - 2.0 * grosor)
-            .into()
+        match &original.miniatura {
+            Some(miniatura) => iced::widget::image(miniatura.clone())
+                .content_fit(iced::ContentFit::Cover)
+                .width(Length::Fill)
+                .height(alto - 2.0 * grosor)
+                .into(),
+            None => container(Space::new(Length::Fill, Length::Fill))
+                .width(Length::Fill)
+                .height(alto - 2.0 * grosor)
+                .style(move |_: &iced::Theme| container::Style {
+                    background: Some(Background::Color(p.surface_sunken)),
+                    ..Default::default()
+                })
+                .into(),
+        }
     } else {
         Imagen::nueva(p, c.imagen)
             .barrido(p)

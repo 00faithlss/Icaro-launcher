@@ -18,6 +18,8 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 
+mod forge;
+
 const METADATA_LIMIT: u64 = 8 * 1024 * 1024;
 const FILE_LIMIT: u64 = 1024 * 1024 * 1024;
 const MAX_FILES: usize = 100_000;
@@ -85,6 +87,10 @@ pub enum Error {
     NoSoportada(String),
     #[error("La versión no aparece en el catálogo oficial de Minecraft.")]
     Version,
+    #[error("El instalador oficial de {0} no pudo completar el cliente. Revisa instalador.log en la preparación de meta/loaders y vuelve a intentarlo.")]
+    Instalador(String),
+    #[error("No se pudo instalar Fabric API: {0}")]
+    FabricApi(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,7 +180,10 @@ struct Rango {
 }
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Argumentos {
+    // Quilt omite `jvm` cuando no añade argumentos.
+    #[serde(default)]
     game: Vec<Argumento>,
+    #[serde(default)]
     jvm: Vec<Argumento>,
 }
 #[derive(Debug, Serialize, Deserialize)]
@@ -445,6 +454,10 @@ fn oficial(value: &str) -> Result<reqwest::Url, Error> {
                     | "resources.download.minecraft.net"
                     | "meta.fabricmc.net"
                     | "maven.fabricmc.net"
+                    | "maven.minecraftforge.net"
+                    | "maven.neoforged.net"
+                    | "meta.quiltmc.org"
+                    | "maven.quiltmc.org"
             )
         )
     {
@@ -745,8 +758,77 @@ fn nativo_otro_arch(name: &str) -> bool {
         && (name.ends_with("-arm64") || name.ends_with("-aarch64") || name.ends_with("-x86"))
 }
 
+/// Loaders con perfil oficial `inheritsFrom` y metadatos de tipo Fabric.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Familia {
+    Fabric,
+    Quilt,
+}
+impl Familia {
+    fn de(loader: &str) -> Option<Self> {
+        match loader {
+            "fabric" => Some(Self::Fabric),
+            "quilt" => Some(Self::Quilt),
+            _ => None,
+        }
+    }
+    fn nombre(self) -> &'static str {
+        match self {
+            Self::Fabric => "Fabric",
+            Self::Quilt => "Quilt",
+        }
+    }
+    /// Subcarpeta de `meta/` donde se guarda el perfil verificado.
+    fn carpeta(self) -> &'static str {
+        match self {
+            Self::Fabric => "fabric",
+            Self::Quilt => "quilt",
+        }
+    }
+    fn api(self) -> &'static str {
+        match self {
+            Self::Fabric => "https://meta.fabricmc.net/v2/versions/loader",
+            Self::Quilt => "https://meta.quiltmc.org/v3/versions/loader",
+        }
+    }
+    fn id_perfil(self, loader: &str, mc: &str) -> String {
+        match self {
+            Self::Fabric => format!("fabric-loader-{loader}-{mc}"),
+            Self::Quilt => format!("quilt-loader-{loader}-{mc}"),
+        }
+    }
+    fn biblioteca(self, loader: &str) -> String {
+        match self {
+            Self::Fabric => format!("net.fabricmc:fabric-loader:{loader}"),
+            Self::Quilt => format!("org.quiltmc:quilt-loader:{loader}"),
+        }
+    }
+    /// Repositorios Maven desde los que el perfil oficial puede descargar.
+    fn repositorios(self) -> &'static [&'static str] {
+        match self {
+            Self::Fabric => &["https://maven.fabricmc.net/"],
+            Self::Quilt => &[
+                "https://maven.quiltmc.org/repository/release/",
+                "https://maven.fabricmc.net/",
+            ],
+        }
+    }
+    /// Mapeos que exige una versión ofuscada de Minecraft.
+    fn mapeos(self, mc: &str) -> Vec<String> {
+        let intermediary = format!("net.fabricmc:intermediary:{mc}");
+        match self {
+            Self::Fabric => vec![intermediary],
+            Self::Quilt => vec![format!("org.quiltmc:hashed:{mc}"), intermediary],
+        }
+    }
+    fn es_mapeo(self, name: &str) -> bool {
+        name.starts_with("net.fabricmc:intermediary:")
+            || (self == Self::Quilt && name.starts_with("org.quiltmc:hashed:"))
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
-struct LibreriaFabric {
+struct LibreriaCargador {
     name: String,
     url: String,
     #[serde(default)]
@@ -756,23 +838,23 @@ struct LibreriaFabric {
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct PerfilFabric {
+struct PerfilCargador {
     id: String,
     inherits_from: String,
     main_class: String,
     #[serde(default)]
     arguments: Argumentos,
-    libraries: Vec<LibreriaFabric>,
+    libraries: Vec<LibreriaCargador>,
 }
 #[derive(Debug, Serialize, Deserialize)]
-struct Fabric {
+struct Cargador {
     schema: u32,
     #[serde(default)]
     sin_intermediary: bool,
     minecraft: String,
     loader: String,
     min_java: u32,
-    profile: PerfilFabric,
+    profile: PerfilCargador,
     descargas: Vec<Descarga>,
 }
 fn ruta_maven(name: &str) -> Result<String, Error> {
@@ -803,13 +885,18 @@ fn ruta_maven(name: &str) -> Result<String, Error> {
     relativa(&path)?;
     Ok(path)
 }
-fn validar_fabric(bundle: &Fabric, mc: &str, loader: &str) -> Result<(), Error> {
+fn validar_cargador(
+    familia: Familia,
+    bundle: &Cargador,
+    mc: &str,
+    loader: &str,
+) -> Result<(), Error> {
     if bundle.schema != 1
         || bundle.minecraft != mc
         || bundle.loader != loader
         || bundle.min_java == 0
         || bundle.min_java > 255
-        || bundle.profile.id != format!("fabric-loader-{loader}-{mc}")
+        || bundle.profile.id != familia.id_perfil(loader, mc)
         || bundle.profile.inherits_from != mc
         || bundle.profile.main_class.len() > 256
         || !bundle
@@ -827,7 +914,7 @@ fn validar_fabric(bundle: &Fabric, mc: &str, loader: &str) -> Result<(), Error> 
     for (lib, download) in bundle.profile.libraries.iter().zip(&bundle.descargas) {
         let path = ruta_maven(&lib.name)?;
         if !names.insert(lib.name.clone())
-            || lib.url != "https://maven.fabricmc.net/"
+            || !familia.repositorios().contains(&lib.url.as_str())
             || download.path != path
             || download.url != format!("{}{}", lib.url, path)
             || lib.sha1.as_ref().is_some_and(|h| h != &download.sha1)
@@ -838,27 +925,27 @@ fn validar_fabric(bundle: &Fabric, mc: &str, loader: &str) -> Result<(), Error> 
         }
         validar_descarga(download)?;
     }
-    let intermediary_valido = if bundle.sin_intermediary {
-        !names
-            .iter()
-            .any(|name| name.starts_with("net.fabricmc:intermediary:"))
+    let mapeos_validos = if bundle.sin_intermediary {
+        !names.iter().any(|name| familia.es_mapeo(name))
     } else {
-        names.contains(&format!("net.fabricmc:intermediary:{mc}"))
+        familia.mapeos(mc).iter().all(|mapeo| names.contains(mapeo))
     };
-    if !names.contains(&format!("net.fabricmc:fabric-loader:{loader}")) || !intermediary_valido {
+    if !names.contains(&familia.biblioteca(loader)) || !mapeos_validos {
         return Err(Error::Datos);
     }
     Ok(())
 }
-// El API conserva un marcador 0.0.0 para las versiones sin ofuscación.
-// Solo se admite cuando el perfil oficial también omite Intermediary.
-fn validar_detalle_fabric(
-    profile: &PerfilFabric,
+// Fabric conserva un marcador 0.0.0 para las versiones sin ofuscación y Quilt
+// omite `hashed` e `intermediary`. Solo se admite cuando el perfil oficial
+// tampoco incluye esos mapeos.
+fn validar_detalle(
+    familia: Familia,
+    profile: &PerfilCargador,
     detail: &serde_json::Value,
     mc: &str,
     loader: &str,
 ) -> Result<bool, Error> {
-    if profile.id != format!("fabric-loader-{loader}-{mc}")
+    if profile.id != familia.id_perfil(loader, mc)
         || profile.inherits_from != mc
         || detail["loader"]["version"].as_str() != Some(loader)
         || detail["launcherMeta"]["mainClass"]["client"].as_str()
@@ -866,46 +953,56 @@ fn validar_detalle_fabric(
     {
         return Err(Error::Datos);
     }
-    let sin_intermediary = detail["intermediary"]["version"].as_str() == Some("0.0.0")
-        && detail["intermediary"]["maven"].as_str() == Some("net.fabricmc:intermediary:0.0.0");
+    let sin_intermediary = match familia {
+        Familia::Fabric => {
+            detail["intermediary"]["version"].as_str() == Some("0.0.0")
+                && detail["intermediary"]["maven"].as_str()
+                    == Some("net.fabricmc:intermediary:0.0.0")
+        }
+        Familia::Quilt => detail["hashed"].is_null() && detail["intermediary"].is_null(),
+    };
     if sin_intermediary {
-        if profile
-            .libraries
-            .iter()
-            .any(|lib| lib.name.starts_with("net.fabricmc:intermediary:"))
-        {
+        if profile.libraries.iter().any(|lib| familia.es_mapeo(&lib.name)) {
             return Err(Error::Datos);
         }
-    } else if detail["intermediary"]["version"].as_str() != Some(mc)
-        || detail["intermediary"]["maven"].as_str()
-            != Some(format!("net.fabricmc:intermediary:{mc}").as_str())
-    {
-        return Err(Error::Datos);
+    } else {
+        let intermediary = detail["intermediary"]["version"].as_str() == Some(mc)
+            && detail["intermediary"]["maven"].as_str()
+                == Some(format!("net.fabricmc:intermediary:{mc}").as_str());
+        let hashed = familia != Familia::Quilt
+            || (detail["hashed"]["version"].as_str() == Some(mc)
+                && detail["hashed"]["maven"].as_str()
+                    == Some(format!("org.quiltmc:hashed:{mc}").as_str()));
+        if !intermediary || !hashed {
+            return Err(Error::Datos);
+        }
     }
     Ok(sin_intermediary)
 }
-async fn preparar_fabric(
+async fn preparar_cargador(
+    familia: Familia,
     client: &reqwest::Client,
     root: &Path,
     mc: &str,
     loader: &str,
     cancel: &CancellationToken,
-) -> Result<Fabric, Error> {
+) -> Result<Cargador, Error> {
     if !version_minecraft_valida(mc) || !nombre_valido(loader) {
         return Err(Error::Datos);
     }
     let path = root
-        .join("meta/fabric")
+        .join("meta")
+        .join(familia.carpeta())
         .join(mc)
         .join(loader)
         .join("perfil.json");
-    if let Ok(bundle) = leer_json::<Fabric>(root, &path) {
-        if validar_fabric(&bundle, mc, loader).is_ok() {
+    if let Ok(bundle) = leer_json::<Cargador>(root, &path) {
+        if validar_cargador(familia, &bundle, mc, loader).is_ok() {
             return Ok(bundle);
         }
     }
-    let endpoint = format!("https://meta.fabricmc.net/v2/versions/loader/{mc}/{loader}");
-    let profile: PerfilFabric = serde_json::from_slice(
+    let endpoint = format!("{}/{mc}/{loader}", familia.api());
+    let profile: PerfilCargador = serde_json::from_slice(
         &bytes_oficiales(
             client,
             &format!("{endpoint}/profile/json"),
@@ -919,7 +1016,7 @@ async fn preparar_fabric(
         &bytes_oficiales(client, &endpoint, METADATA_LIMIT as usize, cancel).await?,
     )
     .map_err(|_| Error::Datos)?;
-    let sin_intermediary = validar_detalle_fabric(&profile, &detail, mc, loader)?;
+    let sin_intermediary = validar_detalle(familia, &profile, &detail, mc, loader)?;
     let min_java = detail["launcherMeta"]["min_java_version"]
         .as_u64()
         .filter(|n| *n > 0 && *n <= 255)
@@ -930,7 +1027,7 @@ async fn preparar_fabric(
     let mut downloads = vec![];
     for lib in &profile.libraries {
         cancelado(cancel)?;
-        if lib.url != "https://maven.fabricmc.net/" {
+        if !familia.repositorios().contains(&lib.url.as_str()) {
             return Err(Error::Datos);
         }
         let relative = ruta_maven(&lib.name)?;
@@ -972,7 +1069,7 @@ async fn preparar_fabric(
             id: String::new(),
         });
     }
-    let bundle = Fabric {
+    let bundle = Cargador {
         schema: 1,
         sin_intermediary,
         minecraft: mc.into(),
@@ -981,7 +1078,7 @@ async fn preparar_fabric(
         profile,
         descargas: downloads,
     };
-    validar_fabric(&bundle, mc, loader)?;
+    validar_cargador(familia, &bundle, mc, loader)?;
     escribir_json(root, &path, &bundle)?;
     Ok(bundle)
 }
@@ -1072,6 +1169,11 @@ fn migrar_directorio_bloqueado(store: &Almacen, instance: &Instancia) -> Result<
     Ok(target)
 }
 
+/// Loaders que Ícaro sabe instalar y ejecutar con su perfil oficial.
+pub fn loader_instalable(loader: &str) -> bool {
+    matches!(loader, "vanilla" | "forge" | "neoforge") || Familia::de(loader).is_some()
+}
+
 /// Instala o repara todos los archivos necesarios y publica el marcador al final.
 pub async fn instalar(
     store: &Almacen,
@@ -1079,7 +1181,20 @@ pub async fn instalar(
     cancel: CancellationToken,
     progress: impl Fn(Progreso) + Send + Sync,
 ) -> Result<Instalado, Error> {
-    if !matches!(instance.loader.as_str(), "vanilla" | "fabric") {
+    instalar_con_java(store, instance, None, true, cancel, progress).await
+}
+
+/// Los instaladores que ejecutan procesadores respetan la selección y el permiso
+/// de descarga de Java de la instancia, igual que el lanzamiento posterior.
+pub async fn instalar_con_java(
+    store: &Almacen,
+    instance: &Instancia,
+    java_preferida: Option<&Path>,
+    descargar_java: bool,
+    cancel: CancellationToken,
+    progress: impl Fn(Progreso) + Send + Sync,
+) -> Result<Instalado, Error> {
+    if !loader_instalable(&instance.loader) {
         return Err(Error::NoSoportada(
             "el loader de esta instancia aún no se instala".into(),
         ));
@@ -1115,6 +1230,22 @@ pub async fn instalar(
         return Err(Error::Datos);
     }
     let marker_path = private.join(MARKER);
+    // Solo la primera instalación normal añade el mod sugerido. Las reparaciones
+    // y los modpacks conservan el conjunto que eligió el usuario o el autor.
+    let default_fabric_api = instance.loader == "fabric"
+        && !marker_path.exists()
+        && !folder.join("modpack.json").exists();
+    let loader_selected = if instance.loader != "vanilla" {
+        Some(
+            crate::versiones_instancia::leer_loader(store, instance).ok_or_else(|| {
+                Error::NoSoportada(
+                    "selecciona una versión oficial del loader para esta instancia".into(),
+                )
+            })?,
+        )
+    } else {
+        None
+    };
     let mut migrated = Vec::new();
     progress(Progreso {
         etapa: "Comprobando archivos de Minecraft".into(),
@@ -1416,27 +1547,30 @@ pub async fn instalar(
             "Configurando los registros",
         )?);
     }
-    let fabric = if instance.loader == "fabric" {
-        let selected =
-            crate::versiones_instancia::leer_loader(store, instance).ok_or_else(|| {
-                Error::NoSoportada(
-                    "selecciona una versión oficial de Fabric para esta instancia".into(),
-                )
-            })?;
+    let familia = Familia::de(&instance.loader);
+    let fabric = if let Some(familia) = familia {
+        let selected = loader_selected.as_deref().ok_or(Error::Datos)?;
         progress(Progreso {
-            etapa: "Preparando el perfil oficial de Fabric".into(),
+            etapa: format!("Preparando el perfil oficial de {}", familia.nombre()),
             completados: 0,
             total: 0,
         });
-        let bundle =
-            preparar_fabric(&client, &root, &instance.minecraft, &selected, &cancel).await?;
+        let bundle = preparar_cargador(
+            familia,
+            &client,
+            &root,
+            &instance.minecraft,
+            &selected,
+            &cancel,
+        )
+        .await?;
         let mut loader_classpath = Vec::new();
         for download in &bundle.descargas {
             let path = root
                 .join("libraries")
                 .join(&download.sha1)
                 .join(relativa(&download.path)?);
-            files.push(nuevo_archivo(download, path.clone(), "Fabric")?);
+            files.push(nuevo_archivo(download, path.clone(), familia.nombre())?);
             loader_classpath.push(path);
         }
         loader_classpath.extend(classpath);
@@ -1569,6 +1703,57 @@ pub async fn instalar(
         });
     }
     cancelado(&cancel)?;
+    let fallback_java = version
+        .java_version
+        .as_ref()
+        .map(|java| crate::java::Perfil {
+            majors: vec![java.major_version],
+            component: java.component.clone(),
+            prism: false,
+        })
+        .unwrap_or(crate::java::Perfil {
+            majors: vec![8],
+            component: "jre-legacy".into(),
+            prism: false,
+        });
+    let mut forge_java = None;
+    let forge = if matches!(instance.loader.as_str(), "forge" | "neoforge") {
+        let runtime_profile = crate::java::perfil_minecraft(&version.id, fallback_java, &cancel)
+            .await
+            .map_err(|e| match e {
+                crate::java::Error::Cancelada => Error::Cancelada,
+                _ => Error::Datos,
+            })?;
+        let vanilla_jar = root
+            .join("meta/minecraft/clients")
+            .join(&version.downloads.get("client").ok_or(Error::Datos)?.sha1)
+            .join("client.jar");
+        let bundle = forge::preparar(
+            &client,
+            &root,
+            instance,
+            loader_selected.as_deref().ok_or(Error::Datos)?,
+            &version_path,
+            &vanilla_jar,
+            &runtime_profile,
+            (java_preferida, descargar_java),
+            &cancel,
+            &progress,
+        )
+        .await?;
+        bundle.combinar(
+            &version.libraries,
+            &mut classpath,
+            &mut jvm,
+            &mut game_arguments,
+            os,
+            &os_version,
+        )?;
+        forge_java = Some(runtime_profile);
+        Some(bundle)
+    } else {
+        None
+    };
     progress(Progreso {
         etapa: "Preparando componentes nativos".into(),
         completados: completed,
@@ -1641,14 +1826,11 @@ pub async fn instalar(
     };
     let cached = leer_json::<Marcador>(&root, &marker_path)
         .ok()
-        .filter(|m| {
-            m.loader == instance.loader
-                && m.loader_version == fabric.as_ref().map(|b| b.loader.clone())
-        })
+        .filter(|m| m.loader == instance.loader && m.loader_version == loader_selected)
         .filter(|m| m.instalado.version == version.id)
         .and_then(|m| m.instalado.java_perfil)
         .filter(|p| p.prism && p.validar().is_ok());
-    let mut java_perfil = if let Some(perfil) = cached {
+    let mut java_perfil = if let Some(perfil) = forge_java.or(cached) {
         perfil
     } else {
         crate::java::perfil_minecraft(&version.id, fallback, &cancel)
@@ -1658,11 +1840,12 @@ pub async fn instalar(
                 _ => Error::Datos,
             })?
     };
-    if let Some(bundle) = &fabric {
+    if let (Some(bundle), Some(familia)) = (&fabric, familia) {
         java_perfil.majors.retain(|major| *major >= bundle.min_java);
         java_perfil.validar().map_err(|_| {
             Error::NoSoportada(format!(
-                "Fabric necesita Java {} o superior y el perfil de Minecraft no lo admite",
+                "{} necesita Java {} o superior y el perfil de Minecraft no lo admite",
+                familia.nombre(),
                 bundle.min_java
             ))
         })?;
@@ -1672,10 +1855,15 @@ pub async fn instalar(
     let installed = Instalado {
         quick_play_multiplayer: Some(quick_play),
         version: version.id,
-        perfil_id: fabric.as_ref().map(|b| b.profile.id.clone()),
-        main_class: fabric
+        perfil_id: forge
             .as_ref()
-            .map_or(version.main_class, |b| b.profile.main_class.clone()),
+            .map(|b| b.perfil.id.clone())
+            .or_else(|| fabric.as_ref().map(|b| b.profile.id.clone())),
+        main_class: forge
+            .as_ref()
+            .map(|b| b.perfil.main_class.clone())
+            .or_else(|| fabric.as_ref().map(|b| b.profile.main_class.clone()))
+            .unwrap_or(version.main_class),
         classpath,
         natives,
         assets,
@@ -1687,11 +1875,28 @@ pub async fn instalar(
         jvm_arguments: jvm,
     };
     cancelado(&cancel)?;
+    if default_fabric_api {
+        crate::mods::fabric_api::instalar_por_defecto(store, instance, cancel.clone(), |text| {
+            progress(Progreso {
+                etapa: text.into(),
+                completados: 0,
+                total: 0,
+            })
+        })
+        .await
+        .map_err(|e| {
+            if cancel.is_cancelled() {
+                Error::Cancelada
+            } else {
+                Error::FabricApi(e)
+            }
+        })?;
+    }
+    cancelado(&cancel)?;
     let current = store.leer(&instance.id).map_err(|_| Error::Disco)?;
     if current.minecraft != instance.minecraft
         || current.loader != instance.loader
-        || crate::versiones_instancia::leer_loader(store, &current)
-            != fabric.as_ref().map(|b| b.loader.clone())
+        || crate::versiones_instancia::leer_loader(store, &current) != loader_selected
     {
         return Err(Error::Datos);
     }
@@ -1700,7 +1905,7 @@ pub async fn instalar(
         &marker_path,
         &Marcador {
             loader: instance.loader.clone(),
-            loader_version: fabric.as_ref().map(|b| b.loader.clone()),
+            loader_version: loader_selected,
             schema: 2,
             sistema: format!("{os}-x86_64"),
             instalado: installed.clone(),
@@ -1875,7 +2080,7 @@ fn materializar(
 /// Consulta rápida para las tarjetas; antes de lanzar `instalar` comprueba SHA-1.
 pub fn listo(store: &Almacen, instance: &Instancia) -> bool {
     if !crate::modpacks::completo(store,instance){return false;}
-    if !matches!(instance.loader.as_str(), "vanilla" | "fabric") {
+    if !loader_instalable(&instance.loader) {
         return false;
     }
     let Ok(folder) = store.carpeta(&instance.id).and_then(|path| {
@@ -1905,7 +2110,7 @@ pub fn listo(store: &Almacen, instance: &Instancia) -> bool {
         let allowed = if marker.schema == 1 {
             file.ruta.starts_with(&root)
         } else {
-            ["assets", "libraries", "meta/minecraft", "meta/fabric"]
+            ["assets", "libraries", "meta/minecraft", "meta/fabric", "meta/quilt"]
                 .iter()
                 .any(|p| file.ruta.starts_with(shared.join(p)))
         };
@@ -1919,6 +2124,11 @@ pub fn listo(store: &Almacen, instance: &Instancia) -> bool {
             && fs::symlink_metadata(&file.ruta).is_ok_and(|meta| {
                 meta.is_file() && !enlace(&meta) && meta.len() == file.descarga.size
             })
+    }) && marker.instalado.classpath.iter().all(|path| {
+        let base = if marker.schema == 1 { &root } else { &shared };
+        segura(base, path, false).is_ok()
+            && fs::symlink_metadata(path)
+                .is_ok_and(|meta| meta.is_file() && !enlace(&meta) && meta.len() > 0)
     }) && segura(&root, &marker.instalado.natives, false).is_ok()
         && marker.instalado.natives.is_dir()
         && marker.nativos.iter().all(|(path, size, _)| {
@@ -2061,7 +2271,7 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
-    fn fixture_fabric(root: &Path, mc: &str, loader: &str) -> Fabric {
+    fn fixture_fabric(root: &Path, mc: &str, loader: &str) -> Cargador {
         let names = [
             format!("net.fabricmc:fabric-loader:{loader}"),
             format!("net.fabricmc:intermediary:{mc}"),
@@ -2082,14 +2292,14 @@ mod tests {
                 path,
                 id: String::new(),
             });
-            libraries.push(LibreriaFabric {
+            libraries.push(LibreriaCargador {
                 name,
                 url: "https://maven.fabricmc.net/".into(),
                 sha1: None,
                 size: None,
             });
         }
-        Fabric{schema:1,sin_intermediary:false,minecraft:mc.into(),loader:loader.into(),min_java:8,profile:PerfilFabric{
+        Cargador{schema:1,sin_intermediary:false,minecraft:mc.into(),loader:loader.into(),min_java:8,profile:PerfilCargador{
             id:format!("fabric-loader-{loader}-{mc}"),inherits_from:mc.into(),main_class:"net.fabricmc.loader.impl.launch.knot.KnotClient".into(),
             arguments:serde_json::from_value(serde_json::json!({"jvm":["-DFabricMcEmu= net.minecraft.client.main.Main "],"game":[]})).unwrap(),libraries},descargas}
     }
@@ -2171,11 +2381,11 @@ mod tests {
     fn fabric_rechaza_perfiles_cruzados_y_rutas_maven_invalidas() {
         let root = temp();
         let mut bundle = fixture_fabric(&root, "1.21.1", "0.16.14");
-        assert!(validar_fabric(&bundle, "1.21.1", "0.16.14").is_ok());
-        assert!(validar_fabric(&bundle, "1.21.4", "0.16.14").is_err());
-        assert!(validar_fabric(&bundle, "1.21.1", "0.16.13").is_err());
+        assert!(validar_cargador(Familia::Fabric, &bundle, "1.21.1", "0.16.14").is_ok());
+        assert!(validar_cargador(Familia::Fabric, &bundle, "1.21.4", "0.16.14").is_err());
+        assert!(validar_cargador(Familia::Fabric, &bundle, "1.21.1", "0.16.13").is_err());
         bundle.descargas[0].url = "https://example.com/malware.jar".into();
-        assert!(validar_fabric(&bundle, "1.21.1", "0.16.14").is_err());
+        assert!(validar_cargador(Familia::Fabric, &bundle, "1.21.1", "0.16.14").is_err());
         for name in [
             "net.fabricmc:../../escape:1",
             "net..fabricmc:loader:1",
@@ -2207,22 +2417,196 @@ mod tests {
         bundle.descargas.pop();
         let mut detail = serde_json::json!({"loader":{"version":"0.19.5"},"intermediary":{"version":"0.0.0","maven":"net.fabricmc:intermediary:0.0.0"},"launcherMeta":{"mainClass":{"client":bundle.profile.main_class}}});
         bundle.sin_intermediary =
-            validar_detalle_fabric(&bundle.profile, &detail, "26.3", "0.19.5").unwrap();
+            validar_detalle(Familia::Fabric, &bundle.profile, &detail, "26.3", "0.19.5").unwrap();
         assert!(bundle.sin_intermediary);
-        assert!(validar_fabric(&bundle, "26.3", "0.19.5").is_ok());
+        assert!(validar_cargador(Familia::Fabric, &bundle, "26.3", "0.19.5").is_ok());
         bundle.sin_intermediary = false;
-        assert!(validar_fabric(&bundle, "26.3", "0.19.5").is_err());
+        assert!(validar_cargador(Familia::Fabric, &bundle, "26.3", "0.19.5").is_err());
         detail["intermediary"]["version"] = serde_json::json!("1.21.1");
-        assert!(validar_detalle_fabric(&bundle.profile, &detail, "26.3", "0.19.5").is_err());
+        assert!(validar_detalle(Familia::Fabric, &bundle.profile, &detail, "26.3", "0.19.5").is_err());
         let old = fixture_fabric(&root, "1.21.1", "0.16.14");
         detail["loader"]["version"] = serde_json::json!("0.16.14");
         detail["intermediary"] =
             serde_json::json!({"version":"1.21.1","maven":"net.fabricmc:intermediary:1.21.1"});
-        assert!(!validar_detalle_fabric(&old.profile, &detail, "1.21.1", "0.16.14").unwrap());
+        assert!(!validar_detalle(Familia::Fabric, &old.profile, &detail, "1.21.1", "0.16.14").unwrap());
         detail["intermediary"] =
             serde_json::json!({"version":"0.0.0","maven":"net.fabricmc:intermediary:0.0.0"});
-        assert!(validar_detalle_fabric(&old.profile, &detail, "1.21.1", "0.16.14").is_err());
+        assert!(validar_detalle(Familia::Fabric, &old.profile, &detail, "1.21.1", "0.16.14").is_err());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    fn fixture_quilt(root: &Path, mc: &str, loader: &str, sin_mapeos: bool) -> Cargador {
+        let fabric = "https://maven.fabricmc.net/";
+        let quilt = "https://maven.quiltmc.org/repository/release/";
+        let mut nombres = vec![
+            (format!("org.quiltmc:quilt-loader:{loader}"), quilt),
+            ("net.fabricmc:sponge-mixin:0.17.3+mixin.0.8.7".to_owned(), fabric),
+        ];
+        if !sin_mapeos {
+            nombres.push((format!("org.quiltmc:hashed:{mc}"), quilt));
+            nombres.push((format!("net.fabricmc:intermediary:{mc}"), fabric));
+        }
+        let mut libraries = vec![];
+        let mut descargas = vec![];
+        for (name, repositorio) in nombres {
+            let bytes = name.as_bytes();
+            let hash = crate::manifest::sha1_hex(bytes);
+            let path = ruta_maven(&name).unwrap();
+            let local = root.join("libraries").join(&hash).join(&path);
+            fs::create_dir_all(local.parent().unwrap()).unwrap();
+            fs::write(local, bytes).unwrap();
+            descargas.push(Descarga {
+                url: format!("{repositorio}{path}"),
+                sha1: hash,
+                size: bytes.len() as u64,
+                path,
+                id: String::new(),
+            });
+            libraries.push(LibreriaCargador {
+                name,
+                url: repositorio.into(),
+                sha1: None,
+                size: None,
+            });
+        }
+        Cargador {
+            schema: 1,
+            sin_intermediary: sin_mapeos,
+            minecraft: mc.into(),
+            loader: loader.into(),
+            min_java: 8,
+            profile: PerfilCargador {
+                id: format!("quilt-loader-{loader}-{mc}"),
+                inherits_from: mc.into(),
+                main_class: "org.quiltmc.loader.impl.launch.knot.KnotClient".into(),
+                arguments: serde_json::from_value(serde_json::json!({"jvm":["-DQuiltEmu=1"],"game":[]})).unwrap(),
+                libraries,
+            },
+            descargas,
+        }
+    }
+    #[tokio::test]
+    async fn quilt_instala_perfil_fijado_y_reutiliza_componentes_sin_red() {
+        let root = temp();
+        let store = Almacen::nuevo(root.join("instances"));
+        let mut instance = store.crear("Quilt", "fixture", 0).unwrap();
+        instance.loader = "quilt".into();
+        store.guardar(&instance).unwrap();
+        crate::versiones_instancia::guardar_loader(&store, &instance, "0.30.1").unwrap();
+        let private = fixture_legacy(&store, &instance);
+        let mut marker: serde_json::Value = leer_json(&private, &private.join(MARKER)).unwrap();
+        marker["loader"] = serde_json::json!("quilt");
+        marker["loader_version"] = serde_json::json!("0.30.1");
+        escribir_json(&private, &private.join(MARKER), &marker).unwrap();
+        let bundle = fixture_quilt(&root, "fixture", "0.30.1", false);
+        let perfil = root.join("meta/quilt/fixture/0.30.1/perfil.json");
+        escribir_json(&root, &perfil, &bundle).unwrap();
+        for _ in 0..2 {
+            let installed = instalar(&store, &instance, CancellationToken::new(), |p| {
+                assert!(!p.etapa.starts_with("Descargando"))
+            })
+            .await
+            .unwrap();
+            assert!(listo(&store, &instance));
+            assert_eq!(installed.main_class, "org.quiltmc.loader.impl.launch.knot.KnotClient");
+            assert_eq!(installed.perfil_id.as_deref(), Some("quilt-loader-0.30.1-fixture"));
+            assert!(installed.classpath[0].ends_with("quilt-loader-0.30.1.jar"));
+            assert!(installed.jvm_arguments.contains(&"-DQuiltEmu=1".into()));
+        }
+        // Un perfil de Fabric no sirve para una instancia Quilt y no cambia el marcador.
+        let antes = fs::read(private.join(MARKER)).unwrap();
+        let fabric = fixture_fabric(&root, "fixture", "0.30.1");
+        escribir_json(&root, &perfil, &fabric).unwrap();
+        assert!(validar_cargador(Familia::Quilt, &fabric, "fixture", "0.30.1").is_err());
+        let cancel = CancellationToken::new();
+        let observador = cancel.clone();
+        escribir_json(&root, &perfil, &bundle).unwrap();
+        assert!(matches!(
+            instalar(&store, &instance, cancel, |p| {
+                if p.etapa == "Preparando el perfil oficial de Quilt" {
+                    observador.cancel();
+                }
+            })
+            .await,
+            Err(Error::Cancelada)
+        ));
+        assert_eq!(fs::read(private.join(MARKER)).unwrap(), antes);
+        crate::versiones_instancia::guardar_loader(&store, &instance, "0.30.0").unwrap();
+        assert!(!listo(&store, &instance));
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn quilt_exige_sus_repositorios_y_mapeos() {
+        let root = temp();
+        let bundle = fixture_quilt(&root, "1.21.4", "0.30.1", false);
+        assert!(validar_cargador(Familia::Quilt, &bundle, "1.21.4", "0.30.1").is_ok());
+        assert!(validar_cargador(Familia::Quilt, &bundle, "1.21.1", "0.30.1").is_err());
+        assert!(validar_cargador(Familia::Quilt, &bundle, "1.21.4", "0.30.0").is_err());
+        // Los repositorios de Quilt no valen para Fabric ni al revés.
+        assert!(validar_cargador(Familia::Fabric, &bundle, "1.21.4", "0.30.1").is_err());
+        let mut sin_hashed = fixture_quilt(&root, "1.21.4", "0.30.1", false);
+        let n = sin_hashed
+            .profile
+            .libraries
+            .iter()
+            .position(|l| l.name.starts_with("org.quiltmc:hashed:"))
+            .unwrap();
+        sin_hashed.profile.libraries.remove(n);
+        sin_hashed.descargas.remove(n);
+        assert!(validar_cargador(Familia::Quilt, &sin_hashed, "1.21.4", "0.30.1").is_err());
+        let mut ajeno = fixture_quilt(&root, "1.21.4", "0.30.1", false);
+        ajeno.profile.libraries[0].url = "https://maven.example.com/".into();
+        ajeno.descargas[0].url = format!("https://maven.example.com/{}", ajeno.descargas[0].path);
+        assert!(validar_cargador(Familia::Quilt, &ajeno, "1.21.4", "0.30.1").is_err());
+        let mut cruzado = fixture_quilt(&root, "1.21.4", "0.30.1", false);
+        cruzado.profile.id = "fabric-loader-0.30.1-1.21.4".into();
+        assert!(validar_cargador(Familia::Quilt, &cruzado, "1.21.4", "0.30.1").is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn quilt_sin_ofuscacion_omite_los_mapeos_solo_con_metadatos_coherentes() {
+        let root = temp();
+        let bundle = fixture_quilt(&root, "26.3", "0.30.1", true);
+        let detalle = |hashed: serde_json::Value, intermediary: serde_json::Value| serde_json::json!({
+            "loader":{"version":"0.30.1"},"hashed":hashed,"intermediary":intermediary,
+            "launcherMeta":{"mainClass":{"client":bundle.profile.main_class}}});
+        let nulo = serde_json::Value::Null;
+        assert!(validar_detalle(Familia::Quilt, &bundle.profile, &detalle(nulo.clone(), nulo.clone()), "26.3", "0.30.1").unwrap());
+        assert!(validar_cargador(Familia::Quilt, &bundle, "26.3", "0.30.1").is_ok());
+        // Declarar sin ofuscación pero exigir mapeos, o al revés, se rechaza.
+        let mut contradictorio = fixture_quilt(&root, "26.3", "0.30.1", true);
+        contradictorio.sin_intermediary = false;
+        assert!(validar_cargador(Familia::Quilt, &contradictorio, "26.3", "0.30.1").is_err());
+        let con_mapeos = fixture_quilt(&root, "1.21.4", "0.30.1", false);
+        let hashed = serde_json::json!({"version":"1.21.4","maven":"org.quiltmc:hashed:1.21.4"});
+        let intermediary = serde_json::json!({"version":"1.21.4","maven":"net.fabricmc:intermediary:1.21.4"});
+        assert!(!validar_detalle(Familia::Quilt, &con_mapeos.profile, &detalle(hashed.clone(), intermediary.clone()), "1.21.4", "0.30.1").unwrap());
+        // Un solo mapeo en los metadatos, o uno de otra versión, no es coherente.
+        assert!(validar_detalle(Familia::Quilt, &con_mapeos.profile, &detalle(nulo.clone(), intermediary.clone()), "1.21.4", "0.30.1").is_err());
+        assert!(validar_detalle(Familia::Quilt, &con_mapeos.profile, &detalle(hashed, serde_json::json!({"version":"1.21.1","maven":"net.fabricmc:intermediary:1.21.1"})), "1.21.4", "0.30.1").is_err());
+        // Declarar que no hay mapeos cuando el perfil los trae también se rechaza.
+        assert!(validar_detalle(Familia::Quilt, &con_mapeos.profile, &detalle(nulo.clone(), nulo), "1.21.4", "0.30.1").is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[tokio::test]
+    #[ignore = "Consulta la API oficial de Quilt y verifica los perfiles de versiones ofuscadas y sin ofuscar; no descarga el juego"]
+    async fn quilt_oficial_se_prepara_y_se_reutiliza_sin_red() {
+        let client = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(Duration::from_secs(90)).build().unwrap();
+        let cancel = CancellationToken::new();
+        let juegos: Vec<serde_json::Value> = serde_json::from_slice(&bytes_oficiales(&client, "https://meta.quiltmc.org/v3/versions/game", METADATA_LIMIT as usize, &cancel).await.unwrap()).unwrap();
+        let estable = juegos.iter().find(|g| g["stable"] == true).unwrap()["version"].as_str().unwrap().to_owned();
+        let loaders: Vec<serde_json::Value> = serde_json::from_slice(&bytes_oficiales(&client, "https://meta.quiltmc.org/v3/versions/loader", METADATA_LIMIT as usize, &cancel).await.unwrap()).unwrap();
+        let loader = loaders.iter().find(|l| !l["version"].as_str().unwrap().contains('-')).unwrap()["version"].as_str().unwrap().to_owned();
+        let raiz = temp();
+        for mc in ["1.21.4", estable.as_str()] {
+            let bundle = preparar_cargador(Familia::Quilt, &client, &raiz, mc, &loader, &cancel).await.unwrap();
+            assert!(bundle.profile.libraries.iter().any(|l| l.name == format!("org.quiltmc:quilt-loader:{loader}")));
+            println!("{mc}: {} bibliotecas, sin mapeos: {}", bundle.descargas.len(), bundle.sin_intermediary);
+            let sin_red = reqwest::Client::builder().proxy(reqwest::Proxy::all("http://127.0.0.1:9").unwrap()).build().unwrap();
+            let guardado = preparar_cargador(Familia::Quilt, &sin_red, &raiz, mc, &loader, &cancel).await.unwrap();
+            assert_eq!(guardado.descargas.len(), bundle.descargas.len());
+        }
+        fs::remove_dir_all(raiz).unwrap();
     }
 
     #[tokio::test]
@@ -2240,9 +2624,9 @@ mod tests {
             let client=client.clone();let cancel=cancel.clone();let loader=loader.clone();
             jobs.spawn(async move {
                 let endpoint=format!("https://meta.fabricmc.net/v2/versions/loader/{mc}/{loader}");
-                let profile:PerfilFabric=serde_json::from_slice(&bytes_oficiales(&client,&format!("{endpoint}/profile/json"),METADATA_LIMIT as usize,&cancel).await.unwrap_or_else(|e|panic!("{mc}: {e}"))).unwrap();
+                let profile:PerfilCargador=serde_json::from_slice(&bytes_oficiales(&client,&format!("{endpoint}/profile/json"),METADATA_LIMIT as usize,&cancel).await.unwrap_or_else(|e|panic!("{mc}: {e}"))).unwrap();
                 let detail:serde_json::Value=serde_json::from_slice(&bytes_oficiales(&client,&endpoint,METADATA_LIMIT as usize,&cancel).await.unwrap()).unwrap();
-                let no_intermediary=validar_detalle_fabric(&profile,&detail,&mc,&loader).unwrap_or_else(|e|panic!("{mc}: {e}"));
+                let no_intermediary=validar_detalle(Familia::Fabric, &profile,&detail,&mc,&loader).unwrap_or_else(|e|panic!("{mc}: {e}"));
                 let min=detail["launcherMeta"]["min_java_version"].as_u64().unwrap();assert!((1..=255).contains(&min),"{mc}");
                 let mut names=BTreeSet::new();
                 for lib in &profile.libraries {
@@ -2271,7 +2655,7 @@ mod tests {
             .timeout(Duration::from_secs(90))
             .build()
             .unwrap();
-        let bundle = preparar_fabric(&client, &root, "1.21.1", "0.16.14", &cancel)
+        let bundle = preparar_cargador(Familia::Fabric, &client, &root, "1.21.1", "0.16.14", &cancel)
             .await
             .unwrap();
         for download in &bundle.descargas {
@@ -2297,7 +2681,7 @@ mod tests {
             .timeout(Duration::from_millis(100))
             .build()
             .unwrap();
-        let cached = preparar_fabric(&offline, &root, "1.21.1", "0.16.14", &cancel)
+        let cached = preparar_cargador(Familia::Fabric, &offline, &root, "1.21.1", "0.16.14", &cancel)
             .await
             .unwrap();
         assert_eq!(cached.profile.id, bundle.profile.id);
@@ -2623,6 +3007,56 @@ mod tests {
         assert!(zip
             .by_name("net/fabricmc/loader/impl/launch/knot/KnotClient.class")
             .is_ok());
+    }
+
+    #[test]
+    fn el_perfil_de_quilt_sin_argumentos_jvm_se_lee() {
+        let perfil: PerfilCargador = serde_json::from_str(r#"{"id":"quilt-loader-0.30.1-1.21.4","inheritsFrom":"1.21.4","type":"release","mainClass":"org.quiltmc.loader.impl.launch.knot.KnotClient","arguments":{"game":[]},"libraries":[{"name":"org.quiltmc:quilt-loader:0.30.1","url":"https://maven.quiltmc.org/repository/release/"}]}"#).unwrap();
+        assert!(perfil.arguments.jvm.is_empty() && perfil.arguments.game.is_empty());
+        assert_eq!(perfil.libraries.len(), 1);
+    }
+
+    #[tokio::test]
+    #[ignore = "Instala Quilt y Minecraft completos en una carpeta temporal, sin cuentas ni arranque"]
+    async fn instala_quilt_real_y_reutiliza_sin_descargas() {
+        struct Limpieza(PathBuf);
+        impl Drop for Limpieza {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+        let root = Limpieza(temp());
+        let store = Almacen::nuevo(root.0.join("instances"));
+        let mut instance = store.crear("Quilt aislada", "1.21.1", 0).unwrap();
+        instance.loader = "quilt".into();
+        store.guardar(&instance).unwrap();
+        crate::versiones_instancia::guardar_loader(&store, &instance, "0.30.1").unwrap();
+        let first = instalar(&store, &instance, CancellationToken::new(), |_| {})
+            .await
+            .unwrap();
+        assert!(listo(&store, &instance));
+        assert_eq!(first.perfil_id.as_deref(), Some("quilt-loader-0.30.1-1.21.1"));
+        assert_eq!(first.main_class, "org.quiltmc.loader.impl.launch.knot.KnotClient");
+        assert_eq!(first.java_major, 21);
+        assert!(first.natives.is_dir());
+        let second = instalar(&store, &instance, CancellationToken::new(), |p| {
+            assert!(!p.etapa.starts_with("Descargando"))
+        })
+        .await
+        .unwrap();
+        assert_eq!(first.classpath, second.classpath);
+        let loader = first
+            .classpath
+            .iter()
+            .find(|p| p.ends_with("quilt-loader-0.30.1.jar"))
+            .unwrap();
+        let mut zip = zip::ZipArchive::new(File::open(loader).unwrap()).unwrap();
+        assert!(zip
+            .by_name("org/quiltmc/loader/impl/launch/knot/KnotClient.class")
+            .is_ok());
+        for mapeo in ["hashed-1.21.1.jar", "intermediary-1.21.1.jar"] {
+            assert!(first.classpath.iter().any(|p| p.ends_with(mapeo)), "{mapeo}");
+        }
     }
 
     #[tokio::test]

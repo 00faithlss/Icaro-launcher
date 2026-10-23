@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0] - 2026-10-22
+
+- Quilt se instala y se ejecuta con su perfil oficial, igual que Fabric: crear instancia, Jugar, Cambiar versión y Cambiar versión del loader. El perfil y las bibliotecas se descargan solo de `meta.quiltmc.org`, `maven.quiltmc.org` y `maven.fabricmc.net`, con SHA-1 y tamaño comprobados, y se guardan en `meta/quilt/<minecraft>/<loader>`. Admite las versiones ofuscadas (con los mapeos `hashed` e `intermediary`) y las que Quilt publica sin ofuscar, como 26.3. El selector de versiones del loader ordena las estables antes que las betas, así que lo primero que se ofrece es una estable.
+- Publicación por canales. `develop` publica cada cambio como beta (`v<versión>-beta.<compilación>`, prerelease) y `main` publica la estable (`v<versión>-build.<compilación>`) y crea su tag fuente `v<versión>`. Las ramas `vX.Y.x` y los tags ya no publican. `main` exige una versión de Cargo mayor que la última estable, y `develop` una versión mayor que esa estable para sus betas. Los cambios que solo tocan documentación no compilan.
+- Ajustes → Acerca de añade el canal de actualizaciones Estable/Beta, guardado en la configuración. El canal Estable nunca ofrece una beta; el Beta ofrece la release más nueva entre betas y estables. Una compilación beta se identifica en Acerca de y en la pantalla de actualización. Los launchers anteriores ignoran las prereleases.
+- Capturas ya no congela la interfaz al abrirse. La cuadrícula usa miniaturas de 480 × 270 generadas en segundo plano (hasta cuatro a la vez, de la más reciente a la más antigua), que aparecen a medida que están listas; antes cada PNG se decodificaba y se subía a la GPU a resolución completa en el primer cuadro. El visor sigue abriendo el original sin recodificar, y un PNG dañado deja su hueco vacío sin afectar al resto.
+
+- Añade instalación y preparación de Forge y NeoForge con sus instaladores oficiales, respetando la versión elegida y la configuración de Java.
+- Los MRPACK y ZIP reconocen Forge y NeoForge y conservan la versión del loader indicada por el paquete.
+- Instala Fabric API compatible por defecto al preparar una nueva instancia Fabric. Conserva copias locales o desactivadas y el contenido de modpacks; no vuelve a añadirlo si lo retiras después.
+- Corrige la apertura del inicio de sesión en Windows para utilizar cualquier navegador configurado como predeterminado del sistema.
+- Prepara Forge y NeoForge en una carpeta aparte y reutiliza sus archivos verificados, conservando la instalación anterior si el nuevo intento falla.
+
+Consulta las [notas de 0.3.0](docs/releases/0.3.0.md) y el [alcance y validación](docs/loaders-forge-neoforge.md). Quedan pendientes la validación manual del inicio de sesión con distintos navegadores, las partidas reales con mods, las migraciones y el recorrido nativo en Linux. No se admiten todos los formatos históricos de Forge.
+
 ## [0.2.5] - 2026-10-16
 
 - Sustituye Invitado por cuentas sin conexión con nombre propio, UUID estable, guardado, selección y eliminación desde el componente CuentaSinConexion entregado. Conserva sus iconos, cabeza rayada, temas y confirmación en fila; eliminar un perfil no toca mundos ni instancias.

@@ -12,7 +12,18 @@ use iced::widget::image::Handle;
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicUsize, Ordering},
+    time::SystemTime,
 };
+
+/// Lado mayor de las miniaturas de la cuadrícula. Basta para las columnas
+/// más anchas sin ocupar en memoria lo que ocupa el original.
+const MINIATURA: (u32, u32) = (480, 270);
+/// Decodificaciones simultáneas: cada PNG grande ocupa decenas de MB.
+const HILOS_MINIATURAS: usize = 4;
+
+/// Identifica una versión concreta del original: ruta, tamaño y fecha.
+pub type Clave = (PathBuf, u64, Option<SystemTime>);
 
 fn enlace(m: &fs::Metadata) -> bool {
     #[cfg(windows)]
@@ -112,6 +123,7 @@ pub fn listar(store: &Almacen, instancias: &[Instancia]) -> Result<Vec<Captura>,
                 imagen: Lamina::Umbral,
                 original: Some(OriginalCaptura {
                     imagen: Handle::from_path(&ruta),
+                    miniatura: None,
                     ruta,
                     instancia_id: instancia.id.clone(),
                     modificada: m.modified().ok(),
@@ -130,9 +142,7 @@ pub fn listar(store: &Almacen, instancias: &[Instancia]) -> Result<Vec<Captura>,
     Ok(capturas)
 }
 
-/// Copia la imagen, no el nombre del archivo, al portapapeles de Windows.
-#[cfg(windows)]
-pub fn copiar(path: &Path) -> Result<(), String> {
+fn decodificar(path: &Path) -> Result<image::DynamicImage, String> {
     original_valido(path)?;
     let mut reader = image::io::Reader::open(path)
         .map_err(|_| "No se pudo abrir la captura.")?
@@ -143,10 +153,49 @@ pub fn copiar(path: &Path) -> Result<(), String> {
     limits.max_image_height = Some(16_384);
     limits.max_alloc = Some(256 * 1024 * 1024);
     reader.limits(limits);
-    let image = reader
+    reader
         .decode()
-        .map_err(|_| "No se pudo leer la imagen de la captura.")?
+        .map_err(|_| "No se pudo leer la imagen de la captura.".into())
+}
+
+/// Miniatura RGBA del original, sin modificar el archivo.
+pub fn miniatura(path: &Path) -> Result<Handle, String> {
+    let reducida = decodificar(path)?
+        .thumbnail(MINIATURA.0, MINIATURA.1)
         .into_rgba8();
+    let (ancho, alto) = reducida.dimensions();
+    Ok(Handle::from_rgba(ancho, alto, reducida.into_raw()))
+}
+
+/// Genera las miniaturas en orden con concurrencia acotada y entrega cada
+/// una en cuanto está lista. Se detiene si nadie espera los resultados.
+pub fn miniaturas(
+    claves: Vec<Clave>,
+    salida: tokio::sync::mpsc::Sender<(Clave, Result<Handle, String>)>,
+) {
+    let siguiente = AtomicUsize::new(0);
+    let hilos = std::thread::available_parallelism()
+        .map_or(1, |n| n.get())
+        .clamp(1, HILOS_MINIATURAS)
+        .min(claves.len());
+    std::thread::scope(|s| {
+        for _ in 0..hilos {
+            s.spawn(|| {
+                while let Some(clave) = claves.get(siguiente.fetch_add(1, Ordering::Relaxed)) {
+                    let resultado = miniatura(&clave.0);
+                    if salida.blocking_send((clave.clone(), resultado)).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+    });
+}
+
+/// Copia la imagen, no el nombre del archivo, al portapapeles de Windows.
+#[cfg(windows)]
+pub fn copiar(path: &Path) -> Result<(), String> {
+    let image = decodificar(path)?.into_rgba8();
     let (ancho, alto) = image.dimensions();
     let longitud = (ancho as usize)
         .checked_mul(alto as usize)
@@ -294,7 +343,31 @@ mod tests {
         assert_eq!(original.instancia_id, a.id);
         assert_eq!(image::image_dimensions(&ruta).unwrap(), (1920, 1080));
         original_valido(&ruta).unwrap();
+        assert!(original.miniatura.is_none());
         assert!(original_valido(&folder.join("anidada")).is_err());
+
+        // Las miniaturas se reducen sin tocar el original y un PNG dañado
+        // solo produce un error para esa captura.
+        let danada = folder.join("danada.png");
+        fs::write(&danada, "no es un png").unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
+        miniaturas(
+            vec![(ruta.clone(), 0, None), (danada.clone(), 0, None)],
+            tx,
+        );
+        let mut resultados = Vec::new();
+        while let Ok(r) = rx.try_recv() {
+            resultados.push(r);
+        }
+        resultados.sort_by(|a, b| a.0.0.cmp(&b.0.0));
+        assert_eq!(resultados.len(), 2);
+        assert!(resultados[0].1.is_ok() && resultados[0].0.0 == ruta);
+        assert!(resultados[1].1.is_err());
+        match resultados[0].1.as_ref().unwrap() {
+            Handle::Rgba { width, height, .. } => assert_eq!((*width, *height), (480, 270)),
+            otro => panic!("miniatura inesperada: {otro:?}"),
+        }
+        assert_eq!(image::image_dimensions(&ruta).unwrap(), (1920, 1080));
         fs::remove_dir_all(&raiz).unwrap();
     }
 

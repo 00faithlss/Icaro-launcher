@@ -90,7 +90,7 @@ Validación: 110 pruebas del núcleo, 55 de la biblioteca de interfaz y 35 del l
 
 La validación incluye perfiles explícitos con varias versiones, runtime administrado sin consultar candidatos locales, ruta manual compatible, búsqueda acotada de runtimes oficiales, argumentos con espacios, límites de memoria y fallo de JVM. Se ejecutaron también una prueba con el Java 25 ya guardado en Ícaro y la consulta real del perfil Prism de Minecraft 1.17.1, sin descargar nuevos runtimes ni usar cuentas.
 
-Fabric integra el mínimo de Java de su perfil oficial. Los requisitos de Quilt, Forge y NeoForge dependen de sus instaladores pendientes. Faltan el recorrido nativo en Arch y el lanzamiento completo del juego con los nuevos modos.
+Fabric y Quilt integran el mínimo de Java de su perfil oficial. Los requisitos de Forge y NeoForge dependen de sus instaladores pendientes. Faltan el recorrido nativo en Arch y el lanzamiento completo del juego con los nuevos modos.
 
 ## Almacenamiento compartido de Vanilla (13-10-2026)
 

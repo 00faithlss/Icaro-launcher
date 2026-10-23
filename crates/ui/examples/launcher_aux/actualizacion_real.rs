@@ -3,7 +3,7 @@
 
 //! ActualizacionLauncher del System Design, con releases y notas reales.
 use crate::{pantallas, App, Mensaje};
-use icaro_core::actualizacion::{self, Disponible, Preparada, Resultado};
+use icaro_core::actualizacion::{self, Canal, Disponible, Preparada, Resultado};
 use icaro_ui::{
     componentes::{self, Estado as Senal, Variante},
     fuentes,
@@ -46,10 +46,21 @@ pub enum Accion {
 pub fn m(a: Accion) -> Mensaje {
     Mensaje::Actualizacion(a)
 }
-pub fn comprobar() -> Task<Mensaje> {
+/// Canal con el que se compiló este programa; es el predeterminado en Ajustes.
+pub fn canal_compilado() -> Canal {
+    if env!("ICARO_CANAL") == "beta" { Canal::Beta } else { Canal::Estable }
+}
+/// Versión para mostrar: la de Cargo, marcada si es una beta.
+pub fn version_visible() -> String {
+    match canal_compilado() {
+        Canal::Beta => format!("{} beta", env!("CARGO_PKG_VERSION")),
+        Canal::Estable => env!("CARGO_PKG_VERSION").into(),
+    }
+}
+pub fn comprobar(canal: Canal) -> Task<Mensaje> {
     Task::perform(
-        async {
-            actualizacion::comprobar_compilacion(env!("CARGO_PKG_VERSION"), env!("ICARO_COMPILACION").parse().unwrap_or(0))
+        async move {
+            actualizacion::comprobar_canal(env!("CARGO_PKG_VERSION"), env!("ICARO_COMPILACION").parse().unwrap_or(0), canal)
                 .await
                 .map_err(|e| e.to_string())
         },
@@ -75,14 +86,14 @@ pub fn actualizar(app: &mut App, accion: Accion) -> Task<Mensaje> {
             app.pantalla = Some(pantallas::Pantalla::Actualizacion);
             if !app.actualizacion.comprobada && !app.actualizacion.comprobando {
                 app.actualizacion.comprobando = true;
-                return comprobar();
+                return comprobar(app.aj.canal);
             }
         }
         Accion::Comprobar => {
             if !app.actualizacion.comprobando && !app.actualizacion.descargando && !app.actualizacion.aplicando {
                 app.actualizacion.comprobando = true;
                 app.actualizacion.error = None;
-                return comprobar();
+                return comprobar(app.aj.canal);
             }
         }
         Accion::Comprobada(r) => {
@@ -273,7 +284,7 @@ fn vista_ancho(app: &App, ancho: f32) -> Element<'_, Mensaje> {
     let titulo = e
         .disponible
         .as_ref()
-        .map(|d| format!("ICARO LAUNCHER {}", d.version))
+        .map(|d| format!("ICARO LAUNCHER {}{}", d.version, if d.beta { " BETA" } else { "" }))
         .unwrap_or_else(|| "ICARO LAUNCHER".into());
     let detalle = e
         .disponible
@@ -281,11 +292,11 @@ fn vista_ancho(app: &App, ancho: f32) -> Element<'_, Mensaje> {
         .map(|d| {
             format!(
                 "Tienes {} · descarga de {:.1} MB",
-                env!("CARGO_PKG_VERSION"),
+                version_visible(),
                 d.bytes as f64 / 1048576.
             )
         })
-        .unwrap_or_else(|| format!("Versión {}", env!("CARGO_PKG_VERSION")));
+        .unwrap_or_else(|| format!("Versión {}", version_visible()));
     let mut notas = column![].spacing(espacio::S2);
     if let Some(d) = &e.disponible {
         for n in &d.notas {

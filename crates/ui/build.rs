@@ -107,6 +107,11 @@ fn main() {
     let compilacion = std::env::var("ICARO_COMPILACION").unwrap_or_else(|_| "0".into());
     compilacion.parse::<u64>().expect("Número de compilación de Ícaro");
     println!("cargo:rustc-env=ICARO_COMPILACION={compilacion}");
+    // Canal de publicación: el workflow compila `develop` como beta.
+    println!("cargo:rerun-if-env-changed=ICARO_CANAL");
+    let canal = std::env::var("ICARO_CANAL").unwrap_or_else(|_| "estable".into());
+    assert!(matches!(canal.as_str(), "estable" | "beta"), "Canal de Ícaro desconocido");
+    println!("cargo:rustc-env=ICARO_CANAL={canal}");
     let fuentes = [
         "build.rs",
         "preparar_imagenes.rs",

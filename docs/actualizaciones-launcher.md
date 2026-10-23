@@ -1,14 +1,14 @@
 # Actualizaciones de Icaro Launcher
 
-El [instalador de Windows](instalador-windows.md) usa Inno Setup por usuario. El workflow compila, prueba y publica una actualización al recibir cambios en `main`, crear una rama de mantenimiento `vX.Y.x`, recibir cambios en ella o subir un tag `vX.Y.Z`. La línea mayor/menor de la rama y la versión exacta del tag deben coincidir con Cargo. Una ejecución manual solo entrega artefactos. La primera publicación automática pasó en GitHub; cada revisión nueva requiere completar sus comprobaciones antes de estar disponible para otros equipos.
+El [instalador de Windows](instalador-windows.md) usa Inno Setup por usuario. El workflow compila, prueba y publica por canales: un push a `develop` publica una **beta** y un push a `main` publica una **estable**. Otras ramas y los tags no publican, y los cambios que solo tocan `docs/` o archivos Markdown no compilan. Una ejecución manual solo entrega artefactos. La primera publicación automática pasó en GitHub; cada revisión nueva requiere completar sus comprobaciones antes de estar disponible para otros equipos.
 
 La pantalla sigue `ActualizacionLauncher` del System Design: Saturno en el lateral, versión y tamaño reales, notas agrupadas y acciones **Actualizar ahora**, **Al cerrar Icaro Launcher** y **Más tarde**. Se abre desde **Ajustes → Acerca de → Actualización**; la comprobación por sí sola no interrumpe al usuario. Una nueva versión se anuncia con el banner informativo existente.
 
-La comprobación consulta la release marcada como más reciente de `00faithlss/Icaro-launcher` en la API oficial de GitHub. Rechaza borradores, prereleases y versiones anteriores. También ofrece una compilación más nueva de la misma versión: `ICARO_COMPILACION` incorpora el identificador del workflow al programa y `latest.json`. Las compilaciones locales usan 0. Sin releases (404) no inventa una actualización.
+El canal se elige en **Ajustes → Acerca de** y se guarda en la configuración; sin elección se usa el de la compilación (`ICARO_CANAL`, `beta` en las compilaciones de `develop`). En el canal Estable, la comprobación consulta la release marcada como más reciente de `00faithlss/Icaro-launcher` en la API oficial de GitHub y rechaza borradores, prereleases y versiones anteriores. En el canal Beta consulta las 30 releases más recientes y elige la más nueva por versión y compilación entre las estables (`-build.`, sin marca de prerelease) y las betas (`-beta.`, marcadas como prerelease); un tag y una marca que no coinciden se ignoran. Cambiar de Beta a Estable no instala una versión anterior. También ofrece una compilación más nueva de la misma versión: `ICARO_COMPILACION` incorpora el identificador del workflow al programa y `latest.json`. Las compilaciones locales usan 0. Sin releases (404) no inventa una actualización.
 
 Para publicar una actualización portable de Windows x86-64, una release necesita:
 
-- Un tag coherente con versión y compilación: `v0.2.0-build.12345`. Los manifiestos anteriores sin compilación (0) siguen admitiendo `v0.2.0`.
+- Un tag coherente con versión y compilación: `v0.2.0-build.12345` para una estable o `v0.3.0-beta.12345` para una beta, que debe estar marcada como prerelease. Los manifiestos anteriores sin compilación (0) siguen admitiendo `v0.2.0`; una beta exige compilación.
 - Un ejecutable portable `.exe` adjunto como asset de esa misma release.
 - Un asset `latest.json` con el contrato siguiente. El hash debe ser el SHA-256 real del ejecutable; los valores de este ejemplo no se publican ni se consumen como una actualización.
 
@@ -56,9 +56,12 @@ Referencias: [releases de GitHub](https://docs.github.com/en/rest/releases/relea
 
 ## Flujo de publicación
 
-Prepara código, versión de Cargo, lockfile y notas Markdown/JSON en la rama de mantenimiento, por ejemplo `v0.2.x`. Su push activa la compilación, pruebas y empaquetado de GitHub Actions. Espera a que exista la release descargable `v<versión>-build.<compilación>` antes de publicar, si se solicita, el tag fuente `v<versión>` sobre la misma revisión. Así el workflow del tag puede reutilizar la publicación ya verificada. No renombres el tag de la release descargable: los launchers anteriores comprueban que coincida con `latest.json`.
+El trabajo se hace en ramas `feat/*`, `fix/*`, `perf/*` o `ci/*`, que no publican, y se integra en `develop`:
 
-Cuando también se solicite la integración, incorpora la misma entrega en `develop` y `main`. Un push a mantenimiento no autoriza por sí solo esos merges. Si la release más reciente contiene exactamente el mismo árbol y sus artefactos de actualización, el workflow reutiliza la publicación verificada. Evita así generar otras compilaciones de la misma entrega al subir el tag o hacer el merge. Un cambio de contenido o una ejecución manual sí vuelve a compilar.
+1. **Beta.** Cada push a `develop` que cambia código publica `v<versión>-beta.<compilación>` como prerelease, con la versión de Cargo de `develop` y sus notas `docs/releases/<versión>.md/.json`. La versión debe ser mayor que la última estable: tras publicar una estable, sube la versión de `develop` a la próxima entrega antes de integrar más cambios, o el workflow falla con ese aviso.
+2. **Estable.** Al integrar `develop` en `main` se publica `v<versión>-build.<compilación>`, marcada como la más reciente, y el workflow crea el tag fuente `v<versión>` sobre la misma revisión. `main` exige una versión mayor que la última estable: no publica otra compilación de una versión ya estable.
+
+Si la última release del mismo canal y versión contiene exactamente el mismo árbol y sus artefactos de actualización, el workflow no vuelve a compilar. El canal se distingue por la rama: la estable de `main` se publica aunque su contenido coincida con la última beta. No renombres el tag de una release descargable: los launchers comprueban que coincida con `latest.json`. Las ramas `vX.Y.x` y los tags `v*` anteriores se conservan como historial, pero ya no publican.
 
 La verificación pública se ejecuta una vez publicada la release, sin aplicar la actualización:
 

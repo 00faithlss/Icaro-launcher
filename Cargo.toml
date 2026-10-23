@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/core", "crates/cli", "crates/ui"]
 
 [workspace.package]
-version = "0.2.5"
+version = "0.3.0"
 edition = "2021"
 license = "GPL-3.0-only"
 repository = "https://github.com/00faithlss/Icaro-launcher"
@@ -23,6 +23,19 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 opt-level = 3
 
 [profile.dev.package.sha1]
+opt-level = 3
+
+# Las miniaturas de capturas decodifican PNG; sin optimizar tardan segundos.
+[profile.dev.package.image]
+opt-level = 3
+
+[profile.dev.package.png]
+opt-level = 3
+
+[profile.dev.package.fdeflate]
+opt-level = 3
+
+[profile.dev.package.miniz_oxide]
 opt-level = 3
 
 [profile.release]

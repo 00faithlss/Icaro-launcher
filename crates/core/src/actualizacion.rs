@@ -3,6 +3,10 @@
 
 //! Actualizaciones publicadas: metadatos de GitHub, descarga acotada y SHA-256.
 //! Admite el portable o el instalador declarado en latest.json de una release.
+//!
+//! Hay dos canales: las estables (`v<versión>-build.<n>`, publicadas desde
+//! `main`) y las betas (`v<versión>-beta.<n>`, prereleases publicadas desde
+//! `develop`). El canal estable nunca ofrece una beta.
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -13,6 +17,18 @@ use std::{
 use tokio::io::AsyncWriteExt;
 
 const RELEASE: &str = "https://api.github.com/repos/00faithlss/Icaro-launcher/releases/latest";
+/// Las releases más recientes, incluidas las prereleases del canal beta.
+const RELEASES: &str = "https://api.github.com/repos/00faithlss/Icaro-launcher/releases?per_page=30";
+
+/// Canal de actualizaciones elegido en Ajustes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Canal {
+    #[default]
+    Estable,
+    /// Recibe también las betas de `develop`, además de las estables.
+    Beta,
+}
 const MAX_ARCHIVO: u64 = 1024 * 1024 * 1024;
 const PLATAFORMA: &str = "windows-x86_64";
 
@@ -54,6 +70,8 @@ pub struct Disponible {
     pub version: String,
     #[serde(default)]
     pub compilacion: u64,
+    #[serde(default)]
+    pub beta: bool,
     #[serde(default)]
     instalador: bool,
     pub notas: Vec<Nota>,
@@ -142,8 +160,41 @@ fn numeros(v: &str) -> Option<[u64; 3]> {
         partes[2].parse().ok()?,
     ])
 }
-fn tag(version: &str, compilacion: u64) -> String {
-    if compilacion == 0 { format!("v{version}") } else { format!("v{version}-build.{compilacion}") }
+fn tag(version: &str, compilacion: u64, beta: bool) -> String {
+    if beta {
+        format!("v{version}-beta.{compilacion}")
+    } else if compilacion == 0 {
+        format!("v{version}")
+    } else {
+        format!("v{version}-build.{compilacion}")
+    }
+}
+
+/// Versión, compilación y canal de un tag de release descargable.
+fn leer_tag(tag: &str) -> Option<([u64; 3], u64, bool)> {
+    let (version, resto) = tag.strip_prefix('v')?.split_once('-')?;
+    let (beta, compilacion) = match resto.split_once('.')? {
+        ("build", n) => (false, n),
+        ("beta", n) => (true, n),
+        _ => return None,
+    };
+    let compilacion: u64 = compilacion.parse().ok().filter(|n| *n > 0)?;
+    Some((numeros(version)?, compilacion, beta))
+}
+
+/// La release más nueva que puede recibir el canal. Una beta solo se acepta
+/// marcada como prerelease y una estable solo sin marcar.
+fn elegir(releases: Vec<Release>, canal: Canal) -> Option<Release> {
+    releases
+        .into_iter()
+        .filter(|r| !r.draft)
+        .filter_map(|r| {
+            let (version, compilacion, beta) = leer_tag(&r.tag_name)?;
+            (beta == r.prerelease && (!beta || canal == Canal::Beta))
+                .then_some(((version, compilacion), r))
+        })
+        .max_by_key(|(orden, _)| *orden)
+        .map(|(_, r)| r)
 }
 
 /// Una instalación registrada solo se actualiza con su instalador completo.
@@ -175,7 +226,7 @@ fn resolver(
     manifest: Manifest,
     actual: &str,
 ) -> Result<Option<Disponible>, Error> {
-    resolver_compilacion(release, manifest, actual, 0, false)
+    resolver_compilacion(release, manifest, actual, 0, false, Canal::Estable)
 }
 fn resolver_compilacion(
     release: Release,
@@ -183,13 +234,17 @@ fn resolver_compilacion(
     actual: &str,
     compilacion_actual: u64,
     instalador: bool,
+    canal: Canal,
 ) -> Result<Option<Disponible>, Error> {
-    if release.draft || release.prerelease {
+    let beta = release.prerelease;
+    if release.draft || (beta && canal != Canal::Beta) {
         return Ok(None);
     }
     let actual = numeros(actual).ok_or(Error::Datos)?;
     let version = numeros(&manifest.version).ok_or(Error::Datos)?;
-    if release.tag_name != tag(&manifest.version, manifest.compilacion) {
+    if (beta && manifest.compilacion == 0)
+        || release.tag_name != tag(&manifest.version, manifest.compilacion, beta)
+    {
         return Err(Error::Datos);
     }
     if version < actual || (version == actual && manifest.compilacion <= compilacion_actual) {
@@ -223,6 +278,7 @@ fn resolver_compilacion(
     Ok(Some(Disponible {
         version: manifest.version.trim_start_matches('v').into(),
         compilacion: manifest.compilacion,
+        beta,
         instalador,
         notas: manifest.notas,
         bytes: asset.size,
@@ -236,9 +292,18 @@ pub async fn comprobar(actual: &str) -> Result<Option<Disponible>, Error> {
     comprobar_compilacion(actual, 0).await
 }
 pub async fn comprobar_compilacion(actual: &str, compilacion_actual: u64) -> Result<Option<Disponible>, Error> {
+    comprobar_canal(actual, compilacion_actual, Canal::Estable).await
+}
+/// El canal estable consulta la release marcada como más reciente; el beta
+/// elige entre las últimas releases, incluidas las prereleases.
+pub async fn comprobar_canal(
+    actual: &str,
+    compilacion_actual: u64,
+    canal: Canal,
+) -> Result<Option<Disponible>, Error> {
     let client = cliente()?;
     let respuesta = client
-        .get(RELEASE)
+        .get(if canal == Canal::Beta { RELEASES } else { RELEASE })
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
@@ -249,10 +314,20 @@ pub async fn comprobar_compilacion(actual: &str, compilacion_actual: u64) -> Res
     if !respuesta.status().is_success() {
         return Err(Error::Red);
     }
-    let release: Release = crate::http::body_json(respuesta, "GitHub", 2 * 1024 * 1024)
-        .await
-        .map_err(|_| Error::Datos)?;
-    if release.draft || release.prerelease {
+    let release = if canal == Canal::Beta {
+        let releases: Vec<Release> = crate::http::body_json(respuesta, "GitHub", 8 * 1024 * 1024)
+            .await
+            .map_err(|_| Error::Datos)?;
+        match elegir(releases, canal) {
+            Some(release) => release,
+            None => return Ok(None),
+        }
+    } else {
+        crate::http::body_json(respuesta, "GitHub", 2 * 1024 * 1024)
+            .await
+            .map_err(|_| Error::Datos)?
+    };
+    if release.draft || (release.prerelease && canal != Canal::Beta) {
         return Ok(None);
     }
     let asset = release
@@ -276,7 +351,7 @@ pub async fn comprobar_compilacion(actual: &str, compilacion_actual: u64) -> Res
     let manifest = crate::http::body_json(respuesta, "GitHub", 1024 * 1024)
         .await
         .map_err(|_| Error::Datos)?;
-    resolver_compilacion(release, manifest, actual, compilacion_actual, instalada())
+    resolver_compilacion(release, manifest, actual, compilacion_actual, instalada(), canal)
 }
 
 pub fn carpeta() -> PathBuf {
@@ -467,7 +542,7 @@ fn validar_descarga(d: &Disponible) -> Result<(), Error> {
         || url.fragment().is_some()
         || partes.len() != 6
         || partes[..4] != ["00faithlss", "Icaro-launcher", "releases", "download"]
-        || partes[4] != tag(&d.version, d.compilacion)
+        || partes[4] != tag(&d.version, d.compilacion, d.beta)
         || numeros(&d.version).is_none()
         || !partes[5].ends_with(".exe")
         || !asset_valido(&d.url, partes[4], partes[5])
@@ -849,24 +924,68 @@ mod tests {
     fn una_compilacion_nueva_de_la_misma_version_se_actualiza_sin_downgrade() {
         let (mut r, mut m) = datos();
         m.compilacion = 42;
-        r.tag_name = tag(&m.version, m.compilacion);
+        r.tag_name = tag(&m.version, m.compilacion, false);
         r.assets[0].browser_download_url = format!("https://github.com/00faithlss/Icaro-launcher/releases/download/{}/{}", r.tag_name, r.assets[0].name);
-        let d = resolver_compilacion(r.clone(), m.clone(), "0.2.0", 41, false).unwrap().unwrap();
+        let d = resolver_compilacion(r.clone(), m.clone(), "0.2.0", 41, false, Canal::Estable).unwrap().unwrap();
         assert_eq!(d.compilacion, 42);
         assert!(validar_descarga(&d).is_ok());
-        assert!(resolver_compilacion(r.clone(), m.clone(), "0.2.0", 42, false).unwrap().is_none());
-        assert!(resolver_compilacion(r, m, "0.3.0", 0, false).unwrap().is_none());
+        assert!(resolver_compilacion(r.clone(), m.clone(), "0.2.0", 42, false, Canal::Estable).unwrap().is_none());
+        assert!(resolver_compilacion(r, m, "0.3.0", 0, false, Canal::Estable).unwrap().is_none());
+    }
+    fn beta(version: &str, compilacion: u64) -> (Release, Manifest) {
+        let (mut r, mut m) = datos();
+        m.version = version.into();
+        m.compilacion = compilacion;
+        r.prerelease = true;
+        r.tag_name = tag(version, compilacion, true);
+        r.assets[0].browser_download_url = format!("https://github.com/00faithlss/Icaro-launcher/releases/download/{}/{}", r.tag_name, r.assets[0].name);
+        (r, m)
+    }
+    #[test]
+    fn las_betas_solo_llegan_al_canal_beta() {
+        let (r, m) = beta("0.3.0", 50);
+        assert!(resolver_compilacion(r.clone(), m.clone(), "0.2.5", 40, false, Canal::Estable).unwrap().is_none());
+        let d = resolver_compilacion(r.clone(), m.clone(), "0.2.5", 40, false, Canal::Beta).unwrap().unwrap();
+        assert!(d.beta);
+        assert!(validar_descarga(&d).is_ok());
+        // Una beta con el tag de una estable, o sin compilación, se rechaza.
+        let (mut r2, m2) = (r.clone(), m.clone());
+        r2.tag_name = tag("0.3.0", 50, false);
+        assert!(resolver_compilacion(r2, m2, "0.2.5", 40, false, Canal::Beta).is_err());
+        let (r3, mut m3) = (r, m);
+        m3.compilacion = 0;
+        assert!(resolver_compilacion(r3, m3, "0.2.5", 40, false, Canal::Beta).is_err());
+    }
+    #[test]
+    fn el_canal_beta_elige_la_release_mas_nueva_sin_mezclar_marcas() {
+        let release = |tag: &str, prerelease: bool, draft: bool| Release { tag_name: tag.into(), draft, prerelease, assets: vec![] };
+        let lista = || vec![
+            release("v0.2.5-build.100", false, false),
+            release("v0.3.0-beta.120", true, false),
+            release("v0.3.0-beta.130", true, true),
+            release("v0.3.0-beta.140", false, false),
+            release("v0.3.0", false, false),
+            release("v0.2.6-build.150", false, false),
+        ];
+        assert_eq!(elegir(lista(), Canal::Beta).unwrap().tag_name, "v0.3.0-beta.120");
+        assert_eq!(elegir(lista(), Canal::Estable).unwrap().tag_name, "v0.2.6-build.150");
+        // La estable de la misma versión publicada después sustituye a la beta.
+        let mut con_estable = lista();
+        con_estable.push(release("v0.3.0-build.160", false, false));
+        assert_eq!(elegir(con_estable, Canal::Beta).unwrap().tag_name, "v0.3.0-build.160");
+        assert_eq!(leer_tag("v0.3.0-beta.0"), None);
+        assert_eq!(leer_tag("v0.3.0-rc.5"), None);
     }
     #[test]
     fn la_instalacion_exige_el_setup_y_no_sustituye_solo_el_portable() {
         let (r, m) = datos();
-        assert!(matches!(resolver_compilacion(r, m, "0.1.0", 0, true), Err(Error::SinArtefacto)));
+        assert!(matches!(resolver_compilacion(r, m, "0.1.0", 0, true, Canal::Estable), Err(Error::SinArtefacto)));
         let (mut r, mut m) = datos();
         let mut setup = m.plataformas[PLATAFORMA].clone();
         setup.archivo = "icaro-setup.exe".into();
         m.plataformas.insert("windows-x86_64-setup".into(), setup.clone());
         r.assets.push(Asset {name:setup.archivo.clone(),size:120,browser_download_url:format!("https://github.com/00faithlss/Icaro-launcher/releases/download/v0.2.0/{}",setup.archivo)});
-        let d = resolver_compilacion(r, m, "0.1.0", 0, true).unwrap().unwrap();
+        let d = resolver_compilacion(r, m, "0.1.0", 0, true, Canal::Estable).unwrap().unwrap();
         assert!(d.instalador);
         assert_eq!(d.bytes,120);
         assert!(validar_descarga(&d).is_ok());

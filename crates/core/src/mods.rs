@@ -16,6 +16,7 @@ use std::{
 };
 
 const META: &str = ".icaro-mods.json";
+pub mod fabric_api;
 pub mod locales;
 pub mod sincronizacion;
 const MAX_FILE: u64 = 128 * 1024 * 1024;

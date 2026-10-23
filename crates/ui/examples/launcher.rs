@@ -527,6 +527,7 @@ fn guardar_si_cambio(app: &mut App) {
     }
     guardado.java_global = app.java_global.clone();
     guardado.apariencia = estado::AparienciaGuardada { tema: app.tema, metal: app.aj.metal, escala: app.aj.escala, reducir: app.reducir };
+    guardado.canal = (app.aj.canal != actualizacion_real::canal_compilado()).then_some(app.aj.canal);
     let texto = guardado.texto();
     if texto != app.ultimo_guardado {
         match estado::Guardado::escribir(&texto, app.servicios.demo) {
@@ -3686,7 +3687,8 @@ fn iniciar_app(seccion: Seccion, piedra: bool, menu: Option<usize>, con_dialogo:
             } else { Task::none() };
             let iconos = icono_instancia::cargar(&app);
             let java = java_real::detectar(&mut app);
-            (app, Task::batch([inicio, actualizacion_real::comprobar(), iconos, java, servidores]))
+            let actualizacion = actualizacion_real::comprobar(app.aj.canal);
+            (app, Task::batch([inicio, actualizacion, iconos, java, servidores]))
         }
     } else { (app, inicio) }
 }
@@ -3797,7 +3799,7 @@ fn iniciar_con_guardado(seccion: Seccion, piedra: bool, menu: Option<usize>, con
                     Some("estudio") => Some(pantallas::Pantalla::Estudio),
                     _ => guardado.is_none().then_some(pantallas::Pantalla::Primera),
                 } },
-                aj: pantallas::Ajustes {metal:prefs.metal,escala:prefs.escala,..Default::default()},
+                aj: pantallas::Ajustes {metal:prefs.metal,escala:prefs.escala,canal:guardado.as_ref().and_then(|g|g.canal).unwrap_or_else(actualizacion_real::canal_compilado),..Default::default()},
                 asistente: (demo && std::env::var("ICARO_DIALOGO_NUEVO").is_ok()).then(|| pantallas::Asistente {
                     paso: std::env::var("ICARO_PASO").ok().and_then(|v| v.parse().ok()).unwrap_or(0),
                     tipo_version: 0,
