@@ -17,6 +17,7 @@ pub use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
 
 mod device;
+mod browser;
 mod app_return;
 pub use device::{begin_device, complete_device, open_device_page, DeviceGrant, DeviceInfo};
 pub use app_return::{forward_app_return, register_app_return, APP_REDIRECT};
@@ -479,7 +480,7 @@ pub async fn login_with_progress(
             let proof = Proof { verifier: random_string()?, state };
             let url = authorize_url(&proof, &redirect);
             progress(Stage::WaitingForBrowser);
-            tokio::task::spawn_blocking(move || webbrowser::open(url.as_str()).map_err(|_| Error::Browser)).await.map_err(|_| Error::Browser)??;
+            tokio::task::spawn_blocking(move || browser::open(&url)).await.map_err(|_| Error::Browser)??;
             let code = receive(&listener, &proof, port, method).await?;
             drop(listener);
             progress(Stage::Microsoft);

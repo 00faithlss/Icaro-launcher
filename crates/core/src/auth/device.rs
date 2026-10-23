@@ -249,7 +249,7 @@ pub async fn open_device_page(info: &DeviceInfo, cancel: CancellationToken) -> R
     tokio::select! {
         biased;
         _ = cancel.cancelled() => Err(Error::Cancelled),
-        result = tokio::task::spawn_blocking(move || webbrowser::open(uri.as_str()).map_err(|_| Error::Browser)) =>
+        result = tokio::task::spawn_blocking(move || super::browser::open(&uri)) =>
             result.map_err(|_| Error::Browser)?,
     }
 }
