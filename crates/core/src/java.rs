@@ -359,7 +359,8 @@ fn ejecutable(path: &Path) -> PathBuf {
             .file_name()
             .is_some_and(|s| s.to_string_lossy().eq_ignore_ascii_case("javaw.exe"))
     {
-        // javaw no escribe la versión ni los registros en las tuberías.
+        // Las sondas usan el ejecutable de consola; el lanzamiento del juego
+        // puede elegir su acompañante javaw sin cambiar el runtime validado.
         path.with_file_name("java.exe")
     } else {
         path.to_path_buf()

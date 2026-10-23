@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.1] - 2026-10-23
+
+- Reduce el tiempo de aplicación de parches al instalar Forge, conservando las verificaciones y los archivos del cliente.
+- Muestra el avance y el tiempo transcurrido durante la instalación de Forge y NeoForge.
+- Corrige la detección de Minecraft en Discord al jugar desde el launcher en Windows.
+
 ## [0.3.0] - 2026-10-22
 
 - Quilt se instala y se ejecuta con su perfil oficial, igual que Fabric: crear instancia, Jugar, Cambiar versión y Cambiar versión del loader. El perfil y las bibliotecas se descargan solo de `meta.quiltmc.org`, `maven.quiltmc.org` y `maven.fabricmc.net`, con SHA-1 y tamaño comprobados, y se guardan en `meta/quilt/<minecraft>/<loader>`. Admite las versiones ofuscadas (con los mapeos `hashed` e `intermediary`) y las que Quilt publica sin ofuscar, como 26.3. El selector de versiones del loader ordena las estables antes que las betas, así que lo primero que se ofrece es una estable.

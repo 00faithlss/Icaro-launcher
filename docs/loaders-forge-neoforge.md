@@ -12,6 +12,14 @@ La caché común se publica al terminar con éxito, después de verificar las bi
 
 Cancelar termina el proceso del instalador y conserva la instalación anterior. Una preparación fallida no se usa para lanzar. Su carpeta conserva instalador.log para diagnóstico; un reintento crea otra preparación. No se borran automáticamente estos diagnósticos ni las preparaciones anteriores que pueden seguir usando otras instancias.
 
+Mientras trabaja el instalador, el launcher lee su registro de forma incremental y muestra la fase, el número de bibliotecas o clases parcheadas y el tiempo transcurrido. No calcula un porcentaje de procesado porque el instalador no declara un total fiable. Se conserva el límite de veinte minutos y la cancelación del proceso. Forge 66.1.0 para Minecraft 26.3 completó la preparación y las comprobaciones de caché en unos 145 segundos en la prueba local del 23-10-2026; ese tiempo no es una garantía para otros equipos o conexiones.
+
+La adaptación opcional de escritura reduce las llamadas al sistema del parcheador: agrupa su salida en bloques de 64 KiB, sin reescribir los JAR oficiales en disco. Solo adapta en memoria `net.minecraftforge.binarypatcher.Patcher` cuando su SHA-256 coincide con la implementación medida de BinaryPatcher 1.3.4. Los bytes del JAR generado se conservan. Otras implementaciones siguen usando su E/S original.
+
+El adaptador se compila desde `BufferAgent.java` dentro de la preparación aislada, con el `javac` del mismo runtime elegido. Se comprueba que el runtime pueda cargarlo antes de iniciar el instalador. Si faltan el compilador o la instrumentación, o falla esa comprobación, se conserva el recorrido original. No se descarga otro JDK para activar esta mejora. El agente solo acompaña al proceso de instalación de Forge; no se añade a Minecraft ni a NeoForge o Quilt.
+
+En la [medición del 23-10-2026](investigaciones/rendimiento-forge-2026-10-23.md), el procesador pasó de 114,079 a 4,719 segundos y produjo el mismo SHA-256. La prueba del instalador completo con tres comprobaciones de caché adicionales terminó en 23,66 segundos. Son mediciones locales, no una garantía de tiempo para otras versiones o equipos.
+
 El adaptador admite el contrato oficial de instalación spec 1, con perfil JSON heredado de Minecraft. Los instaladores antiguos con otros formatos se rechazan explícitamente; no se acredita soporte para todas las versiones históricas de Forge. La verificación del instalador no sustituye la confianza en el código oficial que ejecuta sus procesadores.
 
 ## Fabric API por defecto
