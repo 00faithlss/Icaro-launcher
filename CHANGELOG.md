@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.0] - 2026-10-22
+
+- Añade instalación y preparación de Forge y NeoForge con sus instaladores oficiales, respetando la versión elegida y la configuración de Java.
+- Los MRPACK y ZIP reconocen Forge y NeoForge y conservan la versión del loader indicada por el paquete.
+- Instala Fabric API compatible por defecto al preparar una nueva instancia Fabric. Conserva copias locales o desactivadas y el contenido de modpacks; no vuelve a añadirlo si lo retiras después.
+- Corrige la apertura del inicio de sesión en Windows para utilizar cualquier navegador configurado como predeterminado del sistema.
+- Prepara Forge y NeoForge en una carpeta aparte y reutiliza sus archivos verificados, conservando la instalación anterior si el nuevo intento falla.
+
+Consulta las [notas de 0.3.0](docs/releases/0.3.0.md) y el [alcance y validación](docs/loaders-forge-neoforge.md). Quedan pendientes la validación manual del inicio de sesión con distintos navegadores, las partidas reales con mods, las migraciones y el recorrido nativo en Linux. No se admiten todos los formatos históricos de Forge.
+
 ## [0.2.5] - 2026-10-16
 
 - Sustituye Invitado por cuentas sin conexión con nombre propio, UUID estable, guardado, selección y eliminación desde el componente CuentaSinConexion entregado. Conserva sus iconos, cabeza rayada, temas y confirmación en fila; eliminar un perfil no toca mundos ni instancias.

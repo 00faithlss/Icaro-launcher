@@ -476,7 +476,10 @@ pub fn iniciar_con_servidor(app:&mut App,index:usize,jugar:bool,servidor:Option<
         app.avisar("Esta instancia exportada usaba un Java manual. Selecciona una instalación o Automático en su pestaña Java.".into());
         return Task::none();
     }
-    if !matches!(i.loader.as_str(), "vanilla" | "fabric") {
+    if !matches!(
+        i.loader.as_str(),
+        "vanilla" | "fabric" | "forge" | "neoforge"
+    ) {
         app.avisar("La instalación de este loader será la siguiente etapa. Puedes seguir gestionando sus mods.".into());
         return Task::none();
     }
@@ -610,12 +613,20 @@ fn siguiente(app: &mut App) -> Task<Mensaje> {
         iced::stream::channel(32, async move |mut output| {
             let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, u64, u64)>(32);
             let operation = async {
-                icaro_core::modpacks::instalar(&store,&solicitud.instancia,cancel.clone(),|p| {
-                    let _=tx.try_send((p.etapa.to_string(),p.completados,p.total));
-                }).await?;
-                let game = minecraft::instalar(&store, &solicitud.instancia, cancel.clone(), |p| {
+                icaro_core::modpacks::instalar(&store, &solicitud.instancia, cancel.clone(), |p| {
                     let _ = tx.try_send((p.etapa.to_string(), p.completados, p.total));
                 })
+                .await?;
+                let game = minecraft::instalar_con_java(
+                    &store,
+                    &solicitud.instancia,
+                    solicitud.java.as_deref(),
+                    solicitud.descarga_java,
+                    cancel.clone(),
+                    |p| {
+                        let _ = tx.try_send((p.etapa.to_string(), p.completados, p.total));
+                    },
+                )
                 .await
                 .map_err(|e| e.to_string())?;
                 let runtime = java::preparar_perfil(

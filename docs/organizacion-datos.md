@@ -47,6 +47,7 @@ Icaro/
   java/                     # Runtimes administrados seleccionados según el perfil
   meta/minecraft/           # Catálogo, metadatos por versión/hash y clientes por hash
   meta/fabric/              # Perfiles oficiales por versión de Minecraft y Fabric
+  meta/loaders/             # Instaladores y clientes procesados de Forge/NeoForge
   cache/                    # Respuestas y descargas temporales recuperables
   logs/                     # Registros del launcher y de sincronización, con rotación
   estado.json               # Preferencias globales, sin configuraciones activas por instancia
@@ -116,7 +117,7 @@ La integración de loaders debe apoyarse en estas rutas compartidas. La migraci�
 
 Almacenamiento mide archivos reales fuera del hilo de dibujo, muestra todas las categorías de la raíz y ofrece Actualizar, Limpiar caché, Recuperar operaciones y traslado de papeleras antiguas. La limpieza se limita a `cache/`; no retira assets, bibliotecas, runtimes, mundos, mods, iconos ni configuración. El recorrido tiene límites y rechaza enlaces y uniones de carpetas. Los registros `logs/launcher.log` y `logs/sincronizacion.log` rotan al superar 1 MiB y conservan tres archivos anteriores cada uno. No se registran tokens ni datos de cuentas.
 
-Las exportaciones de Ícaro incluyen los ajustes portables conocidos; una selección manual de Java conserva una marca que obliga a resolverla en el PC de destino. No se exportan rutas absolutas de Java ni campos locales desconocidos. El ZIP no incluye el almacén común ni los marcadores de instalación. La importación completa y los instaladores de Quilt, Forge y NeoForge siguen siendo funciones independientes pendientes, como se indica en `pendientes-implementacion.md`.
+Las exportaciones de Ícaro incluyen los ajustes portables conocidos; una selección manual de Java conserva una marca que obliga a resolverla en el PC de destino. No se exportan rutas absolutas de Java ni campos locales desconocidos. El ZIP no incluye el almacén común ni los marcadores de instalación. La importación completa y los instaladores de Forge/NeoForge están conectados; Quilt y la validación de partida/migración siguen pendientes, como se indica en `pendientes-implementacion.md`.
 
 Migración local del 13-10-2026: se trasladaron 15 elementos de las papeleras internas a la papelera del sistema; `instances/.papelera` quedó retirado. No había instancias activas al ejecutar este mantenimiento.
 
@@ -124,4 +125,4 @@ Migración local del 13-10-2026: se trasladaron 15 elementos de las papeleras in
 
 La carpeta privada de cada instancia se llama `.icaro`. Al cargar las instancias o prepararlas, se migra `.icaro-minecraft` mediante renombre y se actualizan sus referencias en `instalado.json`, preservando campos adicionales, nativos y archivos del juego. Si existen ambos nombres, la migración se detiene con un error para conservar ambos perfiles. `instance.json` sigue siendo la configuración de la instancia: cambiar su extensión a `.cfg` no aporta rendimiento ni compatibilidad por sí solo.
 
-Fabric comparte las mismas rutas de assets y bibliotecas; sus metadatos están en `meta/fabric/<minecraft>/<loader>`. Quilt, Forge y NeoForge todavía requieren sus instaladores.
+Fabric comparte las mismas rutas de assets y bibliotecas; sus metadatos están en `meta/fabric/<minecraft>/<loader>`. Forge y NeoForge conservan sus instaladores verificados y preparaciones compartidas en `meta/loaders/<familia>/<minecraft>/<loader>`. Cada preparación tiene bibliotecas en disposición Maven para conservar las rutas de módulos del perfil oficial; no modifica la carpeta de juego activa. Consulta [recuperación y alcance](loaders-forge-neoforge.md). Quilt sigue pendiente.

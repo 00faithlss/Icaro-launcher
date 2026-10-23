@@ -205,10 +205,10 @@ pub fn preparar_con_progreso(
                     "Este ZIP no indica Minecraft. Escribe su versión y vuelve a revisar.".into(),
                 );
             }
-            if loader == "fabric"
+            if loader != "vanilla"
                 && !crate::minecraft::version_minecraft_valida(loader_version.trim())
             {
-                return Err("Indica la versión de Fabric que utiliza el paquete.".into());
+                return Err("Indica la versión del loader que utiliza el paquete.".into());
             }
         }
     }
@@ -317,12 +317,22 @@ pub fn preparar_con_progreso(
                 if key == "minecraft" {
                     continue;
                 }
-                if key != "fabric-loader" || lv.is_some() {
+                let selected = match key.as_str() {
+                    "fabric-loader" => "fabric",
+                    "forge" => "forge",
+                    "neoforge" => "neoforge",
+                    _ => {
+                        return Err(format!(
+                            "El instalador de {key} todavía no está disponible."
+                        ))
+                    }
+                };
+                if lv.is_some() {
                     return Err(format!(
                         "El instalador de {key} todavía no está disponible."
                     ));
                 }
-                family = "fabric".into();
+                family = selected.into();
                 lv = Some(version.clone());
             }
             let mut mapped = BTreeMap::new();
@@ -362,6 +372,12 @@ pub fn preparar_con_progreso(
                 {
                     if let Some(v) = id.strip_prefix("fabric-") {
                         family = "fabric".into();
+                        lv = Some(v.into());
+                    } else if let Some(v) = id.strip_prefix("forge-") {
+                        family = "forge".into();
+                        lv = Some(v.into());
+                    } else if let Some(v) = id.strip_prefix("neoforge-") {
+                        family = "neoforge".into();
                         lv = Some(v.into());
                     } else {
                         return Err(
@@ -403,11 +419,15 @@ pub fn preparar_con_progreso(
                                         family = "fabric".into();
                                         lv = component["version"].as_str().map(str::to_owned);
                                     }
-                                    Some(
-                                        "net.minecraftforge"
-                                        | "org.quiltmc.quilt-loader"
-                                        | "net.neoforged",
-                                    ) => {
+                                    Some("net.minecraftforge") => {
+                                        family = "forge".into();
+                                        lv = component["version"].as_str().map(str::to_owned);
+                                    }
+                                    Some("net.neoforged") => {
+                                        family = "neoforge".into();
+                                        lv = component["version"].as_str().map(str::to_owned);
+                                    }
+                                    Some("org.quiltmc.quilt-loader") => {
                                         return Err(
                                             "El loader del paquete todavía no está disponible."
                                                 .into(),
@@ -460,7 +480,12 @@ pub fn preparar_con_progreso(
             };
             index.dependencies.insert("minecraft".into(), mc.clone());
             if let Some(v) = &lv {
-                index.dependencies.insert("fabric-loader".into(), v.clone());
+                let key = if family == "fabric" {
+                    "fabric-loader"
+                } else {
+                    family.as_str()
+                };
+                index.dependencies.insert(key.into(), v.clone());
             }
         }
         progreso(
@@ -476,17 +501,17 @@ pub fn preparar_con_progreso(
                 "Este ZIP no indica Minecraft. Escribe su versión y vuelve a revisar.".into(),
             );
         }
-        if !matches!(family.as_str(), "vanilla" | "fabric") {
+        if !matches!(family.as_str(), "vanilla" | "fabric" | "forge" | "neoforge") {
             return Err(
-                "Selecciona Vanilla o Fabric; los otros instaladores están pendientes.".into(),
+                "Selecciona Vanilla, Fabric, Forge o NeoForge; Quilt sigue pendiente.".into(),
             );
         }
-        if family == "fabric"
+        if family != "vanilla"
             && lv
                 .as_ref()
                 .is_none_or(|v| !crate::minecraft::version_minecraft_valida(v))
         {
-            return Err("Indica la versión de Fabric que utiliza el paquete.".into());
+            return Err("Indica la versión del loader que utiliza el paquete.".into());
         }
         let mut paths = BTreeSet::new();
         for entry in &entries {
@@ -926,6 +951,56 @@ mod tests {
         assert!(preparar(&root, &path, "", "vanilla", "", &c)
             .unwrap_err()
             .contains("CurseForge"));
+    }
+    #[test]
+    fn importa_forge_y_neoforge_con_version_exacta_en_prism_curseforge_y_mrpack() {
+        let t = temp();
+        let root = t.0.join("data");
+        let c = CancellationToken::new();
+        for (family, uid, version) in [
+            ("forge", "net.minecraftforge", "47.4.10"),
+            ("neoforge", "net.neoforged", "21.1.219"),
+        ] {
+            let path = t.0.join(format!("{family}.zip"));
+            let prism = serde_json::json!({"components":[
+                {"uid":"net.minecraft","version":"1.21.1"},{"uid":uid,"version":version}
+            ]})
+            .to_string();
+            paquete(
+                &path,
+                &[
+                    ("mmc-pack.json", prism.as_bytes()),
+                    ("minecraft/mods/personal.jar", b"personal"),
+                ],
+            );
+            let plan = preparar(&root, &path, "", "vanilla", "", &c).unwrap();
+            assert_eq!(plan.loader, family);
+            assert_eq!(plan.loader_version.as_deref(), Some(version));
+            let cf=serde_json::json!({"minecraft":{"version":"1.21.1","modLoaders":[{"id":format!("{family}-{version}"),"primary":true}]},"files":[],"overrides":"overrides"}).to_string();
+            paquete(
+                &path,
+                &[
+                    ("manifest.json", cf.as_bytes()),
+                    ("overrides/mods/personal.jar", b"personal"),
+                ],
+            );
+            let plan = preparar(&root, &path, "", "vanilla", "", &c).unwrap();
+            assert_eq!(plan.loader, family);
+            assert_eq!(plan.loader_version.as_deref(), Some(version));
+            let mr=serde_json::json!({"formatVersion":1,"game":"minecraft","name":"Pack","versionId":"1",
+                "dependencies":{"minecraft":"1.21.1",family:version},"files":[]}).to_string();
+            let path = t.0.join(format!("{family}.mrpack"));
+            paquete(
+                &path,
+                &[
+                    ("modrinth.index.json", mr.as_bytes()),
+                    ("overrides/mods/personal.jar", b"personal"),
+                ],
+            );
+            let plan = preparar(&root, &path, "", "vanilla", "", &c).unwrap();
+            assert_eq!(plan.loader, family);
+            assert_eq!(plan.loader_version.as_deref(), Some(version));
+        }
     }
     #[tokio::test]
     async fn cache_alterada_y_cancelacion_conservan_instancia_incompleta() {

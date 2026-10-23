@@ -1092,7 +1092,7 @@ pub fn actualizar(app: &mut App, action: Accion) -> Task<Mensaje> {
                     let index = app.servicios.instancias.registros.len() - 1;
                     if matches!(
                         app.servicios.instancias.registros[index].loader.as_str(),
-                        "vanilla" | "fabric"
+                        "vanilla" | "fabric" | "forge" | "neoforge"
                     ) {
                         return crate::juego_real::iniciar(app, index, false);
                     }

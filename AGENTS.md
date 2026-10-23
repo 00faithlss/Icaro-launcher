@@ -83,8 +83,8 @@ El benchmark de hash no usa la instancia. Su modo `io` requiere espacio para una
 
 ## Funciones y validaciones todavía pendientes
 
-- Instalar/ejecutar Quilt, Forge y NeoForge con perfiles oficiales, Java, migración y recuperación; sus catálogos visibles no significan soporte completo.
-- Importar ZIP de CurseForge que solo referencian archivos por ID requiere una integración válida; completar exportación MRPACK, descubrimiento de otros launchers y revisión de archivos sin origen verificado. Importación local MRPACK/ZIP completo Vanilla/Fabric e importación de JAR propios ya existen; no duplicarlas.
+- Quilt y los formatos históricos de Forge siguen pendientes. Forge/NeoForge spec 1 ya usan instaladores oficiales, Java, preparación aislada y caché verificada; se comprobaron procesadores y caché de Forge 1.20.1 y NeoForge 1.21.1/26.3. Falta validar partida con mods, migración, cancelación/recuperación y Linux; ver docs/loaders-forge-neoforge.md. Fabric API se añade solo en la primera instalación normal de Fabric, conservando modpacks, copias locales y la elección de retirarlo/desactivarlo.
+- Importar ZIP de CurseForge que solo referencian archivos por ID requiere una integración válida; completar exportación MRPACK, descubrimiento de otros launchers y revisión de archivos sin origen verificado. Importación local MRPACK/ZIP completo Vanilla/Fabric/Forge/NeoForge e importación de JAR propios ya existen; no duplicarlas.
 - Completar opciones General/Java, mundos y respaldos, orden de resourcepacks, otros motores de shaders, recuperación/papeleras, historial persistente de descargas, cola unificada y tiempo jugado.
 - Completar instalación/permisos, salida y miembros de ZeroTier, traslado de raíz de datos y bandeja; validar cuenta/skins con cuenta real y funciones de varias cuentas/capes según su guía.
 - Validar recorridos nativos en Arch/Linux, sincronización entre equipos y servidor real, reconexión al juego y estados de foco/teclado/escala/ventana pequeña en ambos temas.

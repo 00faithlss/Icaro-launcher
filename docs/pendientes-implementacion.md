@@ -1,33 +1,34 @@
 # Implementación pendiente
 
-Actualizado el **16-10-2026**. Este documento describe el trabajo que falta; no presenta estas funciones como disponibles. El [roadmap del System Design](roadmap-system-design.md) detalla los componentes y sus diferencias visuales.
+Actualizado el **22-10-2026**. Este documento describe el trabajo que falta; no presenta estas funciones como disponibles. El [roadmap del System Design](roadmap-system-design.md) detalla los componentes y sus diferencias visuales.
 
 ## 1. Instalación y ejecución de loaders oficiales
 
-**Base de almacenamiento:** Vanilla ya comparte assets, bibliotecas y metadatos, y migra las copias verificadas al preparar una instancia. La configuración por instancia, papelera del sistema, medición de almacenamiento y mantenimiento están conectados. Fabric ya usa estas rutas; sigue pendiente incorporar Quilt, Forge y NeoForge; ver [organización de datos](organizacion-datos.md).
+**Base de almacenamiento:** Vanilla y Fabric comparten assets, bibliotecas y metadatos. Forge y NeoForge preparan sus clientes y bibliotecas compartidas en meta/loaders, con el instalador oficial y una carpeta aislada por intento. Quilt sigue pendiente; ver [organización de datos](organizacion-datos.md).
 
-**Estado actual:** el asistente y Cambiar versión consultan los catálogos oficiales de Fabric, Quilt, Forge y NeoForge y guardan la versión elegida. Vanilla está validado por el usuario. Fabric 26.3 fue validado por el usuario con un mod real en Windows; usa el perfil oficial para la versión elegida. Quilt, Forge y NeoForge todavía no se instalan ni ejecutan.
+**Estado actual:** el asistente y Cambiar versión consultan los catálogos oficiales y guardan la versión elegida. Vanilla y Fabric 26.3 tienen confirmación del usuario en Windows. Forge y NeoForge ya conectan instalación, Java y argumentos oficiales con la cola y el lanzamiento; la primera instalación Fabric añade Fabric API compatible respetando mods existentes y modpacks. Se comprobó el procesamiento oficial de Forge 1.20.1, NeoForge 1.21.1 y NeoForge 26.3, la reutilización sin red y el rechazo de una biblioteca alterada. La partida real y las migraciones de estos dos loaders siguen pendientes. Consulta [formatos admitidos y límites](loaders-forge-neoforge.md).
 
 - [x] Conectar Fabric al perfil oficial, versión fijada, bibliotecas verificadas, argumentos y mínimo de Java.
-- [ ] Conectar la instalación de Quilt, Forge y NeoForge usando sus perfiles, manifiestos, bibliotecas y/o instaladores oficiales, según corresponda. No sustituir el resultado oficial por versiones o perfiles inventados.
+- [x] Conectar Forge y NeoForge mediante sus instaladores oficiales spec 1, versión fijada, preparación aislada, Java, bibliotecas verificadas y argumentos del perfil.
+- [ ] Conectar Quilt y ampliar los formatos históricos de Forge todavía no admitidos.
 - [ ] Respetar la versión concreta guardada en la instancia y su compatibilidad con Minecraft; resolver Java y dependencias del perfil resultante.
 - [ ] Preparar la instalación fuera de la carpeta activa, verificar las descargas y publicar el resultado solo al terminar. Conservar la instalación anterior ante error o cancelación.
 - [ ] Integrar el avance con la cola, pausa/cancelación, consola y estados estables del botón; comprobar archivos existentes sin mostrar una instalación ficticia.
 - [ ] Lanzar el perfil instalado con sus argumentos, bibliotecas y nativos reales y con los mods de esa instancia.
 - [ ] Conectar el mismo recorrido a Crear instancia, Instalar/Jugar y Cambiar versión. Probar cada loader con una instancia nueva, una instalación reutilizada y una migración.
 
-Las tareas pendientes de este apartado corresponden a Quilt, Forge y NeoForge; Fabric ya tiene fijación de versión, preparación verificada, cola y lanzamiento.
+Las tareas pendientes de este apartado corresponden a Quilt y a la validación completa de Forge/NeoForge: partida con mods, migración, cancelación/recuperación durante los procesadores y Linux. Los puntos siguientes conservan su estado pendiente hasta validar ese recorrido; una preparación del cliente no lo acredita.
 
 **Criterio de finalización:** instalar y abrir una instancia de cada loader con un mod compatible, reutilizar sus archivos al reiniciar y recuperarse de una descarga fallida sin perder mundos ni mods.
 
 ## 2. Importación e instalación de modpacks
 
-**Estado actual:** la tienda instala los MRPACK de Modrinth en nuevas instancias Vanilla/Fabric. La revisión muestra Minecraft, la versión exacta del loader y los archivos opcionales; la instalación verifica SHA-512/SHA-1 y aplica overrides/client-overrides antes de preparar el juego. Pasó la instalación completa de Fabulously Optimized 14.1.1 con Minecraft 26.2/Fabric 0.19.5 y reutilización sin descargas. Instancias también permite seleccionar MRPACK locales y ZIP completos, incluidos perfiles Vanilla/Fabric de Prism/MultiMC y contenido exportado por Ícaro. La lectura/extracción se hace por bloques; consulta [importación local](importar-modpacks.md). Siguen pendientes los instaladores de Quilt/Forge/NeoForge. El usuario confirmó la importación de su instancia; las comprobaciones de compatibilidad y juego siguen siendo específicas de cada paquete.
+**Estado actual:** la tienda instala los MRPACK de Modrinth en nuevas instancias Vanilla/Fabric/Forge/NeoForge. La revisión muestra Minecraft, la versión exacta del loader y los archivos opcionales; la instalación verifica SHA-512/SHA-1 y aplica overrides/client-overrides antes de preparar el juego. Pasó la instalación completa de Fabulously Optimized 14.1.1 con Minecraft 26.2/Fabric 0.19.5 y reutilización sin descargas. Instancias también permite seleccionar MRPACK locales y ZIP completos, incluidos perfiles Vanilla/Fabric/Forge/NeoForge de Prism/MultiMC y contenido exportado por Ícaro. La lectura/extracción se hace por bloques; consulta [importación local](importar-modpacks.md). Quilt y los formatos históricos no admitidos de Forge siguen pendientes. El usuario confirmó la importación de su instancia; las comprobaciones de compatibilidad y juego siguen siendo específicas de cada paquete.
 
 - [x] Leer MRPACK desde el catálogo de Modrinth: metadatos, Minecraft, loader, referencias de archivos, hashes y archivos incluidos; presentar una revisión antes de importar.
 - [x] Descargar y verificar los archivos referenciados de MRPACK de Modrinth, aplicar los archivos incluidos y preparar Vanilla o Fabric mediante sus perfiles oficiales.
-- [ ] Extender la instalación de modpacks a Quilt, Forge y NeoForge cuando estén disponibles sus instaladores.
-- [x] Importar contenido de ZIP de Ícaro y perfiles Vanilla/Fabric compatibles de Prism/MultiMC; detectar el formato y explicar los formatos no admitidos.
+- [ ] Extender la instalación de modpacks a Quilt; validar partidas y migraciones de Forge/NeoForge.
+- [x] Importar contenido de ZIP de Ícaro y perfiles Vanilla/Fabric/Forge/NeoForge compatibles de Prism/MultiMC; detectar el formato y explicar los formatos no admitidos.
 - [x] Conectar la selección de archivo a la importación real de MRPACK y ZIP completos.
 - [x] Conectar ZonaSoltar a la importación real, con clic, arrastre y estados ocupado/cancelado.
 - [x] Validar rutas, enlaces, colisiones, integridad y límites de extracción en la importación local.
@@ -52,7 +53,7 @@ Las tareas pendientes de este apartado corresponden a Quilt, Forge y NeoForge; F
 
 - [x] Sustituir Invitado por cuentas sin conexión persistentes, con selección, eliminación y conservación de mundos/instancias.
 - [x] Conectar SkinSinConexion: PNG local, vista previa, modelo y avatares; servicio firmado y agente verificado al lanzar.
-- [ ] Validar la skin local en una partida Vanilla/Fabric real y comprobar su comportamiento en LAN y servidores compatibles.
+- [ ] Validar la skin local en una partida Vanilla/Fabric/Forge/NeoForge real y comprobar su comportamiento en LAN y servidores compatibles.
 - [ ] Completar la gestión persistente de varias cuentas Microsoft y sus capes.
 - [x] Conectar PantallaCuenta y EstudioSkin originales con perfil/PNG reales, modelo, capas, historial y subida; validación manual de la subida pendiente.
 - [ ] Completar el recorrido de servidores, ZeroTier y sincronización descrito abajo. Lista, estado/SRV, conexión con una instancia, solicitud de pertenencia a redes y sincronización de Modrinth están conectados; quedan permisos/instalación de ZeroTier, salida, miembros y pruebas entre equipos.
