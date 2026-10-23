@@ -5,6 +5,9 @@
 use super::*;
 use std::process::Stdio;
 
+mod buffer;
+mod progreso;
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Perfil {
@@ -385,6 +388,16 @@ pub(super) async fn preparar(
     let log = File::create(folder.join("instalador.log")).map_err(|_| Error::Disco)?;
     let err = log.try_clone().map_err(|_| Error::Disco)?;
     let mut command = tokio::process::Command::new(&runtime.executable);
+    if instance.loader == "forge" {
+        progress(Progreso {
+            etapa: "Preparando el instalador de Forge".into(),
+            completados: 0,
+            total: 0,
+        });
+        if let Some(argument) = buffer::preparar(&folder, &runtime.executable, cancel).await? {
+            command.arg(argument);
+        }
+    }
     command
         .arg("-Djava.awt.headless=true")
         .arg("-jar")
@@ -408,16 +421,22 @@ pub(super) async fn preparar(
         total: 0,
     });
     let mut child = command.spawn().map_err(|_| Error::Disco)?;
-    let status = tokio::select! {
-        biased;
-        _=cancel.cancelled()=>{ let _=child.kill().await; return Err(Error::Cancelada); }
-        result=tokio::time::timeout(Duration::from_secs(20*60),child.wait())=>{
-            match result {Ok(r)=>r.map_err(|_|Error::Disco)?,Err(_)=>{let _=child.kill().await;return Err(Error::Instalador(instance.loader.clone()));}}
-        }
-    };
+    let status = progreso::esperar(
+        &mut child,
+        &folder.join("instalador.log"),
+        &instance.loader,
+        cancel,
+        progress,
+    )
+    .await?;
     if !status.success() {
         return Err(Error::Instalador(instance.loader.clone()));
     }
+    progress(Progreso {
+        etapa: format!("Verificando archivos preparados de {}", instance.loader),
+        completados: 0,
+        total: 0,
+    });
     comprobar_librerias(&folder, &profile, cancel)?;
     let output = folder
         .join("versions")
@@ -686,6 +705,7 @@ mod tests {
         let manifest = crate::manifest::fetch_manifest(&client).await.unwrap();
         for (mc, family, loader) in [
             ("1.20.1", "forge", "47.4.10"),
+            ("26.3", "forge", "66.1.0"),
             ("1.21.1", "neoforge", "21.1.219"),
             ("26.3", "neoforge", "26.3.0.95"),
         ] {
@@ -747,6 +767,19 @@ mod tests {
             .await
             .unwrap();
             assert_eq!(ready.perfil.inherits_from, mc);
+            if family == "forge" && mc == "26.3" && loader == "66.1.0" {
+                use sha2::Digest;
+                let path = ready.carpeta.join(
+                    "libraries/net/minecraftforge/forge/26.3-66.1.0/forge-26.3-66.1.0-client.jar",
+                );
+                // Resultado del procesador oficial sin el adaptador de E/S.
+                // La optimización debe conservar incluso los bytes del ZIP.
+                let hash = sha2::Sha256::digest(fs::read(path).unwrap());
+                assert_eq!(
+                    format!("{hash:x}"),
+                    "4338d02f85af70578bd56aef24b195cad6d4984abedd5459f95f5e814d6adc0d"
+                );
+            }
             let offline = reqwest::Client::builder()
                 .proxy(reqwest::Proxy::all("http://127.0.0.1:9").unwrap())
                 .timeout(Duration::from_secs(2))

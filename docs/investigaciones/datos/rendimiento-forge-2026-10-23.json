@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "fecha": "2026-10-23",
+  "entorno": {
+    "sistema": "Windows",
+    "cpu": "AMD Ryzen 5 5600X",
+    "procesadores_logicos": 12,
+    "java": "Microsoft OpenJDK 25.0.1"
+  },
+  "minecraft": "26.3",
+  "forge": "66.1.0",
+  "binarypatcher": "1.3.4",
+  "buffer_bytes": 65536,
+  "muestras_por_variante": 1,
+  "procesador_aislado_segundos": {
+    "original": 114.079,
+    "codigo_experimental_con_buffer": 4.657,
+    "oficial_con_adaptador": 4.719
+  },
+  "salida_identica": {
+    "bytes": 82957733,
+    "sha256": "4338d02f85af70578bd56aef24b195cad6d4984abedd5459f95f5e814d6adc0d"
+  },
+  "clase_oficial_sha256": "8e7427ef29897b978790f8db9c444a4d5800c75b7d4b627716b7a915db710e77",
+  "prueba_instalador_y_caches_segundos": 23.66,
+  "alcance": "Una preparación nueva de Forge y tres comprobaciones de caché; verifica reutilización sin red e integridad. No mide una partida ni representa una garantía para otros entornos."
+}
