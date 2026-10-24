@@ -9,6 +9,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::SystemTime;
 
+#[path = "src/derivadas.rs"]
+mod derivadas;
 #[path = "src/originales.rs"]
 mod originales;
 mod preparar_imagenes;
@@ -78,19 +80,49 @@ fn preparar(
     }) {
         return;
     }
+    // Una segunda copia en Tinta que solo invierte Piedra, o que la repite,
+    // duplicaría el ejecutable: se deja una marca y se deriva al decodificar.
+    let derivada = if !tinta {
+        None
+    } else if invertir {
+        Some(derivadas::INVERTIDA)
+    } else if unica || lamina == Lamina::HermesHilos {
+        Some(derivadas::IGUAL)
+    } else {
+        None
+    };
+    if let Some(marca) = derivada {
+        fs::write(webp, marca).unwrap();
+        fs::write(rgba, marca).unwrap();
+        return;
+    }
     let fuente = fs::read(&fuente).expect("leer original del grabado");
     let imagen = preparar_imagenes::preparar(&fuente, recorte, invertir, lamina == Lamina::Faeton)
         .unwrap_or_else(|e| panic!("Preparar {nombre}: {e}"));
-    // VP8L conserva cada canal RGBA y comprime los grabados sin reducir su
-    // resolución. La decodificación sigue en los trabajadores de imágenes.
-    WebPEncoder::new_lossless(File::create(webp).unwrap())
-    .write_image(
-        imagen.as_raw(),
-        imagen.width(),
-        imagen.height(),
-        ColorType::Rgba8,
-    )
-    .expect("guardar grabado preparado");
+    let dimensiones = image::io::Reader::new(std::io::Cursor::new(&fuente))
+        .with_guessed_format()
+        .ok()
+        .and_then(|r| r.into_dimensions().ok());
+    let intacta = recorte.is_none()
+        && !invertir
+        && lamina != Lamina::Faeton
+        && dimensiones == Some(imagen.dimensions());
+    if intacta && fuente.starts_with(b"RIFF") {
+        // Sin recorte, inversión ni escala: el WebP original decodifica los
+        // mismos píxeles y ocupa una fracción de volver a codificarlo sin pérdida.
+        fs::write(webp, &fuente).unwrap();
+    } else {
+        // VP8L conserva cada canal RGBA y comprime los grabados sin reducir su
+        // resolución. La decodificación sigue en los trabajadores de imágenes.
+        WebPEncoder::new_lossless(File::create(webp).unwrap())
+        .write_image(
+            imagen.as_raw(),
+            imagen.width(),
+            imagen.height(),
+            ColorType::Rgba8,
+        )
+        .expect("guardar grabado preparado");
+    }
     // Píxeles pequeños listos para el primer cuadro: sin decodificar ni esperar
     // al trabajador de alta resolución y sin archivos externos a la app.
     let previa = image::DynamicImage::ImageRgba8(imagen)
@@ -116,6 +148,7 @@ fn main() {
         "build.rs",
         "preparar_imagenes.rs",
         "src/catalogo_laminas.rs",
+        "src/derivadas.rs",
         "src/originales.rs",
     ];
     let mut codigo = SystemTime::UNIX_EPOCH;

@@ -1,5 +1,12 @@
 # Changelog
 
+## [Sin publicar]
+
+- Reduce las imágenes empaquetadas de unos 192 MB a 104 MB. Los grabados que no se recortan, invierten ni escalan conservan su WebP original en lugar de recodificarse sin pérdida (mismos píxeles), y la variante Tinta que solo invierte o repite Piedra se obtiene al decodificar; si es igual, comparte la textura.
+- Las descargas reales ya no reconstruyen la interfaz en cada cuadro: las barras de progreso se redibujan solas. Los avisos piden cuadros solo durante su entrada y su fundido.
+- La revisión de resourcepacks y shaders consulta las fichas por lotes y revisa hasta cuatro paquetes a la vez, en lugar de tres solicitudes seguidas por paquete.
+- Las consultas a cuentas, Java, catálogos y loaders comparten un cliente HTTP y reutilizan conexiones. Las vistas leen la lista de instancias sin copiarla entera.
+
 ## [0.3.1] - 2026-10-23
 
 - Reduce el tiempo de aplicación de parches al instalar Forge, conservando las verificaciones y los archivos del cliente.
