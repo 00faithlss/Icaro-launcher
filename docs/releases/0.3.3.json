@@ -1,0 +1,13 @@
+{
+  "version": "0.3.3",
+  "notas": [
+    {
+      "tipo": "correccion",
+      "texto": "Instalar desde la tienda e importar JAR ya no fallan por metadatos inválidos en instancias con dos JAR del mismo proyecto."
+    },
+    {
+      "tipo": "correccion",
+      "texto": "«Ver detalle» en un aviso de error muestra ese error en lugar de la falla genérica de la tienda."
+    }
+  ]
+}
