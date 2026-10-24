@@ -244,6 +244,11 @@ pub trait Fuente: Sync {
     fn solo_cliente(&self, _project: &str) -> impl std::future::Future<Output = Result<bool, Error>> + Send {
         async { Ok(false) }
     }
+    /// Proyecto sin soporte de cliente. El anfitrión lo excluye del índice
+    /// aunque otro mod lo declare obligatorio, y el cliente no lo instala.
+    fn solo_servidor(&self, _project: &str) -> impl std::future::Future<Output = Result<bool, Error>> + Send {
+        async { Ok(false) }
+    }
     /// Proyectos exclusivos de cliente entre `projects`. Las fuentes con
     /// consultas por lote deben sobrescribirlo para no pedir uno a uno.
     fn solo_cliente_lote(&self, projects: &[String]) -> impl std::future::Future<Output = Result<BTreeSet<String>, Error>> + Send {
@@ -314,6 +319,13 @@ impl Fuente for Catalog {
     async fn solo_cliente(&self, project: &str) -> Result<bool, Error> {
         let p = self.project(project).await?;
         Ok(p.server_side == "unsupported" && p.client_side != "unsupported")
+    }
+    async fn solo_servidor(&self, project: &str) -> Result<bool, Error> {
+        let p = self.project(project).await?;
+        if p.id != project {
+            return Err(Error::Datos);
+        }
+        Ok(p.client_side == "unsupported")
     }
     async fn solo_cliente_lote(&self, projects: &[String]) -> Result<BTreeSet<String>, Error> {
         let mut result = BTreeSet::new();
