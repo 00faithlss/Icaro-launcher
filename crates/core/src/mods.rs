@@ -163,20 +163,24 @@ fn registros(game: &Path) -> Result<Vec<Instalado>, Error> {
     if regular(&path, false)?.len() > 2 * 1024 * 1024 {
         return Err(Error::Datos);
     }
-    let data: Vec<Instalado> = serde_json::from_slice(&fs::read(path).map_err(|_| Error::Disco)?)
-        .map_err(|_| Error::Datos)?;
-    let mut projects = BTreeSet::new();
+    let mut data: Vec<Instalado> =
+        serde_json::from_slice(&fs::read(path).map_err(|_| Error::Disco)?)
+            .map_err(|_| Error::Datos)?;
     let mut names = BTreeSet::new();
     if data.len() > 512
         || data.iter().any(|m| {
             !nombre_valido(&m.archivo)
                 || !m.archivo.ends_with(".jar")
-                || !projects.insert(m.project_id.clone())
                 || !names.insert(m.archivo.to_lowercase())
         })
     {
         return Err(Error::Datos);
     }
+    // La sincronización de 0.3.1 podía registrar dos JAR del mismo proyecto.
+    // Se conserva el primero; los demás siguen en `mods` como archivos locales,
+    // sin bloquear las operaciones ni borrar nada.
+    let mut projects = BTreeSet::new();
+    data.retain(|m| projects.insert(m.project_id.clone()));
     Ok(data)
 }
 pub fn inventario(store: &Almacen, id: &str) -> Result<Vec<Instalado>, Error> {

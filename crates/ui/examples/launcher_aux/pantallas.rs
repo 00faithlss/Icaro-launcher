@@ -352,6 +352,7 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             }
             if p == Pantalla::ErrorTienda {
                 app.intentos = 0;
+                app.detalle_error = None;
             }
             if p == Pantalla::Integridad {
                 app.codigo_inicio = Instant::now();
@@ -360,6 +361,7 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
         }
         Accion::Cerrar => {
             app.pantalla = None;
+            app.detalle_error = None;
             arrancar(app);
         }
         Accion::Idioma(v) => app.aj.idioma = v,
@@ -899,6 +901,7 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
         }
         Accion::VerInstalados => {
             app.pantalla = None;
+            app.detalle_error = None;
             app.seccion = icaro_ui::shell::Seccion::Instancias;
             arrancar(app);
         }
@@ -1114,7 +1117,28 @@ fn codigo<'a>(app: &'a App, p: Paleta) -> Element<'a, Mensaje> {
     con_lamina(p, Lamina::Hermes, col.into())
 }
 
+fn detalle_error<'a>(p: Paleta, detalle: &'a str) -> Element<'a, Mensaje> {
+    let derecha = column![
+        text("NO SE PUDO\nCOMPLETAR").font(fuentes::DISPLAY).size(texto::DISPLAY.0).color(p.text),
+        text(detalle).size(texto::BODY.0).color(p.text),
+        text("Tus instancias y mods no cambiaron. Corrige la causa y vuelve a intentarlo.")
+            .size(texto::BODY_SM.0)
+            .color(p.text_muted),
+        row![
+            componentes::boton(p, "Volver", Variante::Primario, Some(m(Accion::Cerrar))),
+            componentes::boton(p, "Ver mods instalados", Variante::Secundario, Some(m(Accion::VerInstalados))),
+        ]
+        .spacing(espacio::S3),
+        text("Faetón, Hendrick Goltzius, 1588. The Met, CC0.").size(texto::BODY_SM.0).color(p.text_muted),
+    ]
+    .spacing(espacio::S4);
+    con_lamina(p, Lamina::Faeton, derecha.into())
+}
+
 fn error_tienda<'a>(app: &'a App, p: Paleta) -> Element<'a, Mensaje> {
+    if let Some(detalle) = &app.detalle_error {
+        return detalle_error(p, detalle);
+    }
     let causa = if app.intentos >= 3 {
         "Sigue sin responder. Revisa tu conexión a internet y vuelve a intentarlo."
     } else {
@@ -2290,4 +2314,22 @@ fn red_privada<'a>(p: Paleta) -> Element<'a, Mensaje> {
     ]
     .spacing(espacio::S3)
     .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ver_detalle_muestra_el_error_del_aviso_y_no_la_falla_de_la_tienda() {
+        let (mut app, _) = crate::iniciar_con_guardado(crate::Seccion::Instancias, false, None, false, crate::servicios::Estado::nuevo(true), None);
+        let texto = "Los archivos o metadatos de mods no son válidos.".to_string();
+        let _ = crate::actualizar_estado(&mut app, Mensaje::DetalleAviso(texto.clone()));
+        assert!(matches!(app.pantalla, Some(Pantalla::ErrorTienda)));
+        assert_eq!(app.detalle_error.as_deref(), Some(texto.as_str()));
+        // La búsqueda de la tienda no hereda el error del aviso.
+        assert!(app.servicios.error.is_none());
+        let _ = actualizar(&mut app, Accion::Cerrar);
+        assert!(app.detalle_error.is_none() && app.pantalla.is_none());
+    }
 }
