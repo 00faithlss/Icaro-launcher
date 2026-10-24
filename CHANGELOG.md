@@ -1,6 +1,6 @@
 # Changelog
 
-## [Sin publicar]
+## [0.3.2] - 2026-10-24
 
 - Reduce las imágenes empaquetadas de unos 192 MB a 104 MB. Los grabados que no se recortan, invierten ni escalan conservan su WebP original en lugar de recodificarse sin pérdida (mismos píxeles), y la variante Tinta que solo invierte o repite Piedra se obtiene al decodificar; si es igual, comparte la textura.
 - Las descargas reales ya no reconstruyen la interfaz en cada cuadro: las barras de progreso se redibujan solas. Los avisos piden cuadros solo durante su entrada y su fundido.

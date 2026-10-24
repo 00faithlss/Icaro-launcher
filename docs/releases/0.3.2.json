@@ -1,0 +1,29 @@
+{
+  "version": "0.3.2",
+  "notas": [
+    {
+      "tipo": "mejora",
+      "texto": "Reduce las imágenes empaquetadas de unos 192 MB a 104 MB sin cambiar los píxeles de los grabados."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "Las descargas reales ya no reconstruyen la interfaz en cada cuadro y los avisos solo piden cuadros durante su entrada y su fundido."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "La revisión de resourcepacks y shaders consulta las fichas por lotes y revisa hasta cuatro paquetes a la vez."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "Las consultas a cuentas, Java, catálogos y loaders reutilizan conexiones HTTP."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "icaro-sync-host añade --incluir-servidor e --incluir-archivo para publicar también los mods exclusivos de servidor."
+    },
+    {
+      "tipo": "correccion",
+      "texto": "La sincronización ya no se bloquea cuando un mod exige una dependencia exclusiva de servidor, como WorldgenFeatureFix para Epic Terrain."
+    }
+  ]
+}
