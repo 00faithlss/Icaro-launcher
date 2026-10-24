@@ -270,6 +270,7 @@ async fn completar_dependencias_propias(source: &impl Fuente, index: &mut Indice
         pendientes.push(v);
     }
     let mut recuperadas = BTreeSet::new();
+    let mut omitidas = BTreeSet::new();
     while let Some(version) = pendientes.pop() {
         for dep in &dependencias_cliente(&version) {
             // Los pins de un mod transportado como propio no sustituyen el
@@ -297,6 +298,16 @@ async fn completar_dependencias_propias(source: &impl Fuente, index: &mut Indice
                 }) {
                     return Err(format!("Dos mods del anfitrión requieren versiones distintas de la biblioteca {project}."));
                 }
+                continue;
+            }
+            // El anfitrión excluye del cliente las dependencias sin soporte de
+            // cliente (por ejemplo WorldgenFeatureFix para Epic Terrain).
+            if omitidas.contains(&project) {
+                continue;
+            }
+            if source.solo_servidor(&project).await.map_err(err)? {
+                index.avisos.push(format!("{}: Modrinth exige {project} como dependencia, pero la clasifica como exclusiva de servidor. No se instala en el cliente.", version.project_id));
+                omitidas.insert(project);
                 continue;
             }
             let candidate = if let Some(v) = pinned { v } else {
@@ -3175,7 +3186,7 @@ mod tests {
         fs::write(mods.join("a.jar"), b"uno").unwrap();
         let hace = std::time::SystemTime::now() - Duration::from_secs(3600);
         fs::File::options().write(true).open(mods.join("a.jar")).unwrap().set_modified(hace).unwrap();
-        let servidor = dedicado::ServidorDedicado { carpeta, minecraft: "1.20.1".into(), loader: "fabric".into(), loader_version: "0.16.14".into(), excluir: BTreeSet::new() };
+        let servidor = dedicado::ServidorDedicado { carpeta, minecraft: "1.20.1".into(), loader: "fabric".into(), loader_version: "0.16.14".into(), excluir: BTreeSet::new(), incluir: BTreeSet::new(), incluir_servidor: false };
         assert_eq!(servidor.huella().unwrap(), fingerprint(&mods).unwrap());
         assert_eq!(dedicado::sha_vigente(&mods, "a.jar"), Some(hash(b"uno")));
         // Un cambio invalida el hash guardado y la siguiente huella lo relee.

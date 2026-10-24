@@ -1607,11 +1607,13 @@ pub fn estado_boton(app: &App, index: usize) -> (EstadoJugar, String, Option<Men
             _ => {}
         }
     }
-    let listo = crate::instancias().get(index).is_some_and(|d| {
-        matches!(
-            d.estado,
-            EstadoInstancia::Lista | EstadoInstancia::Desactualizada
-        )
+    let listo = crate::con_instancias(|l| {
+        l.get(index).is_some_and(|d| {
+            matches!(
+                d.estado,
+                EstadoInstancia::Lista | EstadoInstancia::Desactualizada
+            )
+        })
     });
     (
         if listo {

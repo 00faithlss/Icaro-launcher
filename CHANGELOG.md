@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.2] - 2026-10-24
+
+- Reduce las imágenes empaquetadas de unos 192 MB a 104 MB. Los grabados que no se recortan, invierten ni escalan conservan su WebP original en lugar de recodificarse sin pérdida (mismos píxeles), y la variante Tinta que solo invierte o repite Piedra se obtiene al decodificar; si es igual, comparte la textura.
+- Las descargas reales ya no reconstruyen la interfaz en cada cuadro: las barras de progreso se redibujan solas. Los avisos piden cuadros solo durante su entrada y su fundido.
+- La revisión de resourcepacks y shaders consulta las fichas por lotes y revisa hasta cuatro paquetes a la vez, en lugar de tres solicitudes seguidas por paquete.
+- Las consultas a cuentas, Java, catálogos y loaders comparten un cliente HTTP y reutilizan conexiones. Las vistas leen la lista de instancias sin copiarla entera.
+- La sincronización ya no se bloquea con «Falta una dependencia compatible del anfitrión» cuando un JAR propio exige una dependencia que Modrinth declara exclusiva de servidor, como WorldgenFeatureFix para Epic Terrain: el cliente la omite con un aviso, igual que el anfitrión. Compatible con servicios de sincronización anteriores.
+- `icaro-sync-host` añade `--incluir-servidor` (todos) y `--incluir-archivo <jar>` (repetible) para publicar también los mods exclusivos de servidor y reproducir la carpeta `mods` completa. Sin estas opciones se siguen excluyendo.
+
 ## [0.3.1] - 2026-10-23
 
 - Reduce el tiempo de aplicación de parches al instalar Forge, conservando las verificaciones y los archivos del cliente.

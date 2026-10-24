@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ $# -lt 1 ]]; then
-  printf 'Uso: bash iniciar-sincronizacion.sh /ruta/absoluta/servidor [--excluir-archivo mod.jar ...]\n' >&2
+  printf 'Uso: bash iniciar-sincronizacion.sh /ruta/absoluta/servidor [--excluir-archivo mod.jar ...] [--incluir-archivo mod.jar ...] [--incluir-servidor]\n' >&2
   exit 1
 fi
 servidor=$1

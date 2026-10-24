@@ -24,7 +24,23 @@ pub enum Error {
     RateLimited(u64),
 }
 
+/// Cliente compartido: las operaciones sucesivas (cuenta, Java, catálogos y
+/// loaders) reutilizan conexiones TLS en lugar de abrir un pool nuevo cada vez.
+/// En pruebas cada `#[tokio::test]` tiene su runtime y no debe heredar
+/// conexiones de otro ya cerrado.
 pub(crate) fn client() -> Result<reqwest::Client, Error> {
+    static CLIENTE: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    if cfg!(test) {
+        return construir_cliente();
+    }
+    if let Some(cliente) = CLIENTE.get() {
+        return Ok(cliente.clone());
+    }
+    let cliente = construir_cliente()?;
+    Ok(CLIENTE.get_or_init(|| cliente).clone())
+}
+
+fn construir_cliente() -> Result<reqwest::Client, Error> {
     reqwest::Client::builder()
         .https_only(true)
         .redirect(reqwest::redirect::Policy::none())

@@ -439,14 +439,14 @@ fn con_entrada<'a>(app: &App, contenido: Element<'a, Mensaje>) -> Element<'a, Me
 
 fn abrir_instancia(app: &mut App, i: usize) {
     if app.pantalla == Some(pantallas::Pantalla::Fallo) { app.pantalla = None; }
-    if i >= instancias().len() { return; }
+    if i >= con_instancias(|l| l.len()) { return; }
     if !app.servicios.demo && app.editor.is_some() {
         let nombre = app.general.nombre.clone();
         if let Err(error) = instancias_reales::renombrar(app, &nombre) {
             app.avisar(error); return;
         }
     }
-    let datos = instancias()[i].clone();
+    let datos = con_instancias(|l| l[i].clone());
     let exp = if app.servicios.demo { Explorador::abrir(&datos.nombre) } else {
         let Some(record) = app.servicios.instancias.registros.get(i) else { return; };
         match app.servicios.instancias.almacen.juego(&record.id) {
@@ -662,7 +662,7 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
             let Some(i) = app.menu.or(app.seleccionada) else { return Task::none(); };
             app.grupos[i] = g.clone();
             app.menu = None;
-            let nombre = instancias()[i].nombre.clone();
+            let nombre = con_instancias(|l| l[i].nombre.clone());
             app.avisar(match g {
                 Some(g) => format!("{nombre} ahora está en el grupo {g}."),
                 None => format!("{nombre} quedó sin grupo."),
@@ -892,7 +892,7 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
         }
         Mensaje::VerGrupos(v) => app.menu_grupos = v,
         Mensaje::BuscarMods(t) => app.busqueda_mods = t,
-        Mensaje::AlternarMod(archivo) => mods::alternar(&instancias()[app.editor_inst].nombre, &archivo),
+        Mensaje::AlternarMod(archivo) => mods::alternar(&con_instancias(|l| l[app.editor_inst].nombre.clone()), &archivo),
         Mensaje::Pant(a) => return pantallas::actualizar(app, a),
         Mensaje::Ses(a) => return sesion::actualizar(app, a),
         Mensaje::CuentaReal(a) => return cuenta_real::actualizar(app, a),
@@ -934,7 +934,7 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
         Mensaje::TiendaLado(i) => app.tienda_lado = i,
         Mensaje::TiendaOrden(i) => app.tienda_orden = i,
         Mensaje::TiendaInstalar => {
-            let inst = instancias()[app.editor_inst].nombre.clone();
+            let inst = con_instancias(|l| l[app.editor_inst].nombre.clone());
             let (mc, cargador) = juego_de_instancia(app);
             let mut hechos = 0;
             for id in app.tienda_lista.clone() {
@@ -1000,7 +1000,7 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
             arrancar(app);
         }
         Mensaje::VersionMod(archivo, version) => {
-            let inst = instancias()[app.editor_inst].nombre.clone();
+            let inst = con_instancias(|l| l[app.editor_inst].nombre.clone());
             let id = mods::listar(&inst).into_iter().find(|m| m.archivo == archivo).map(|m| m.id);
             if let Some(id) = id {
                 if mods::cambiar_version(&inst, &archivo, &id, &version).is_some() {
@@ -1009,7 +1009,7 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
             }
         }
         Mensaje::InstalarMod(id, version) => {
-            let inst = instancias()[app.editor_inst].nombre.clone();
+            let inst = con_instancias(|l| l[app.editor_inst].nombre.clone());
             mods::instalar(&inst, &id, &version);
             // Dependencias obligatorias que falten y opcionales marcadas.
             if let Some(c) = mods::en_catalogo(&id) {
@@ -1027,7 +1027,7 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
             app.avisar(format!("{id} {version} instalado."));
         }
         Mensaje::EliminarMod(archivo) => {
-            mods::eliminar(&instancias()[app.editor_inst].nombre, &archivo);
+            mods::eliminar(&con_instancias(|l| l[app.editor_inst].nombre.clone()), &archivo);
             app.avisar(format!("{archivo} se movió a la papelera."));
         }
         Mensaje::Cuadro(t) => {
@@ -1126,7 +1126,7 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
         Mensaje::GaleriaModpack(i) => app.modpack_galeria = i,
         Mensaje::InstalarModpack(i) => {
             let m = &modpacks::CATALOGO[i];
-            if instancias().iter().any(|d| d.nombre == m.nombre) {
+            if con_instancias(|l| l.iter().any(|d| d.nombre == m.nombre)) {
                 return Task::none();
             }
             lista_instancias().lock().unwrap().push(DatosInstancia {
@@ -1305,6 +1305,12 @@ fn instancias() -> Vec<DatosInstancia> {
     lista_instancias().lock().unwrap().clone()
 }
 
+/// Consulta la lista sin copiarla, para vistas que se reconstruyen en cada
+/// cuadro. `f` no debe volver a llamar a `instancias()`.
+fn con_instancias<R>(f: impl FnOnce(&[DatosInstancia]) -> R) -> R {
+    f(&lista_instancias().lock().unwrap())
+}
+
 fn config_por_defecto() -> ConfigJava {
     ConfigJava {
         java: None,
@@ -1361,7 +1367,7 @@ fn avanzar_picar(app: &mut App) {
             app.picar = None;
         }
     } else if etapa >= icaro_ui::movimiento::PICAR_ETAPAS {
-        let nombre = instancias().get(p.instancia).map(|d| d.nombre.clone()).unwrap_or_default();
+        let nombre = con_instancias(|l| l.get(p.instancia).map(|d| d.nombre.clone())).unwrap_or_default();
         if let Some(p) = &mut app.picar {
             p.rota = Some(ahora);
         }
@@ -1409,7 +1415,7 @@ fn pantalla_instancias(app: &App) -> Element<'_, Mensaje> {
     if let Some(pestana) = app.editor {
         return pantalla_editor(app, pestana);
     }
-    if app.capt.vacio || instancias().is_empty() {
+    if app.capt.vacio || con_instancias(|l| l.is_empty()) {
         return capt::vacio_instancias(app);
     }
     let mut chips = row![].spacing(espacio::S2);
@@ -1633,7 +1639,7 @@ fn lista_mods(app: &App) -> Element<'_, Mensaje> {
     if !app.servicios.demo && app.editor == Some(2) { return mods_reales::vista(app); }
     if !app.servicios.demo && app.editor == Some(3) { return mods_reales::vista_recursos(app); }
     let p = app.paleta();
-    let instancia = instancias()[app.editor_inst].nombre.clone();
+    let instancia = con_instancias(|l| l[app.editor_inst].nombre.clone());
     let (mc_inst, cargador_inst) = juego_de_instancia(app);
     let instalados = if app.servicios.demo { mods::listar(&instancia) } else { Vec::new() };
     let consulta = app.busqueda_mods.trim().to_lowercase();
@@ -1758,7 +1764,7 @@ fn tienda_mods(app: &App) -> Element<'_, Mensaje> {
     if !app.servicios.demo { return servicios::store_view(app); }
     use icaro_ui::componentes::{casilla, etiqueta, insignia, Estado};
     let p = app.paleta();
-    let instancia = instancias()[app.editor_inst].nombre.clone();
+    let instancia = con_instancias(|l| l[app.editor_inst].nombre.clone());
     let (mc_inst, cargador_inst) = juego_de_instancia(app);
     let instalados = mods::listar(&instancia);
     let consulta = app.busqueda_mods.trim().to_lowercase();
@@ -1947,7 +1953,7 @@ fn ficha_mod<'a>(app: &'a App, id: &str) -> Element<'a, Mensaje> {
     if !app.servicios.demo { return diseno_mods::ficha(app); }
     use icaro_ui::componentes::{etiqueta, insignia, Estado};
     let p = app.paleta();
-    let instancia = instancias()[app.editor_inst].nombre.clone();
+    let instancia = con_instancias(|l| l[app.editor_inst].nombre.clone());
     let (mc_inst, cargador_inst) = juego_de_instancia(app);
     let instalados = mods::listar(&instancia);
     let puesto = instalados.iter().find(|m| m.id == id);
@@ -2234,7 +2240,7 @@ fn para_instancia(c: &mods::ModCatalogo, mc: &str, cargador: &str, pruebas: bool
 fn pagina_mod<'a>(app: &'a App, id: &str) -> Element<'a, Mensaje> {
     use icaro_ui::componentes::{casilla, etiqueta, insignia, Estado};
     let p = app.paleta();
-    let datos = &instancias()[app.editor_inst];
+    let datos = &con_instancias(|l| l[app.editor_inst].clone());
     let instancia = datos.nombre.clone();
     let (mc_inst, cargador_inst) = {
         let mut partes = datos.version.split(" · ");
@@ -2610,7 +2616,7 @@ fn pagina_modpack(app: &App, i: usize) -> Element<'_, Mensaje> {
     use icaro_ui::componentes::{etiqueta, insignia, Estado};
     let p = app.paleta();
     let m = &modpacks::CATALOGO[i];
-    let instalado = instancias().iter().any(|d| d.nombre == m.nombre);
+    let instalado = con_instancias(|l| l.iter().any(|d| d.nombre == m.nombre));
     let publicaciones = publicaciones_modpack(m);
     let incluidos = mods_incluidos(i);
 
@@ -2937,7 +2943,7 @@ fn pantalla_editor(app: &App, pestana: usize) -> Element<'_, Mensaje> {
             return pagina_mod(app, id);
         }
     }
-    let instancia = instancias()[app.editor_inst].clone();
+    let instancia = con_instancias(|l| l[app.editor_inst].clone());
     let cantidad_mods = instancia.mods.split_whitespace().next()
         .and_then(|n| n.parse::<usize>().ok()).unwrap_or(0);
     let datos = DatosEditor {
@@ -3437,7 +3443,7 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
     // Mantener el árbol de la vista debajo del Umbral evita remontar la
     // instancia, sus imágenes y sus controles cuando se retira la animación.
     let umbral: Element<'_, Mensaje> = if let Some(t) = app.umbral {
-        let nombre = app.seleccionada.and_then(|i| instancias().get(i).map(|d| d.nombre.clone())).unwrap_or_default();
+        let nombre = app.seleccionada.and_then(|i| con_instancias(|l| l.get(i).map(|d| d.nombre.clone()))).unwrap_or_default();
         let pref = icaro_ui::movimiento::Preferencia { reducir: app.reducir };
         if app.servicios.demo {
             icaro_ui::efectos::umbral(p, ms_desde(t, app.ahora), pref, &nombre, Mensaje::UmbralVolver)
@@ -3502,10 +3508,16 @@ fn main() -> iced::Result {
             if !app.servicios.juego.procesos.is_empty() {
                 subs.push(iced::time::every(std::time::Duration::from_millis(600)).map(Mensaje::Cuadro));
             }
-            if !app.reducir && app.servicios.juego.trabajos.values().any(|t| matches!(t.estado,icaro_ui::descargas::EstadoDescarga::Activa(_))) {
-                subs.push(window::frames().map(Mensaje::Cuadro));
+            // Las descargas reales no piden cuadros: sus barras (`progreso`) se
+            // redibujan solas sin reconstruir la vista y el avance llega por mensajes.
+            if !app.avisos.esta_vacia() {
+                let tic = if app.avisos.animando(app.ahora, app.reducir) {
+                    std::time::Duration::from_millis(16)
+                } else {
+                    icaro_ui::avisos::TIC_QUIETO
+                };
+                subs.push(iced::time::every(tic).map(Mensaje::AvisoTic));
             }
-            if !app.avisos.esta_vacia() {subs.push(iced::time::every(std::time::Duration::from_millis(16)).map(Mensaje::AvisoTic));}
             if let Some(aviso) = &app.aviso {
                 let ms = if !app.reducir && aviso.saliendo(app.ahora) { 16 } else { 60 };
                 subs.push(iced::time::every(std::time::Duration::from_millis(ms)).map(Mensaje::AvisoTic));
@@ -3737,7 +3749,7 @@ fn iniciar_con_guardado(seccion: Seccion, piedra: bool, menu: Option<usize>, con
                 }
             }
         }
-        let total = instancias().len();
+        let total = con_instancias(|l| l.len());
         let prefs=guardado.as_ref().map(|g|g.apariencia.clone()).unwrap_or_else(||estado::AparienciaGuardada {tema:usize::from(piedra),..Default::default()});
         icaro_ui::movimiento::fijar_reducir(prefs.reducir);
         (

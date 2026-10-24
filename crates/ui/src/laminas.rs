@@ -39,16 +39,40 @@ macro_rules! laminas {
                 }
             }
 
-            pub(crate) fn previa(self, modo: Modo) -> Handle {
-                let bytes: &'static [u8] = match (self, modo) {
+            fn previa_bytes(self, modo: Modo) -> &'static [u8] {
+                match (self, modo) {
                     $(
                         (Lamina::$variante, Modo::Piedra) => include_bytes!(concat!(env!("OUT_DIR"), "/imagenes/", $archivo, "-piedra.rgba")),
                         (Lamina::$variante, Modo::Tinta) => include_bytes!(concat!(env!("OUT_DIR"), "/imagenes/", $archivo, "-tinta.rgba")),
                     )*
+                }
+            }
+
+            pub(crate) fn previa(self, modo: Modo) -> Handle {
+                let bytes = self.previa_bytes(modo);
+                let invertir = bytes == crate::derivadas::INVERTIDA;
+                let bytes = if invertir || bytes == crate::derivadas::IGUAL {
+                    self.previa_bytes(Modo::Piedra)
+                } else {
+                    bytes
                 };
                 let w = u32::from_le_bytes(bytes[..4].try_into().unwrap());
                 let h = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+                if invertir {
+                    let mut pixeles = bytes[8..].to_vec();
+                    crate::imagenes::invertir(&mut pixeles);
+                    return Handle::from_rgba(w, h, pixeles);
+                }
                 Handle::from_rgba(w, h, iced::advanced::image::Bytes::from_static(&bytes[8..]))
+            }
+
+            /// Tinta que repite Piedra comparte sus píxeles y su textura.
+            pub(crate) fn modo_propio(self, modo: Modo) -> Modo {
+                if modo == Modo::Tinta && self.bytes(modo) == crate::derivadas::IGUAL {
+                    Modo::Piedra
+                } else {
+                    modo
+                }
             }
 
             /// Anticipa las bandas y los grabados de las pantallas vacías.
