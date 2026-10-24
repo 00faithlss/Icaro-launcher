@@ -130,6 +130,8 @@ struct App {
     general: EstadoGeneral,
     configs: Vec<ConfigJava>,
     config_error: Option<String>,
+    /// Texto completo del aviso de error abierto con "Ver detalle".
+    detalle_error: Option<String>,
     almacenamiento: almacenamiento_real::Estado,
     java_global: java_real::Preferencias,
     java_detectadas: Vec<icaro_core::java::Java>,
@@ -1198,7 +1200,8 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
         Mensaje::CerrarAvisoId(id) => {if app.reducir{app.avisos.quitar(id);}else{app.avisos.cerrar(id,std::time::Instant::now());}}
         Mensaje::PausarAviso(id,pausa) => app.avisos.pausar(id,pausa,std::time::Instant::now()),
         Mensaje::AccionAviso(id,accion) => {app.avisos.quitar(id);return actualizar_estado(app,*accion);}
-        Mensaje::DetalleAviso(texto) => {app.servicios.error=Some(texto);app.pantalla=Some(pantallas::Pantalla::ErrorTienda);}
+        // El detalle muestra el error del aviso, no la falla genérica de la tienda.
+        Mensaje::DetalleAviso(texto) => {app.detalle_error=Some(texto);app.pantalla=Some(pantallas::Pantalla::ErrorTienda);}
         Mensaje::AvisoTic(ahora) => {
             app.avisos.actualizar(ahora);
             app.ahora = ahora;
@@ -3755,6 +3758,7 @@ fn iniciar_con_guardado(seccion: Seccion, piedra: bool, menu: Option<usize>, con
         (
             App {
                 config_error,
+                detalle_error: None,
                 almacenamiento: Default::default(),
                 actualizacion: actualizacion_real::Estado::default(),
                 verificacion: Default::default(),

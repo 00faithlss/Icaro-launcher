@@ -856,9 +856,12 @@ async fn construir_plan(
             .map(|m| m.sha512.clone()).collect();
         if !hashes.is_empty() {
             let reconocidas = source.versiones_por_hash(&hashes).await.map_err(err)?;
+            // Dos JAR del mismo proyecto (por ejemplo dos versiones de Sodium)
+            // no pueden compartir identidad: el segundo queda como archivo local.
+            let mut tomados: BTreeSet<String> = installed.iter().filter(|m| !m.project_id.is_empty()).map(|m| m.project_id.clone()).collect();
             for m in &mut installed {
                 if m.project_id.is_empty() {
-                    if let Some(v) = reconocidas.get(&m.sha512).filter(|v| v.files.iter().any(|f| f.hashes.sha512.eq_ignore_ascii_case(&m.sha512))) {
+                    if let Some(v) = reconocidas.get(&m.sha512).filter(|v| v.files.iter().any(|f| f.hashes.sha512.eq_ignore_ascii_case(&m.sha512)) && tomados.insert(v.project_id.clone())) {
                         m.project_id = v.project_id.clone();
                         m.version_id = v.id.clone();
                         m.version = v.version_number.clone();
@@ -1675,7 +1678,9 @@ async fn aplicar_transaccion(
             _ = cancel.cancelled() => return Err("Sincronización cancelada. Los mods anteriores se conservan.".into()),
             r = descargar => r?,
         }
-        records.retain(|m| !m.project_id.is_empty());
+        // El inventario admite un registro por proyecto; los demás JAR quedan locales.
+        let mut proyectos = BTreeSet::new();
+        records.retain(|m| !m.project_id.is_empty() && proyectos.insert(m.project_id.clone()));
         let meta = serde_json::to_vec_pretty(&records).map_err(err)?;
         let sync = serde_json::to_vec(&Gestionados { origen: plan.origen.clone(), proyectos: wanted.clone(), archivos: plan.locales.clone() }).map_err(err)?;
         for (nombre, bytes) in [(META, meta), (SYNC, sync)] {
@@ -2507,6 +2512,43 @@ mod tests {
             .unwrap();
         assert!(!dir.join("example-2.jar").exists());
         assert_eq!(fs::read(dir.join("local.jar")).unwrap(), b"personal");
+    }
+    #[tokio::test]
+    async fn dos_jar_importados_del_mismo_proyecto_no_rompen_el_inventario() {
+        let (_temp, store, i) = store();
+        let mut f = fake();
+        let dir = store.juego(&i.id).unwrap().join("mods");
+        fs::create_dir_all(&dir).unwrap();
+        // Dos versiones de Sodium importadas como JAR locales, reconocidas por hash.
+        for (id, archivo, cuerpo) in [("s1", "sodium-a.jar", b"sodium-a".as_slice()), ("s2", "sodium-b.jar", b"sodium-b".as_slice())] {
+            let mut v = f.versions["v1"].clone();
+            v.project_id = "AANobbMI".into();
+            v.id = id.into();
+            v.files[0].filename = archivo.into();
+            v.files[0].size = cuerpo.len() as u64;
+            v.files[0].hashes.sha512 = hash(cuerpo);
+            f.hashes.insert(hash(cuerpo), v.clone());
+            f.versions.insert(id.into(), v);
+            fs::write(dir.join(archivo), cuerpo).unwrap();
+        }
+        let plan = preparar(&f, &store, &i, index(&f, "v1"), "127.0.0.1:25566".into()).await.unwrap();
+        aplicar(&f, &store, &i, &plan, CancellationToken::new(), |_, _| {}).await.unwrap();
+        let registros: Vec<Instalado> = serde_json::from_slice(&fs::read(dir.join(META)).unwrap()).unwrap();
+        assert_eq!(registros.iter().filter(|m| m.project_id == "AANobbMI").count(), 1);
+        let inventario = super::super::inventario(&store, &i.id).unwrap();
+        for archivo in ["sodium-a.jar", "sodium-b.jar", "example-1.jar"] {
+            assert!(inventario.iter().any(|m| m.archivo == archivo), "{archivo}");
+        }
+        // Un inventario ya guardado con el proyecto repetido (0.3.1) se sigue leyendo.
+        let mut duplicado = registros.clone();
+        let mut otro = registros.iter().find(|m| m.project_id == "AANobbMI").unwrap().clone();
+        otro.archivo = if otro.archivo == "sodium-a.jar" { "sodium-b.jar".into() } else { "sodium-a.jar".into() };
+        otro.sha512 = hash(if otro.archivo == "sodium-a.jar" { b"sodium-a".as_slice() } else { b"sodium-b".as_slice() });
+        duplicado.push(otro);
+        fs::write(dir.join(META), serde_json::to_vec(&duplicado).unwrap()).unwrap();
+        let inventario = super::super::inventario(&store, &i.id).unwrap();
+        assert_eq!(inventario.iter().filter(|m| m.project_id == "AANobbMI").count(), 1);
+        assert!(dir.join("sodium-a.jar").exists() && dir.join("sodium-b.jar").exists());
     }
     #[tokio::test]
     async fn sincroniza_litemoretica_sin_dependencias_declaradas_desde_cero() {

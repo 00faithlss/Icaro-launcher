@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.3] - 2026-10-24
+
+- Instalar mods desde la tienda e importar JAR ya no fallan con «Los archivos o metadatos de mods no son válidos» en instancias con dos JAR del mismo proyecto, como dos versiones de Sodium. La sincronización ya no registra ambos con la misma identidad, y un inventario guardado así conserva el primero; el otro sigue en `mods` como archivo local, sin borrar nada.
+- «Ver detalle» en un aviso de error muestra ese error en lugar de la pantalla de falla de la tienda con datos fijos.
+
 ## [0.3.2] - 2026-10-24
 
 - Reduce las imágenes empaquetadas de unos 192 MB a 104 MB. Los grabados que no se recortan, invierten ni escalan conservan su WebP original en lugar de recodificarse sin pérdida (mismos píxeles), y la variante Tinta que solo invierte o repite Piedra se obtiene al decodificar; si es igual, comparte la textura.
