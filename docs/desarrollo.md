@@ -162,3 +162,7 @@ La corrección pasó 21 pruebas de autenticación y tres de integración de sesi
 El registro del instalador se probó con su definición real adaptada únicamente a un AppId, asociación y grupo de Inicio aislados: ruta con espacios/acento, comando con el enlace como un argumento, retirada de la asociación propia y conservación de una registrada por otra copia. La asociación real `icaro` del usuario permaneció intacta.
 
 El ejecutable release recibió un enlace de prueba mediante `--oauth-return`, entregó el código y el `state` intactos al receptor aislado y terminó sin abrir otra ventana. La prueba no canjeó un código de Microsoft ni modificó la sesión del usuario; la confirmación del navegador y el acceso completo deben comprobarse con el paquete corregido.
+
+## Tamaño de compilaciones de desarrollo
+
+El perfil `dev` omite símbolos de depuración para reducir el espacio de `target`. Para restaurarlos en PowerShell durante una sesión, usa `$env:CARGO_PROFILE_DEV_DEBUG = "2"` antes de ejecutar Cargo; en Bash usa `export CARGO_PROFILE_DEV_DEBUG=2`. Esto puede aumentar el espacio y el tiempo de compilación. La compilación incremental sigue activa por defecto. Las mediciones y sus limitaciones están en [el registro de optimización](superpowers/mediciones/2026-10-26-registro.md).

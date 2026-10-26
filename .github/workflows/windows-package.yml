@@ -70,6 +70,13 @@ jobs:
               throw "main tiene la versión $version y la última estable es $estable. Cada estable exige subir la versión de Cargo y sus notas."
             }
           }
+      # Reutiliza dependencias entre ejecuciones; no guarda artefactos de release
+      # publicados ni altera la verificación de versión del canal.
+      - name: Restaurar caché de Cargo
+        if: steps.publicacion.outputs.repetida != 'true'
+        uses: Swatinem/rust-cache@401aff9a7a08acb9d27b64936a90db81024cff97 # v2.8.2
+        with:
+          shared-key: icaro-windows
       - name: Verificar núcleo e interfaz
         if: steps.publicacion.outputs.repetida != 'true'
         shell: pwsh

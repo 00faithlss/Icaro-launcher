@@ -372,30 +372,32 @@ fn incorporar(est: &mut Estado, capturas: Vec<Captura>) {
     });
     // Conserva los handles de archivos sin cambios para no volver a cargar
     // la textura cada dos segundos ni alterar el zoom del visor abierto.
-    est.capturas = capturas
-        .into_iter()
-        .map(|mut nueva| {
-            if let Some(anterior) = est.capturas.iter().find(|c| {
-                identidad(c) == identidad(&nueva)
-                    && c.bytes == nueva.bytes
-                    && c.original.as_ref().and_then(|o| o.modificada)
-                        == nueva.original.as_ref().and_then(|o| o.modificada)
-            }) {
-                if let (Some(n), Some(a)) = (&mut nueva.original, &anterior.original) {
-                    n.imagen = a.imagen.clone();
-                    n.miniatura = a.miniatura.clone();
-                }
+    let actualizadas = {
+        let mut anteriores = std::collections::HashMap::with_capacity(est.capturas.len());
+        for captura in &est.capturas {
+            let clave = (identidad(captura), captura.bytes, captura.original.as_ref().and_then(|o| o.modificada));
+            anteriores.entry(clave).or_insert(captura);
+        }
+        capturas.into_iter().map(|mut nueva| {
+            let clave = (identidad(&nueva), nueva.bytes, nueva.original.as_ref().and_then(|o| o.modificada));
+            let imagen = anteriores.get(&clave).and_then(|anterior| anterior.original.as_ref())
+                .map(|anterior| (anterior.imagen.clone(), anterior.miniatura.clone()));
+            if let (Some(n), Some((imagen, miniatura))) = (&mut nueva.original, imagen) {
+                n.imagen = imagen;
+                n.miniatura = miniatura;
             }
             nueva
-        })
-        .collect();
+        }).collect()
+    };
+    est.capturas = actualizadas;
+    let seleccion: std::collections::HashSet<(&str, &str)> = seleccion.iter().map(|(i, a)| (i.as_str(), a.as_str())).collect();
     est.seleccion = est
         .capturas
         .iter()
         .enumerate()
         .filter(|(_, c)| {
             let (id, archivo) = identidad(c);
-            seleccion.iter().any(|(i, a)| i == id && a == archivo)
+            seleccion.contains(&(id, archivo))
         })
         .map(|(i, _)| i)
         .collect();
@@ -1213,6 +1215,33 @@ mod tests {
                 modificada: None,
             }),
         }
+    }
+
+    #[test]
+    #[ignore = "Medición reproducible de actualización de galería"]
+    fn medir_refresco_galeria_grande() {
+        let mut est = Estado::vacio();
+        est.capturas = (0..3000).map(|i| local("instancia", &format!("{i:04}.png"), "Instancia")).collect();
+        let nuevas = est.capturas.clone();
+        est.seleccion = (0..3000).collect();
+        let inicio = Instant::now();
+        incorporar(&mut est, nuevas);
+        println!("MEDICION_GALERIA {:?}", inicio.elapsed());
+        assert_eq!(est.capturas.len(), 3000);
+        assert_eq!(est.seleccion.len(), 3000);
+    }
+
+    #[test]
+    fn refresco_reutiliza_texturas_solo_si_no_cambian_los_archivos() {
+        let mut est = Estado::vacio();
+        est.capturas = vec![local("a", "igual.png", "Una"), local("a", "cambio.png", "Una")];
+        let antes = est.capturas[0].original.as_ref().unwrap().imagen.id();
+        let mut nuevas = vec![local("a", "igual.png", "Una"), local("a", "cambio.png", "Una")];
+        nuevas[1].bytes += 1;
+        let nuevo = nuevas[1].original.as_ref().unwrap().imagen.id();
+        incorporar(&mut est, nuevas);
+        assert_eq!(est.capturas[0].original.as_ref().unwrap().imagen.id(), antes);
+        assert_eq!(est.capturas[1].original.as_ref().unwrap().imagen.id(), nuevo);
     }
 
     #[test]

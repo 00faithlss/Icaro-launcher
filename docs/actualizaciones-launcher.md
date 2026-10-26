@@ -54,6 +54,8 @@ Validación local del 13-10-2026: 9 pruebas del módulo de actualización, 49 de
 
 Referencias: [releases de GitHub](https://docs.github.com/en/rest/releases/releases) y [parámetros de Inno Setup](https://jrsoftware.org/ishelp/topic_setupcmdline.htm).
 
+En el canal beta, una release estable de la misma versión no se ofrece solamente por tener otro número de compilación; las betas más nuevas siguen siendo candidatas. Tras completar la actualización, la pantalla ofrece **Continuar**.
+
 ## Flujo de publicación
 
 El trabajo se hace en ramas `feat/*`, `fix/*`, `perf/*` o `ci/*`, que no publican, y se integra en `develop`:

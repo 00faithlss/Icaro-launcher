@@ -47,7 +47,7 @@ pub enum Error {
 pub struct Almacen {
     raiz: PathBuf,
     rutas: Arc<Mutex<BTreeMap<String, PathBuf>>>,
-    eliminadas: Arc<Mutex<BTreeMap<String, crate::papelera::Ticket>>>,
+    eliminadas: Arc<Mutex<BTreeMap<String, (crate::papelera::Ticket, Instancia)>>>,
 }
 pub struct Informe {
     pub instancias: Vec<Instancia>,
@@ -570,7 +570,7 @@ impl Almacen {
 
     /// Envía la instancia a la papelera del sistema; nunca usa borrado permanente.
     pub fn eliminar(&self, id: &str) -> Result<(), Error> {
-        self.leer(id)?;
+        let record = self.leer(id)?;
         let root = fs::canonicalize(&self.raiz).map_err(|_| Error::Disco)?;
         let source = fs::canonicalize(self.carpeta(id)?).map_err(|_| Error::Disco)?;
         if source.parent() != Some(root.as_path()) {
@@ -580,7 +580,7 @@ impl Almacen {
         self.eliminadas
             .lock()
             .map_err(|_| Error::Disco)?
-            .insert(id.into(), ticket);
+            .insert(id.into(), (ticket, record));
         self.rutas.lock().map_err(|_| Error::Disco)?.remove(id);
         Ok(())
     }
@@ -595,7 +595,10 @@ impl Almacen {
             .map_err(|_| Error::Disco)?
             .get(id)
             .cloned();
-        if let Some(ticket) = ticket {
+        if let Some((ticket, record)) = ticket {
+            if self.cargar()?.instancias.iter().any(|i| i.nombre.to_lowercase() == record.nombre.to_lowercase()) {
+                return Err(Error::Repetida);
+            }
             crate::papelera::restaurar(&ticket).map_err(Error::Papelera)?;
             let record = leer_en(&ticket.original)?;
             if record.id != id {

@@ -370,7 +370,10 @@ fn vista_ancho(app: &App, ancho: f32) -> Element<'_, Mensaje> {
                 .color(p.text_muted),
         );
     }
-    let acciones: Element<'_, Mensaje> = if e.disponible.is_some() {
+    let acciones: Element<'_, Mensaje> = if e.resultado.as_ref().is_some_and(|resultado| resultado.correcto) {
+        row![componentes::boton(p, "Continuar", Variante::Primario, Some(m(Accion::MasTarde)))]
+            .spacing(espacio::S2).into()
+    } else if e.disponible.is_some() {
         row![
             componentes::boton_con_icono(
                 p,
