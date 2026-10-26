@@ -7,6 +7,8 @@ use std::time::{Duration, Instant};
 
 pub const DURACION: Duration = Duration::from_secs(5);
 pub const SALIDA: Duration = Duration::from_millis(200);
+/// Reloj de un aviso quieto: basta para detectar su vencimiento.
+pub const TIC_QUIETO: Duration = Duration::from_millis(100);
 
 pub struct Aviso<M> {
     pub texto: String,
@@ -87,6 +89,16 @@ impl<M> Aviso<M> {
         self.retirada.is_some()
             || self.reloj(ahora).saturating_duration_since(self.desde) >= self.duracion - SALIDA
     }
+
+    /// La entrada y el fundido son los únicos tramos que cambian cada cuadro.
+    /// El fundido se anticipa un `TIC_QUIETO` para no empezar tarde.
+    pub fn animando(&self, ahora: Instant, reducir: bool) -> bool {
+        let vivo = self.reloj(ahora).saturating_duration_since(self.desde);
+        !reducir
+            && (self.retirada.is_some()
+                || vivo < SALIDA
+                || vivo + TIC_QUIETO >= self.duracion.saturating_sub(SALIDA))
+    }
 }
 
 pub struct Entrada<M> { pub id: u64, pub aviso: Aviso<M> }
@@ -103,6 +115,9 @@ impl<M> Cola<M> {
     }
     pub fn entradas(&self) -> impl Iterator<Item = &Entrada<M>> { self.entradas.iter() }
     pub fn esta_vacia(&self) -> bool { self.entradas.is_empty() }
+    pub fn animando(&self, ahora: Instant, reducir: bool) -> bool {
+        self.entradas.iter().any(|e| e.aviso.animando(ahora, reducir))
+    }
     pub fn actualizar(&mut self, ahora: Instant) { self.entradas.retain(|e| !e.aviso.vencido(ahora)); }
     pub fn cerrar(&mut self, id: u64, ahora: Instant) {
         if let Some(e) = self.entradas.iter_mut().find(|e| e.id == id) { e.aviso.cerrar(ahora); }
@@ -163,6 +178,21 @@ mod tests {
         let siguiente = Aviso::<()>::nuevo("Siguiente".into(), None, inicio + SALIDA);
         assert_eq!(siguiente.opacidad(inicio + SALIDA, false), 1.0);
     }
+    #[test]
+    fn solo_la_entrada_y_la_salida_piden_cuadros() {
+        let inicio = Instant::now();
+        let mut c = Cola::default();
+        c.agregar(Aviso::<()>::nuevo("Aviso".into(), None, inicio));
+        assert!(c.animando(inicio + SALIDA / 2, false));
+        assert!(!c.animando(inicio + Duration::from_secs(2), false));
+        assert!(c.animando(inicio + DURACION - SALIDA - TIC_QUIETO, false));
+        assert!(c.animando(inicio + DURACION - SALIDA / 2, false));
+        assert!(!c.animando(inicio + SALIDA / 2, true));
+        let id = c.ultimo().unwrap();
+        c.cerrar(id, inicio + Duration::from_secs(2));
+        assert!(c.animando(inicio + Duration::from_secs(2), false));
+    }
+
     #[test]
     fn deshacer_tiene_diez_segundos_y_conserva_el_fundido() {
         let inicio = Instant::now();

@@ -21,6 +21,8 @@ async fn ejecutar() -> Result<(), String> {
     let mut loader = None;
     let mut loader_version = None;
     let mut excluir = std::collections::BTreeSet::new();
+    let mut incluir = std::collections::BTreeSet::new();
+    let mut incluir_servidor = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--datos" => data = args.next().map(PathBuf::from),
@@ -36,8 +38,15 @@ async fn ejecutar() -> Result<(), String> {
                         .ok_or("Falta el nombre de JAR tras --excluir-archivo.")?,
                 );
             }
+            "--incluir-archivo" => {
+                incluir.insert(
+                    args.next()
+                        .ok_or("Falta el nombre de JAR tras --incluir-archivo.")?,
+                );
+            }
+            "--incluir-servidor" => incluir_servidor = true,
             "--help" | "-h" => {
-                println!("icaro-sync-host --servidor <carpeta absoluta del servidor> --minecraft <versión> --loader <fabric|quilt|forge|neoforge> --version-loader <versión> --escuchar <IP ZeroTier:puerto Minecraft+1>\nLee mods directamente, sin instalar Ícaro ni crear una instancia. Publica versiones de Modrinth y sirve JAR propios con hash. Ctrl+C detiene el servicio.\nPara excluir un mod exclusivo de servidor: --excluir-archivo <nombre.jar> (repetible).\nAlternativa anterior: --datos <carpeta Icaro> --instancia <ID> --escuchar <IP:puerto>.");
+                println!("icaro-sync-host --servidor <carpeta absoluta del servidor> --minecraft <versión> --loader <fabric|quilt|forge|neoforge> --version-loader <versión> --escuchar <IP ZeroTier:puerto Minecraft+1>\nLee mods directamente, sin instalar Ícaro ni crear una instancia. Publica versiones de Modrinth y sirve JAR propios con hash. Ctrl+C detiene el servicio.\nPara excluir un mod exclusivo de servidor: --excluir-archivo <nombre.jar> (repetible).\nPara publicar también mods exclusivos de servidor: --incluir-archivo <nombre.jar> (repetible) o --incluir-servidor (todos).\nAlternativa anterior: --datos <carpeta Icaro> --instancia <ID> --escuchar <IP:puerto>.");
                 return Ok(());
             }
             _ => return Err("Argumento desconocido. Usa --help.".into()),
@@ -54,6 +63,8 @@ async fn ejecutar() -> Result<(), String> {
             loader_version: loader_version
                 .ok_or("Indica --version-loader con la versión exacta del loader.")?,
             excluir,
+            incluir,
+            incluir_servidor,
         };
         servidor.validar()?;
         Origen::Servidor(servidor)
@@ -62,6 +73,8 @@ async fn ejecutar() -> Result<(), String> {
             || loader.is_some()
             || loader_version.is_some()
             || !excluir.is_empty()
+            || !incluir.is_empty()
+            || incluir_servidor
         {
             return Err("Las versiones explícitas requieren --servidor.".into());
         }

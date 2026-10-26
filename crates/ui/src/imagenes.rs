@@ -132,6 +132,7 @@ fn cache() -> &'static Cache {
 
 pub(crate) fn imagen(lamina: Lamina, modo: Modo) -> Handle {
     let cache = cache();
+    let modo = lamina.modo_propio(modo);
     let clave = (lamina, modo);
     let mut estado = cache.estado.lock().unwrap();
     estado.reloj += 1;
@@ -178,7 +179,23 @@ pub fn suscripcion() -> iced::Subscription<()> {
 }
 
 fn preparar(lamina: Lamina, modo: Modo) -> image::ImageResult<RgbaImage> {
-    image::load_from_memory(lamina.bytes(modo)).map(|imagen| imagen.into_rgba8())
+    let bytes = lamina.bytes(modo);
+    let derivada = bytes == crate::derivadas::INVERTIDA || bytes == crate::derivadas::IGUAL;
+    let fuente = if derivada { lamina.bytes(Modo::Piedra) } else { bytes };
+    let mut imagen = image::load_from_memory(fuente)?.into_rgba8();
+    if bytes == crate::derivadas::INVERTIDA {
+        invertir(&mut imagen);
+    }
+    Ok(imagen)
+}
+
+/// Negativo RGBA: invierte el color y conserva el alfa.
+pub(crate) fn invertir(pixeles: &mut [u8]) {
+    for pixel in pixeles.chunks_exact_mut(4) {
+        for canal in &mut pixel[..3] {
+            *canal = 255 - *canal;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -253,6 +270,20 @@ mod tests {
             assert_eq!(n[3], 255);
             assert_eq!(p[0] as u16 + n[0] as u16, 255);
         }
+    }
+
+    #[test]
+    fn tinta_derivada_comparte_la_textura_o_invierte_piedra() {
+        assert_eq!(
+            imagen(Lamina::Umbral, Modo::Piedra).id(),
+            imagen(Lamina::Umbral, Modo::Tinta).id()
+        );
+        let positivo = preparar(Lamina::FortalezasValle, Modo::Piedra).unwrap();
+        let negativo = preparar(Lamina::FortalezasValle, Modo::Tinta).unwrap();
+        assert_eq!(positivo.dimensions(), negativo.dimensions());
+        assert!(positivo.pixels().zip(negativo.pixels()).all(|(p, n)| {
+            p.0[3] == n.0[3] && (0..3).all(|c| p.0[c] as u16 + n.0[c] as u16 == 255)
+        }));
     }
 
     #[test]

@@ -457,7 +457,7 @@ fn instancia_actual(app: &App) -> Option<String> {
                 .get(app.editor_inst)
                 .map(|i| i.id.clone());
         }
-        return instancias().get(app.editor_inst).map(|d| d.nombre.clone());
+        return crate::con_instancias(|l| l.get(app.editor_inst).map(|d| d.nombre.clone()));
     }
     if app.capt.filtro == 0 {
         return None;

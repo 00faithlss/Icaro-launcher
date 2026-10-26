@@ -82,7 +82,7 @@ fn revisar_mundos(store: &Almacen, id: &str) -> Result<Revision, String> {
 pub fn vista(app: &App) -> Element<'_, Mensaje> {
     let p = app.paleta();
     let Some(i) = app.picar_objetivo else { return Space::new(0, 0).into(); };
-    let Some(d) = crate::instancias().get(i).cloned() else { return Space::new(0, 0).into(); };
+    let Some(d) = crate::con_instancias(|l| l.get(i).cloned()) else { return Space::new(0, 0).into(); };
     let etapa = app.picar.as_ref().filter(|pi| pi.instancia == i)
         .map_or(0, |pi| crate::etapa_picar(pi, app.ahora));
     let ocupado = app.picar_revision.is_none() || app.servicios.instancias.operando || app.picar.as_ref().is_some_and(|pi| pi.rota.is_some());

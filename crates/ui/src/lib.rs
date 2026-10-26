@@ -12,6 +12,7 @@ pub mod capturas;
 pub mod componentes;
 pub mod consola;
 pub mod cuenta;
+mod derivadas;
 pub mod descargas;
 pub mod editor;
 pub mod efectos;

@@ -137,41 +137,75 @@ pub fn cargar(app: &mut App, tipo: TipoPack) -> Task<Mensaje> {
     let source = app.servicios.catalog.clone();
     Task::perform(
         async move {
+            use iced::futures::stream::{self, StreamExt};
             let cat = source.map_err(|e| e.to_string())?;
-            let mut updates = vec![];
-            let mut projects = vec![];
-            for item in installed
-                .iter()
+            let minecraft = i.minecraft;
+            let items: Vec<_> = installed
+                .into_iter()
                 .filter(|m| !m.project_id.is_empty())
                 .take(128)
-            {
-                if let Ok(p) = cat.project(&item.project_id).await {
-                    let author = cat
-                        .members(&item.project_id)
-                        .await
-                        .unwrap_or_default()
-                        .into_iter()
-                        .find(|m| m.is_owner)
-                        .map_or(String::new(), |m| m.user.username);
-                    projects.push((p, author));
-                }
-                let mut versions = cat
-                    .versions(&item.project_id, Some(&i.minecraft), None)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                versions.retain(|v| {
-                    v.project_id == item.project_id
-                        && mods::recurso_compatible(v, &i.minecraft)
-                        && v.version_type == "release"
-                });
-                versions.sort_by(|a, b| b.date_published.cmp(&a.date_published));
-                if let Some(v) = versions
-                    .into_iter()
-                    .next()
-                    .filter(|v| v.id != item.version_id && v.date_published > item.publicada)
-                {
-                    updates.push(v);
-                }
+                .collect();
+            // Una consulta por lotes de 50 fichas en lugar de una por paquete;
+            // si falla, los paquetes se revisan igual sin ficha.
+            let ids: Vec<String> = items
+                .iter()
+                .map(|m| m.project_id.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            let fichas = cat.projects_by_ids(&ids).await.unwrap_or_default();
+            let items: Vec<_> = items
+                .into_iter()
+                .map(|item| {
+                    let ficha = fichas.get(&item.project_id).cloned();
+                    (item, ficha)
+                })
+                .collect();
+            // Autor y versiones siguen siendo por proyecto: hasta 4 en curso,
+            // con el orden original y la cuota compartida del catálogo.
+            let revisados: Vec<Result<_, String>> = stream::iter(items)
+                .map(|(item, ficha)| {
+                    let (cat, minecraft) = (cat.clone(), minecraft.clone());
+                    async move {
+                        let minecraft = minecraft.as_str();
+                        let ficha = match ficha {
+                            Some(p) => {
+                                let author = cat
+                                    .members(&item.project_id)
+                                    .await
+                                    .unwrap_or_default()
+                                    .into_iter()
+                                    .find(|m| m.is_owner)
+                                    .map_or(String::new(), |m| m.user.username);
+                                Some((p, author))
+                            }
+                            None => None,
+                        };
+                        let mut versions = cat
+                            .versions(&item.project_id, Some(minecraft), None)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        versions.retain(|v| {
+                            v.project_id == item.project_id
+                                && mods::recurso_compatible(v, minecraft)
+                                && v.version_type == "release"
+                        });
+                        versions.sort_by(|a, b| b.date_published.cmp(&a.date_published));
+                        let update = versions.into_iter().next().filter(|v| {
+                            v.id != item.version_id && v.date_published > item.publicada
+                        });
+                        Ok((ficha, update))
+                    }
+                })
+                .buffered(4)
+                .collect()
+                .await;
+            let mut updates = vec![];
+            let mut projects = vec![];
+            for revisado in revisados {
+                let (ficha, update) = revisado?;
+                projects.extend(ficha);
+                updates.extend(update);
             }
             Ok((updates, projects))
         },

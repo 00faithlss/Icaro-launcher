@@ -27,15 +27,23 @@ pub struct ServidorDedicado {
     pub loader: String,
     pub loader_version: String,
     pub excluir: BTreeSet<String>,
+    /// JAR que se publican aunque Modrinth o su descriptor los declaren
+    /// exclusivos de servidor.
+    pub incluir: BTreeSet<String>,
+    /// Publica todos los JAR exclusivos de servidor para reproducir `mods` completa.
+    pub incluir_servidor: bool,
 }
 impl ServidorDedicado {
     pub fn validar(&self) -> Result<(), String> {
-        if self
-            .excluir
-            .iter()
-            .any(|n| !nombre_valido(n) || !n.to_ascii_lowercase().ends_with(".jar"))
-        {
+        let jar = |n: &String| nombre_valido(n) && n.to_ascii_lowercase().ends_with(".jar");
+        if !self.excluir.iter().all(jar) {
             return Err("Las exclusiones deben ser nombres de JAR, sin rutas.".into());
+        }
+        if !self.incluir.iter().all(jar) {
+            return Err("Las inclusiones deben ser nombres de JAR, sin rutas.".into());
+        }
+        if let Some(n) = self.incluir.intersection(&self.excluir).next() {
+            return Err(format!("{n} no puede incluirse y excluirse a la vez."));
         }
         if !self.carpeta.is_absolute() {
             return Err("La carpeta del servidor debe ser absoluta.".into());
@@ -45,6 +53,10 @@ impl ServidorDedicado {
         regular(&self.carpeta.join("mods"), true)
             .map_err(|_| "El servidor debe tener una carpeta mods legible.".to_string())?;
         Ok(())
+    }
+    /// El anfitrión pidió publicar este JAR aunque sea exclusivo de servidor.
+    fn incluye(&self, nombre: &str) -> bool {
+        self.incluir_servidor || self.incluir.contains(nombre)
     }
     fn indice(&self, mods: Vec<Entrada>) -> Indice {
         Indice {
@@ -206,16 +218,19 @@ async fn publicar_con(
     let mut active = vec![];
     let mut avisos = vec![];
     for (name, sha) in &before {
-        if name.to_ascii_lowercase().ends_with(".jar")
-            && !servidor.excluir.contains(name)
-            && !exclusivo_servidor(
-                &servidor.carpeta.join("mods").join(name),
-                &servidor.loader,
-                &mut avisos,
-            )?
-        {
-            active.push((name, sha));
+        if !name.to_ascii_lowercase().ends_with(".jar") || servidor.excluir.contains(name) {
+            continue;
         }
+        if exclusivo_servidor(&servidor.carpeta.join("mods").join(name), &servidor.loader, &mut avisos)? {
+            if !servidor.incluye(name) {
+                continue;
+            }
+            avisos.push(format!("{name}: declara environment: server, pero se publica por indicación del anfitrión. Fabric no lo cargará en el cliente."));
+        }
+        active.push((name, sha));
+    }
+    for name in servidor.incluir.iter().filter(|n| !before.iter().any(|(b, _)| b == *n)) {
+        avisos.push(format!("{name}: se pidió incluirlo, pero no está en mods."));
     }
     if active.len() > 512 {
         return Err("El servidor supera 512 mods.".into());
@@ -249,7 +264,10 @@ async fn publicar_con(
         // el proyecto: otro mod puede exigir esta biblioteca en el cliente.
         jars.insert(v.project_id.clone(), (name.clone(), sha.clone()));
         if !catalog.cliente(v).await? {
-            continue;
+            if !servidor.incluye(name) {
+                continue;
+            }
+            avisos.push(format!("{name}: Modrinth lo clasifica como exclusivo de servidor, pero se publica por indicación del anfitrión."));
         }
         if !compatible(v, &servidor.minecraft, &servidor.loader) {
             propios.insert(v.project_id.clone());
@@ -300,7 +318,8 @@ async fn publicar_con(
             if candidate.project_id != project {
                 return Err(format!("Conflicto en una dependencia de {}: el catálogo devolvió otro proyecto.", v.project_id));
             }
-            if !catalog.cliente(&candidate).await? {
+            let incluida = jars.get(&candidate.project_id).is_some_and(|(n, _)| servidor.incluye(n));
+            if !incluida && !catalog.cliente(&candidate).await? {
                 let descriptor = if matches!(servidor.loader.as_str(), "fabric" | "quilt") {
                     if let Some((name, _)) = jars.get(&candidate.project_id) {
                         descriptor_fabric(&servidor.carpeta.join("mods").join(name), &mut avisos)?
@@ -598,6 +617,8 @@ mod tests {
             loader: "fabric".into(),
             loader_version: "0.16.14".into(),
             excluir: BTreeSet::new(),
+            incluir: BTreeSet::new(),
+            incluir_servidor: false,
         };
         (Temp(dir), s)
     }
@@ -792,6 +813,12 @@ mod tests {
         }
     }
     impl Fuente for Fake {
+        async fn versiones_por_hash(&self, hashes: &[String]) -> Result<BTreeMap<String, Version>, Error> {
+            Ok(self.hashes.iter().filter(|(h, _)| hashes.contains(h)).map(|(h, v)| (h.clone(), v.clone())).collect())
+        }
+        async fn solo_servidor(&self, project: &str) -> Result<bool, Error> {
+            Ok(self.server_only.contains(project))
+        }
         async fn version(&self, id: &str) -> Result<Version, Error> {
             Catalogo::version(self,id).await.map_err(|_| Error::Datos)
         }
@@ -1172,6 +1199,79 @@ mod tests {
         crate::versiones_instancia::guardar_loader(&store,&instance,&s.loader_version).unwrap();
         let plan = super::super::preparar(&catalog,&store,&instance,index,"127.0.0.1:25566".into()).await.unwrap();
         assert_eq!(plan.cambios.len(),1);
+    }
+
+    /// Epic Terrain exige WorldgenFeatureFix (`w2O2In9c`), que Modrinth declara
+    /// sin soporte de cliente y sin versión compatible publicada para el cliente.
+    fn epic_terrain(s: &ServidorDedicado, catalog: &mut Fake) {
+        let epic = jar_id("*", "epicterrain");
+        let worldgen = b"worldgenfeaturefix".to_vec();
+        let privado = jar_id("server", "privado");
+        fs::write(s.carpeta.join("mods/epicterrain-0.1.4.jar"), &epic).unwrap();
+        fs::write(s.carpeta.join("mods/worldgenfeaturefix.jar"), &worldgen).unwrap();
+        fs::write(s.carpeta.join("mods/privado.jar"), &privado).unwrap();
+        catalog.hashes.insert(hash(&epic), version("epic", "epic1", &epic,
+            serde_json::json!([{"project_id":"w2O2In9c","dependency_type":"required"}])));
+        catalog.hashes.insert(hash(&worldgen), version("w2O2In9c", "wff1", &worldgen, serde_json::json!([])));
+        catalog.server_only.insert("w2O2In9c".into());
+    }
+    async fn plan_cliente(s: &ServidorDedicado, catalog: &Fake, index: Indice) -> Result<super::super::Plan, String> {
+        let store = Almacen::nuevo(s.carpeta.join("cliente/instances"));
+        let instance = store.crear_con_loader("Cliente", "1.21.1", "fabric", 0).unwrap();
+        crate::versiones_instancia::guardar_loader(&store, &instance, &s.loader_version).unwrap();
+        super::super::preparar(catalog, &store, &instance, index, "127.0.0.1:25566".into()).await
+    }
+
+    #[tokio::test]
+    async fn cliente_omite_dependencia_exclusiva_de_servidor_que_el_anfitrion_excluyo() {
+        let (_temp, s) = servidor();
+        let mut catalog = Fake::default();
+        epic_terrain(&s, &mut catalog);
+        let index = publicar_con(&catalog, &s).await.unwrap();
+        assert!(index.mods.is_empty());
+        assert_eq!(index.archivos.len(), 1);
+        assert_eq!(index.archivos[0].archivo, "epicterrain-0.1.4.jar");
+        assert!(index.avisos.iter().any(|a| a.contains("exige w2O2In9c") && a.contains("exclusiva de servidor")));
+        let plan = plan_cliente(&s, &catalog, index).await.unwrap();
+        assert_eq!(plan.cambios.len(), 1);
+        assert!(plan.indice.mods.iter().all(|m| m.proyecto != "w2O2In9c"));
+        assert!(plan.indice.avisos.iter().any(|a| a.contains("w2O2In9c") && a.contains("No se instala en el cliente")));
+    }
+
+    #[tokio::test]
+    async fn incluir_servidor_publica_todos_los_jar_y_el_cliente_los_instala() {
+        let (_temp, mut s) = servidor();
+        let mut catalog = Fake::default();
+        epic_terrain(&s, &mut catalog);
+        s.incluir_servidor = true;
+        let index = publicar_con(&catalog, &s).await.unwrap();
+        let proyectos: BTreeSet<_> = index.mods.iter().map(|m| m.proyecto.as_str()).collect();
+        assert_eq!(proyectos, ["epic", "w2O2In9c"].into());
+        assert_eq!(index.archivos.len(), 1);
+        assert_eq!(index.archivos[0].archivo, "privado.jar");
+        assert!(index.avisos.iter().any(|a| a.contains("worldgenfeaturefix.jar") && a.contains("indicación del anfitrión")));
+        let plan = plan_cliente(&s, &catalog, index).await.unwrap();
+        assert_eq!(plan.cambios.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn incluir_archivo_publica_solo_los_jar_indicados() {
+        let (_temp, mut s) = servidor();
+        let mut catalog = Fake::default();
+        epic_terrain(&s, &mut catalog);
+        s.incluir.insert("worldgenfeaturefix.jar".into());
+        s.incluir.insert("ausente.jar".into());
+        s.validar().unwrap();
+        let index = publicar_con(&catalog, &s).await.unwrap();
+        let proyectos: BTreeSet<_> = index.mods.iter().map(|m| m.proyecto.as_str()).collect();
+        assert_eq!(proyectos, ["epic", "w2O2In9c"].into());
+        assert!(index.archivos.is_empty());
+        assert!(index.avisos.iter().any(|a| a.contains("ausente.jar") && a.contains("no está en mods")));
+        s.excluir.insert("worldgenfeaturefix.jar".into());
+        assert!(s.validar().unwrap_err().contains("incluirse y excluirse"));
+        s.excluir.clear();
+        s.incluir.insert("../fuera.jar".into());
+        assert!(s.validar().unwrap_err().contains("inclusiones"));
     }
     #[tokio::test]
     async fn cliente_acepta_163_mods_y_rechaza_un_indice_incompleto() {
