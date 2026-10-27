@@ -6,6 +6,7 @@
 - El canal beta no ofrece una estable de la misma versión como actualización por su número de compilación. Tras aplicar una actualización, la pantalla ofrece «Continuar».
 - El refresco de la galería utiliza índices para conservar imágenes y selección sin comparar cada captura con todas las anteriores. Las mediciones y límites figuran en el [registro de optimización](docs/superpowers/mediciones/2026-10-26-registro.md).
 - Se reduce el tamaño de artefactos de desarrollo desactivando símbolos por defecto y se añade caché de Cargo al flujo Windows. El beneficio en GitHub y el launcher Windows aún debe medirse.
+- El flujo Windows compila con 4 procesos de Cargo y separa la compilación de la publicación: con caché, el job bajó de 29 a 11 minutos en una muestra, y `main` y `develop` ya no esperan el build del otro. El release usa LTO thin, con un ejecutable un 1,3 % mayor; falta validar su comportamiento en una partida real antes de publicarlo.
 - Se separan las pruebas de sincronización e instalación de Minecraft y se comprueba la colisión de nombres antes de recuperar una instancia de la papelera.
 
 ## [0.3.3] - 2026-10-24

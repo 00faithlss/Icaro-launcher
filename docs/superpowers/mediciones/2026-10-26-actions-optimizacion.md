@@ -40,3 +40,16 @@ Ejecuciones manuales de `b32e210`, `trabajos=4`, sin publicar. Runner: AMD EPYC 
 La caché caliente se restauró correctamente. Con 4 procesos y caché, el job baja un 62 % respecto de la línea base; sin caché, un 34 %. Son una muestra por configuración, no una mediana: repetir antes de tomarlas como valores estables. No se compararon 2 procesos ni se midió la RAM máxima del runner; ninguna ejecución falló por memoria.
 
 Lo que más tiempo consume ahora es el release del launcher, casi 6 minutos con caché. Las dependencias ya llegan compiladas, así que ese tiempo corresponde al código del workspace y, previsiblemente, a la fase única de LTO completo con `codegen-units = 1` y `opt-level = "z"`. Siguiente ensayo propuesto: un perfil con LTO thin o más unidades de generación, comparando tiempo, tamaño del ejecutable y comportamiento antes de cambiar el de distribución. El valor por defecto de `trabajos` sigue siendo 1 hasta decidirlo.
+
+## Ensayo remoto: LTO thin (27-10-2026)
+
+Ejecución manual [`40433751137`](https://github.com/00faithlss/Icaro-launcher/actions/runs/40433751137) de `9121175`, `trabajos=4`, `perfil_release=lto-thin` (solo cambia `CARGO_PROFILE_RELEASE_LTO`; `opt-level = "z"` y `codegen-units = 1` se mantienen). Cambiar el LTO invalida las dependencias: el paso de empaquetado recompiló 426 crates, como la ejecución fría de LTO completo. Por eso se compara con esa ejecución y no con la caliente.
+
+| Medida (Cargo) | LTO completo, frío `40428836537` | LTO thin `40433751137` |
+| --- | ---: | ---: |
+| Release launcher | 9 min 22 s | 7 min 59 s (−15 %) |
+| Release `sync_host` | 1 min 21 s | 1 min 13 s |
+| `icaro-0.3.3-windows-x86_64.exe` | 124 083 200 B (ejecución caliente `40430942181`) | 125 688 832 B (+1,3 %) |
+| Instalador | 93 071 491 B | 93 244 559 B (+0,2 %) |
+
+El job completo tardó 13 min 48 s. La caché no guarda las dependencias con LTO thin, porque su clave ya tenía una coincidencia exacta; el tiempo con caché caliente y LTO thin no está medido. Las pruebas y la validación del empaquetado pasaron, pero no se ejecutó la interfaz: el comportamiento del ejecutable thin no está comprobado. El perfil de distribución no cambió.
