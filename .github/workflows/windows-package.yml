@@ -100,11 +100,10 @@ jobs:
         if: steps.publicacion.outputs.repetida != 'true'
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
-          shared-key: icaro-windows
-          # rust-cache no incluye el perfil de Cargo.toml en su clave. Este
-          # sufijo debe coincidir con el `lto` del perfil release; una regresión
-          # de scripts/ci lo comprueba.
-          key: perfil-${{ env.ICARO_PERFIL_RELEASE }}-lto-thin
+          # rust-cache no incluye el perfil del Cargo.toml raíz en su clave e
+          # ignora `key` cuando hay `shared-key`. El sufijo debe coincidir con
+          # el `lto` del perfil release; una regresión de scripts/ci lo comprueba.
+          shared-key: icaro-windows-perfil-${{ env.ICARO_PERFIL_RELEASE }}-lto-thin
           workspaces: |
             . -> target/ci-tests
             . -> target/windows-package-build

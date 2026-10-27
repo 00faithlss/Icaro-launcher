@@ -223,7 +223,9 @@ if ($Grupo -in @('Publicacion','Todo')) {
         Comprobar $taskRelease.Success 'Falta el perfil release.'
         $taskLto = [regex]::Match($taskRelease.Groups[1].Value, '(?m)^lto\s*=\s*"?([a-z]+)"?')
         Comprobar $taskLto.Success 'El perfil release no declara lto.'
-        $taskClave = [regex]::Match($taskJobs[0], '(?m)^\s+key: perfil-\$\{\{ env\.ICARO_PERFIL_RELEASE \}\}-lto-([a-z]+)\r?$')
+        # rust-cache ignora `key` cuando hay `shared-key`: el perfil va en esta última.
+        Comprobar ($taskJobs[0] -notmatch '(?m)^\s+key:') 'rust-cache ignora `key` junto a `shared-key`.'
+        $taskClave = [regex]::Match($taskJobs[0], '(?m)^\s+shared-key: icaro-windows-perfil-\$\{\{ env\.ICARO_PERFIL_RELEASE \}\}-lto-([a-z]+)\r?$')
         Comprobar $taskClave.Success 'La caché de Cargo no incluye el perfil en su clave.'
         Comprobar ($taskClave.Groups[1].Value -ceq $taskLto.Groups[1].Value) "La clave usa lto-$($taskClave.Groups[1].Value) y Cargo.toml lto=$($taskLto.Groups[1].Value)."
     }
