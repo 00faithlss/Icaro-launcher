@@ -1,0 +1,21 @@
+{
+  "version": "0.3.4",
+  "notas": [
+    {
+      "tipo": "nuevo",
+      "texto": "El editor de una instancia muestra el tiempo jugado y el espacio que ocupa. El tiempo empieza a contarse con esta versión."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "Cambiar un ajuste global ya no reescribe la configuración de todas las instancias ni bloquea la interfaz con muchas instancias."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "El perfil Microsoft recordado muestra su nombre mientras se renueva la sesión."
+    },
+    {
+      "tipo": "correccion",
+      "texto": "El canal beta ya no ofrece una estable de la misma versión como actualización."
+    }
+  ]
+}
