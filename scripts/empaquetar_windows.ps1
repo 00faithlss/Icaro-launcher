@@ -5,12 +5,16 @@ param(
     [string]$Binario,
     [string]$Servicio,
     [string]$Salida,
+    [ValidateRange(1,16)][int]$Trabajos = 1,
+    [switch]$Medir,
     [switch]$Prueba
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if (-not $IsWindows) { throw 'El empaquetado requiere Windows y PowerShell 7.' }
 $taskRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$taskChannel = if ($env:ICARO_CANAL) { $env:ICARO_CANAL } else { 'estable' }
+if ($taskChannel -notin @('beta','estable')) { throw 'Canal de compilación inválido.' }
 if (-not $Salida) { $Salida = Join-Path $taskRoot 'target\dist\windows' }
 $taskOutput = [IO.Path]::GetFullPath($Salida)
 New-Item -ItemType Directory -Force -Path $taskOutput | Out-Null
@@ -24,13 +28,31 @@ try {
     if (-not $Binario) {
         if ($Prueba) { throw 'Para empaquetar una compilación de prueba indica -Binario y -Servicio.' }
         $taskBuildDir = Join-Path $taskRoot 'target\windows-package-build'
-        $taskBuildArgs = @('build','--locked','--release','-j','1','--target-dir',$taskBuildDir,'--target','x86_64-pc-windows-msvc','--config','target.x86_64-pc-windows-msvc.rustflags=["-C","target-feature=+crt-static"]')
-        & cargo @taskBuildArgs -p icaro-ui --example launcher
-        if ($LASTEXITCODE -ne 0) { throw 'Falló la compilación del launcher.' }
-        & cargo @taskBuildArgs -p icaro-core --example sync_host
-        if ($LASTEXITCODE -ne 0) { throw 'Falló la compilación del servicio de mods.' }
+        $taskBuildArgs = @('build','--locked','--release','-j',"$Trabajos",'--target-dir',$taskBuildDir,'--target','x86_64-pc-windows-msvc','--config','target.x86_64-pc-windows-msvc.rustflags=["-C","target-feature=+crt-static"]')
+        if ($Medir) { $taskBuildArgs += '--timings' }
         $Binario = Join-Path $taskBuildDir 'x86_64-pc-windows-msvc\release\examples\launcher.exe'
         $Servicio = Join-Path $taskBuildDir 'x86_64-pc-windows-msvc\release\examples\sync_host.exe'
+        # Una sola invocación unifica las features: icaro-core y sus dependencias
+        # se compilan una vez para el launcher y el servicio.
+        $taskCode = $null
+        $taskTimer = [Diagnostics.Stopwatch]::StartNew()
+        try {
+            & cargo @taskBuildArgs -p icaro-ui -p icaro-core --example launcher --example sync_host
+            $taskCode = $LASTEXITCODE
+        } finally {
+            $taskTimer.Stop()
+            if ($Medir) {
+                $taskDiagnostics = Join-Path $taskRoot 'target/ci'
+                New-Item -ItemType Directory -Force -Path $taskDiagnostics | Out-Null
+                $taskBytes = [ordered]@{}
+                foreach ($taskExe in @($Binario,$Servicio)) {
+                    $taskBytes[[IO.Path]::GetFileNameWithoutExtension($taskExe)] = if ($taskCode -eq 0 -and (Test-Path -LiteralPath $taskExe)) { (Get-Item -LiteralPath $taskExe).Length } else { $null }
+                }
+                ConvertTo-Json -InputObject @([ordered]@{ejemplo='launcher+sync_host';segundos=$taskTimer.Elapsed.TotalSeconds;salida=$taskCode;trabajos=$Trabajos;bytes=$taskBytes}) -Depth 3 |
+                    Set-Content -LiteralPath (Join-Path $taskDiagnostics 'release-tiempos.json') -Encoding utf8
+            }
+        }
+        if ($taskCode -ne 0) { throw 'Falló la compilación del launcher o del servicio de mods.' }
     }
     if (-not $Servicio) { throw 'Indica el ejecutable del servicio de mods.' }
     $taskBinary = (Resolve-Path -LiteralPath $Binario).Path
@@ -107,7 +129,7 @@ try {
             [pscustomobject][ordered]@{ archivo=[IO.Path]::GetFileName($_); bytes=(Get-Item -LiteralPath $_).Length; sha256=(Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant() }
         }
         $taskBuildNumber = if ($env:ICARO_COMPILACION) { [long]$env:ICARO_COMPILACION } else { 0 }
-        [ordered]@{version=$taskVersion;compilacion=$taskBuildNumber;revision=$taskRevision;cambios_locales=$taskDirty;prueba=[bool]$Prueba;plataforma='windows-x86_64';firmado=$false;importaciones=@($taskImports | Sort-Object -Unique);artefactos=$taskArtifacts} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $taskOutput "$taskBase-artefactos.json") -Encoding utf8
+        [ordered]@{version=$taskVersion;compilacion=$taskBuildNumber;canal=$taskChannel;revision=$taskRevision;cambios_locales=$taskDirty;prueba=[bool]$Prueba;plataforma='windows-x86_64';firmado=$false;importaciones=@($taskImports | Sort-Object -Unique);artefactos=$taskArtifacts} | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $taskOutput "$taskBase-artefactos.json") -Encoding utf8
         $taskArtifacts | Format-Table archivo,bytes,sha256
     } finally {
         # Solo se elimina el directorio aleatorio creado por esta invocación.

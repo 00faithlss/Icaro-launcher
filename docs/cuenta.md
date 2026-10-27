@@ -16,6 +16,8 @@ El perfil y la skin activa se consultan en Minecraft Services. El PNG se descarg
 - Después de una respuesta válida se actualizan cuerpo y cabeza de la barra lateral. Una respuesta de otra cuenta o de una operación anterior no reemplaza la cuenta actual.
 - El historial local conserva las últimas ocho skins disponibles para esa cuenta; **Usar de nuevo** hace una subida real. Se guarda en `Icaro/accounts/<UUID>/skins/`, con nombres SHA-256 y modelo. Contiene PNG, nunca tokens. No pretende recuperar skins utilizadas antes de Ícaro.
 
+Al abrir Ícaro, el último nombre de perfil disponible se recupera del almacén protegido y puede mostrarse mientras la sesión se renueva en segundo plano. Los registros anteriores obtienen el nombre al renovarse correctamente. Si falla la renovación, el perfil se muestra como vencido y no permite operaciones que requieran autenticación; volver a entrar para recuperarlas.
+
 Los tokens permanecen en el núcleo y en el almacén protegido existente. El launcher sigue recordando una cuenta por equipo. Si Minecraft rechaza la sesión, se muestra el error y se puede volver a iniciar sesión desde el menú de cuenta.
 
 ## Validación y límites

@@ -1,5 +1,15 @@
 # Changelog
 
+## [Sin publicar]
+
+- El editor de una instancia muestra el tiempo jugado y el espacio que ocupa, en lugar de «—». El tiempo se acumula al cerrar cada partida en `estadisticas.json` de la instancia y empieza en cero; las partidas anteriores a esta versión no se cuentan. Ambos datos se calculan en segundo plano al abrir la instancia.
+- El perfil Microsoft recordado muestra su nombre mientras se renueva la sesión en segundo plano. Si falla, conserva el perfil como vencido sin habilitar acceso autenticado; no guarda tokens fuera del almacén protegido.
+- El canal beta no ofrece una estable de la misma versión como actualización por su número de compilación. Tras aplicar una actualización, la pantalla ofrece «Continuar».
+- El refresco de la galería utiliza índices para conservar imágenes y selección sin comparar cada captura con todas las anteriores. Las mediciones y límites figuran en el [registro de optimización](docs/superpowers/mediciones/2026-10-26-registro.md).
+- Se reduce el tamaño de artefactos de desarrollo desactivando símbolos por defecto y se añade caché de Cargo al flujo Windows. El beneficio en GitHub y el launcher Windows aún debe medirse.
+- El flujo Windows compila con 4 procesos de Cargo y separa la compilación de la publicación: con caché, el job bajó de 29 a 11 minutos en una muestra, y `main` y `develop` ya no esperan el build del otro. El release usa LTO thin, con un ejecutable un 1,3 % mayor; falta validar su comportamiento en una partida real antes de publicarlo.
+- Se separan las pruebas de sincronización e instalación de Minecraft y se comprueba la colisión de nombres antes de recuperar una instancia de la papelera.
+
 ## [0.3.3] - 2026-10-24
 
 - Instalar mods desde la tienda e importar JAR ya no fallan con «Los archivos o metadatos de mods no son válidos» en instancias con dos JAR del mismo proyecto, como dos versiones de Sodium. La sincronización ya no registra ambos con la misma identidad, y un inventario guardado así conserva el primero; el otro sigue en `mods` como archivo local, sin borrar nada.

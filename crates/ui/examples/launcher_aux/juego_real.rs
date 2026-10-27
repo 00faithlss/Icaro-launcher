@@ -1189,11 +1189,31 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             {
                 return Task::none();
             }
+            let mut jugado = None;
             if let Some(p) = app.servicios.juego.procesos.remove(&id) {
                 // También corta el observador de ventana si Java terminó
                 // normalmente: no depende de que Salida sea cancelada.
                 p.cancel.cancel();
+                // Un juego que no llegó a iniciarse no suma tiempo.
+                if result.is_ok() {
+                    jugado = Some(p.desde.elapsed().as_secs());
+                }
             }
+            let tiempo = match jugado {
+                // Al cerrar el launcher una tarea pendiente se perdería: el
+                // registro es pequeño y se escribe aquí directamente.
+                Some(segundos) if app.servicios.juego.cerrando => {
+                    if let Err(e) = app.servicios.instancias.almacen.sumar_tiempo_jugado(&id, segundos) {
+                        app.avisar(format!("No se pudo guardar el tiempo jugado: {e}"));
+                    }
+                    Task::none()
+                }
+                Some(segundos) => crate::estadisticas_reales::actualizar(
+                    app,
+                    crate::estadisticas_reales::Accion::Jugado(id.clone(), segundos),
+                ),
+                None => Task::none(),
+            };
             app.servicios
                 .juego
                 .resultados
@@ -1215,6 +1235,7 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                 app.avisar(e);
             }
             return Task::batch([
+                tiempo,
                 empezar_retirada(app, &id, g, fallo, false),
                 cerrar_si_listo(app),
             ]);

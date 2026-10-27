@@ -38,6 +38,7 @@ pub struct Estado {
     pub instancias: crate::instancias_reales::Estado,
     pub demo: bool,
     pub session: Option<Arc<Session>>,
+    perfil_recordado: Option<String>,
     pub local: crate::cuenta_sin_conexion::Estado,
     vault: Arc<Vault>,
     pub(crate) catalog: Result<Catalog, modrinth::Error>,
@@ -86,6 +87,7 @@ impl Estado {
             dependencias: Default::default(),
             demo,
             session: None,
+            perfil_recordado: None,
             local: Default::default(),
             vault: Arc::new(Vault::default()),
             catalog: Catalog::new().map(|catalog| {
@@ -136,11 +138,13 @@ impl Estado {
         if self.demo {
             demo_name
         } else if self.restoring {
-            "Recuperando sesión…"
+            self.perfil_recordado.as_deref().unwrap_or("Recuperando sesión…")
         } else {
             self.session
                 .as_ref()
-                .map_or("Sin cuenta", |s| s.profile.name.as_str())
+                .map(|s| s.profile.name.as_str())
+                .or(self.perfil_recordado.as_deref())
+                .unwrap_or("Sin cuenta")
         }
     }
     pub fn cancel(&mut self) {
@@ -148,6 +152,7 @@ impl Estado {
             cancel.cancel();
         }
         self.auth_id = self.vault.invalidate();
+        self.perfil_recordado = None;
         self.auth_busy = false;
         self.restoring = false;
         self.progress = None;
@@ -196,6 +201,7 @@ pub enum Accion {
     Logout,
     Renovar,
     Progreso(u64, FaseAcceso),
+    PerfilRecordado(u64, String),
     Autenticada(u64, Result<Option<Arc<Session>>, String>, bool),
     Cerrada(u64, Result<(), String>),
     Consulta(String),
@@ -341,6 +347,9 @@ pub(crate) fn begin_auth(app: &mut App, restore: bool) -> Task<Mensaje> {
                 let read_vault = vault.clone();
                 match tokio::task::spawn_blocking(move || read_vault.load()).await {
                     Ok(Ok(Some(record))) => {
+                        if let Some(nombre) = record.profile_name {
+                            let _ = output.send(Accion::PerfilRecordado(id, nombre)).await;
+                        }
                         match auth::refresh_with_progress(record.refresh, cancel, &progress).await {
                             Ok(session) if session.profile.id == record.profile_id => {
                                 Ok(Some(session))
@@ -1211,6 +1220,7 @@ pub fn actualizar(app: &mut App, action: Accion) -> Task<Mensaje> {
             app.servicios.juego.cancelar_todo();
             app.servicios.cancel();
             app.servicios.session = None;
+            app.servicios.perfil_recordado = None;
             app.servicios.remembered = false;
             app.sesion.estado = EstadoSesion::SinConexion;
             app.sesion.menu = false;
@@ -1238,6 +1248,10 @@ pub fn actualizar(app: &mut App, action: Accion) -> Task<Mensaje> {
                 app.avisar("Sesión cerrada y credenciales guardadas eliminadas.".into());
             }
         }
+        Accion::PerfilRecordado(id, nombre) if id == app.servicios.auth_id && app.servicios.restoring => {
+            app.servicios.perfil_recordado = Some(nombre);
+            if app.pantalla == Some(pantallas::Pantalla::Primera) { app.pantalla = None; }
+        }
         Accion::Progreso(id, phase) if id == app.servicios.auth_id && app.servicios.auth_busy => {
             let volver = app.pantalla == Some(pantallas::Pantalla::Codigo)
                 && !app.servicios.progress.is_some_and(|p| p.paso().is_some())
@@ -1258,6 +1272,7 @@ pub fn actualizar(app: &mut App, action: Accion) -> Task<Mensaje> {
             app.servicios.auth_cancel = None;
             match result {
                 Ok(session) => {
+                    if session.is_none() { app.servicios.perfil_recordado = None; }
                     app.servicios.remembered = stored;
                     if app.servicios.session.as_ref().map(|s| &s.profile.id) != session.as_ref().map(|s| &s.profile.id) {
                         app.sesion.cuenta.invalidar(); app.sesion.subiendo=None; app.sesion.textura=None;
@@ -1283,13 +1298,13 @@ pub fn actualizar(app: &mut App, action: Accion) -> Task<Mensaje> {
                 Err(error) => {
                     app.servicios.auth_error = Some(error);
                     app.sesion.cuenta.invalidar(); app.sesion.subiendo=None;
-                    if app.servicios.session.is_some() {
+                    if app.servicios.session.is_some() || (restoring && app.servicios.perfil_recordado.is_some()) {
                         app.servicios.session = None;
                         app.sesion.estado = EstadoSesion::Vencida;
                     }
                 }
             }
-            if restoring && app.servicios.session.is_none()
+            if restoring && app.servicios.session.is_none() && app.servicios.perfil_recordado.is_none()
                 && !(app.pantalla == Some(pantallas::Pantalla::Actualizacion) && app.actualizacion.resultado.is_some()) {
                 app.pantalla = Some(pantallas::Pantalla::Primera);
             }
@@ -1967,6 +1982,45 @@ pub fn store_view(app: &App) -> Element<'_, Mensaje> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn perfil_recordado_no_autentica_y_descarta_respuestas_antiguas() {
+        let (mut app, _) = crate::iniciar_con_guardado(Seccion::Instancias,false,None,false,Estado::nuevo(false),None);
+        app.servicios.restoring = true;
+        let id = app.servicios.auth_id;
+        let _ = actualizar(&mut app, Accion::PerfilRecordado(id.wrapping_add(1), "Otro".into()));
+        assert_eq!(app.servicios.nombre("demo"), "Recuperando sesión…");
+        let _ = actualizar(&mut app, Accion::PerfilRecordado(id, "Jugador".into()));
+        assert_eq!(app.servicios.nombre("demo"), "Jugador");
+        assert!(app.servicios.session.is_none());
+        assert_eq!(app.pantalla, None);
+    }
+    #[test]
+    fn cancelar_recuperacion_borra_perfil_y_rechaza_eventos_tardios() {
+        let (mut app, _) = crate::iniciar_con_guardado(Seccion::Instancias,false,None,false,Estado::nuevo(false),None);
+        let id = app.servicios.auth_id;
+        app.servicios.restoring = true;
+        let _ = actualizar(&mut app, Accion::PerfilRecordado(id, "Jugador".into()));
+        app.servicios.cancel();
+        let _ = actualizar(&mut app, Accion::PerfilRecordado(id, "Jugador".into()));
+        assert!(app.servicios.perfil_recordado.is_none());
+        assert!(app.servicios.session.is_none());
+        assert_eq!(app.servicios.nombre("demo"), "Sin cuenta");
+    }
+
+    #[test]
+    fn perfil_recordado_permanece_visible_si_falla_la_renovacion() {
+        let (mut app, _) = crate::iniciar_con_guardado(Seccion::Instancias,false,None,false,Estado::nuevo(false),None);
+        let id = app.servicios.auth_id;
+        app.servicios.restoring = true;
+        let _ = actualizar(&mut app, Accion::PerfilRecordado(id, "Jugador".into()));
+        let _ = actualizar(&mut app, Accion::Autenticada(id, Err("Sin conexión".into()), false));
+        assert_eq!(app.pantalla, None);
+        assert_eq!(app.servicios.nombre("demo"), "Jugador");
+        assert!(app.servicios.session.is_none());
+        assert!(matches!(app.sesion.estado, EstadoSesion::Vencida));
+        assert!(app.servicios.auth_error.is_some());
+    }
+
     #[test]
     fn el_resultado_de_actualizacion_sigue_visible_sin_cuenta_recuperada() {
         let (mut app,_) = crate::iniciar_con_guardado(Seccion::Instancias,false,None,false,Estado::nuevo(false),None);

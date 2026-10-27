@@ -17,6 +17,11 @@ sha1 = "0.10"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
+# Reduce el tamaño de los artefactos de desarrollo; los símbolos completos
+# siguen disponibles con CARGO_PROFILE_DEV_DEBUG=2 cuando se depura.
+[profile.dev]
+debug = 0
+
 # Sin optimizar, SHA-512 procesa unos 10 MiB/s y cada comprobación de mods
 # tarda decenas de segundos; optimizar solo los hashes no cambia la depuración.
 [profile.dev.package.sha2]
@@ -40,7 +45,10 @@ opt-level = 3
 
 [profile.release]
 opt-level = "z"
-lto = true
+# Thin: el release del launcher compiló un 15 % más rápido que con LTO completo
+# y el ejecutable creció un 1,3 % (docs/superpowers/mediciones/2026-10-26-actions-optimizacion.md).
+# Al cambiarlo, actualizar la clave de caché de .github/workflows/windows-package.yml.
+lto = "thin"
 codegen-units = 1
 panic = "abort"
 strip = true

@@ -125,6 +125,8 @@ fn write_windows(entry: &keyring::Entry, value: &str) -> Result<(), Error> {
 pub struct Remembered {
     client_id: String,
     pub profile_id: String,
+    #[serde(default)]
+    pub profile_name: Option<String>,
     pub refresh: Zeroizing<String>,
 }
 impl std::fmt::Debug for Remembered {
@@ -166,13 +168,21 @@ impl Vault {
         {
             return Err(Error::Unavailable);
         }
+        let mut record = record;
+        if record.profile_name.as_ref().is_some_and(|name| name.is_empty() || name.len() > 16 || !name.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_')) {
+            record.profile_name = None;
+        }
         Ok(Some(record))
     }
     pub fn remember(&self, generation: u64, session: &Session) -> Result<(), Error> {
         if session.es_local() { return Err(Error::Unavailable); }
-        self.save(generation, &session.profile.id, &session.refresh)
+        self.save_with_name(generation, &session.profile.id, &session.profile.name, &session.refresh)
     }
+    #[cfg(test)]
     fn save(&self, generation: u64, profile_id: &str, refresh: &str) -> Result<(), Error> {
+        self.save_with_name(generation, profile_id, "", refresh)
+    }
+    fn save_with_name(&self, generation: u64, profile_id: &str, profile_name: &str, refresh: &str) -> Result<(), Error> {
         let _lock = self.serial.lock().map_err(|_| Error::Unavailable)?;
         if self.generation.load(Ordering::SeqCst) != generation {
             return Err(Error::Stale);
@@ -181,12 +191,14 @@ impl Vault {
         struct Record<'a> {
             client_id: &'a str,
             profile_id: &'a str,
+            profile_name: &'a str,
             refresh: &'a str,
         }
         let value = Zeroizing::new(
             serde_json::to_string(&Record {
                 client_id: CLIENT_ID,
                 profile_id,
+                profile_name,
                 refresh,
             })
             .map_err(|_| Error::Unavailable)?,
@@ -259,6 +271,16 @@ mod tests {
             Ok(())
         }
     }
+    #[test]
+    fn perfil_recordado_conserva_nombre_sin_exponer_credenciales() {
+        let vault = Vault { store: Box::new(MemoryStore(Mutex::new(None))), serial: Mutex::new(()), generation: AtomicU64::new(0) };
+        let id = "0123456789abcdef0123456789abcdef";
+        vault.save_with_name(0, id, "Jugador", "CANARY_TOKEN").unwrap();
+        let record = vault.load().unwrap().unwrap();
+        assert_eq!(record.profile_name.as_deref(), Some("Jugador"));
+        assert!(!format!("{record:?}").contains("CANARY_TOKEN"));
+    }
+
     #[test]
     fn stale_attempt_cannot_restore_logged_out_credentials() {
         let vault = Vault {

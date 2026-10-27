@@ -247,7 +247,7 @@ fn resolver_compilacion(
     {
         return Err(Error::Datos);
     }
-    if version < actual || (version == actual && manifest.compilacion <= compilacion_actual) {
+    if version < actual || (version == actual && ((canal == Canal::Beta && !beta) || manifest.compilacion <= compilacion_actual)) {
         return Ok(None);
     }
     let artefacto = manifest
@@ -315,9 +315,11 @@ pub async fn comprobar_canal(
         return Err(Error::Red);
     }
     let release = if canal == Canal::Beta {
-        let releases: Vec<Release> = crate::http::body_json(respuesta, "GitHub", 8 * 1024 * 1024)
+        let mut releases: Vec<Release> = crate::http::body_json(respuesta, "GitHub", 8 * 1024 * 1024)
             .await
             .map_err(|_| Error::Datos)?;
+        let version_actual = numeros(actual).ok_or(Error::Datos)?;
+        releases.retain(|r| r.prerelease || leer_tag(&r.tag_name).is_none_or(|(version, _, _)| version != version_actual));
         match elegir(releases, canal) {
             Some(release) => release,
             None => return Ok(None),
@@ -877,6 +879,15 @@ mod tests {
         std::fs::remove_file(&archivo).unwrap();
         std::fs::remove_dir(&carpeta).unwrap();
         std::fs::remove_dir(&raiz).unwrap();
+    }
+
+    #[test]
+    fn canal_beta_no_ofrece_estable_de_la_misma_version() {
+        let (mut release, mut manifest) = datos();
+        manifest.compilacion = 42;
+        release.tag_name = tag(&manifest.version, 42, false);
+        release.assets[0].browser_download_url = release.assets[0].browser_download_url.replace("/v0.2.0/", "/v0.2.0-build.42/");
+        assert!(resolver_compilacion(release, manifest, "0.2.0", 10, false, Canal::Beta).unwrap().is_none());
     }
 
     #[test]

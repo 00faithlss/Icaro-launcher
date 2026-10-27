@@ -54,6 +54,8 @@ Validación local del 13-10-2026: 9 pruebas del módulo de actualización, 49 de
 
 Referencias: [releases de GitHub](https://docs.github.com/en/rest/releases/releases) y [parámetros de Inno Setup](https://jrsoftware.org/ishelp/topic_setupcmdline.htm).
 
+En el canal beta, una release estable de la misma versión no se ofrece solamente por tener otro número de compilación; las betas más nuevas siguen siendo candidatas. Tras completar la actualización, la pantalla ofrece **Continuar**.
+
 ## Flujo de publicación
 
 El trabajo se hace en ramas `feat/*`, `fix/*`, `perf/*` o `ci/*`, que no publican, y se integra en `develop`:
@@ -62,6 +64,8 @@ El trabajo se hace en ramas `feat/*`, `fix/*`, `perf/*` o `ci/*`, que no publica
 2. **Estable.** Al integrar `develop` en `main` se publica `v<versión>-build.<compilación>`, marcada como la más reciente, y el workflow crea el tag fuente `v<versión>` sobre la misma revisión. `main` exige una versión mayor que la última estable: no publica otra compilación de una versión ya estable.
 
 Si la última release del mismo canal y versión contiene exactamente el mismo árbol y sus artefactos de actualización, el workflow no vuelve a compilar. El canal se distingue por la rama: la estable de `main` se publica aunque su contenido coincida con la última beta. No renombres el tag de una release descargable: los launchers comprueban que coincida con `latest.json`. Las ramas `vX.Y.x` y los tags `v*` anteriores se conservan como historial, pero ya no publican.
+
+El workflow tiene dos jobs. `windows` construye, prueba y sube el artefacto `icaro-windows-x86_64` con permisos de lectura; su concurrencia es por rama, así que `main` y `develop` compilan a la vez. `publicar` solo corre tras un push cuya construcción terminó bien y no estaba repetida. Usa el grupo global `icaro-windows-publication`, sin cancelar una publicación en curso, y es el único con `contents: write`. Las reglas de versión y de contenido repetido están en `scripts/ci/publicacion_windows.psm1`: se aplican antes de compilar y otra vez dentro de la exclusión, porque otra rama pudo publicar mientras tanto. Después descarga el artefacto de la misma ejecución en una carpeta vacía y comprueba revisión, versión, canal, compilación, hashes y que no haya archivos sin declarar antes de generar `latest.json`. GitHub conserva solo una ejecución pendiente por grupo: si se acumulan tres publicaciones, la pendiente más antigua se cancela, como antes del cambio. Las regresiones se ejecutan con `pwsh scripts/ci/probar_publicacion_windows.ps1`.
 
 La verificación pública se ejecuta una vez publicada la release, sin aplicar la actualización:
 

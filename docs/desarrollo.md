@@ -162,3 +162,17 @@ La corrección pasó 21 pruebas de autenticación y tres de integración de sesi
 El registro del instalador se probó con su definición real adaptada únicamente a un AppId, asociación y grupo de Inicio aislados: ruta con espacios/acento, comando con el enlace como un argumento, retirada de la asociación propia y conservación de una registrada por otra copia. La asociación real `icaro` del usuario permaneció intacta.
 
 El ejecutable release recibió un enlace de prueba mediante `--oauth-return`, entregó el código y el `state` intactos al receptor aislado y terminó sin abrir otra ventana. La prueba no canjeó un código de Microsoft ni modificó la sesión del usuario; la confirmación del navegador y el acceso completo deben comprobarse con el paquete corregido.
+
+## Tamaño de compilaciones de desarrollo
+
+El perfil `dev` omite símbolos de depuración para reducir el espacio de `target`. Para restaurarlos en PowerShell durante una sesión, usa `$env:CARGO_PROFILE_DEV_DEBUG = "2"` antes de ejecutar Cargo; en Bash usa `export CARGO_PROFILE_DEV_DEBUG=2`. Esto puede aumentar el espacio y el tiempo de compilación. La compilación incremental sigue activa por defecto. Las mediciones y sus limitaciones están en [el registro de optimización](superpowers/mediciones/2026-10-26-registro.md).
+
+## Medición de compilación en GitHub Actions
+
+El workflow Windows conserva las dependencias de pruebas en `target/ci-tests` y las de producción con CRT estático en `target/windows-package-build`. Las variantes siguen separadas por sus perfiles, target y flags. La caché depende de la versión de Rust y de los manifiestos/lockfile; una caché ausente o invalidada vuelve a construir las dependencias.
+
+El artefacto `icaro-windows-diagnostico` reúne la revisión, toolchain, CPU/memoria del runner y los informes HTML de `cargo --timings`. No contiene los paquetes de distribución. El resumen de la ejecución indica si hubo coincidencia exacta de caché; revisar también sus pasos de restauración y guardado y los crates realmente recompilados.
+
+Comparar dos ejecuciones manuales de la misma revisión, con los mismos parámetros, separando caché fría y caliente. El tiempo de cola se calcula aparte del tiempo de los jobs. Las ejecuciones manuales generan artefactos y no publican releases. La [línea base de Actions](superpowers/mediciones/2026-10-26-actions-linea-base.md) documenta los tiempos previos; las mejoras nuevas requieren medición remota.
+
+La ejecución manual permite elegir 1, 2 o 4 procesos de Cargo. El CI usa 4 por defecto: con caché, el job bajó de 29 a 11 minutos sin errores de memoria (una muestra, ver el registro). Las pruebas mantienen `--test-threads=1`, y el script local conserva 1 por defecto para equipos con poca memoria libre. La entrada `perfil_release` permite ensayar `lto-thin` en una ejecución manual; las publicaciones siempre usan el perfil `release` de `Cargo.toml`. Para medir el empaquetado local se puede pasar `-Trabajos 2 -Medir` a `scripts/empaquetar_windows.ps1`: conserva el target/CRT y añade los informes HTML y `target/ci/release-tiempos.json` con tiempos separados del launcher y del servicio.
