@@ -53,3 +53,20 @@ Ejecución manual [`40433751137`](https://github.com/00faithlss/Icaro-launcher/a
 | Instalador | 93 071 491 B | 93 244 559 B (+0,2 %) |
 
 El job completo tardó 13 min 48 s. La caché no guarda las dependencias con LTO thin, porque su clave ya tenía una coincidencia exacta; el tiempo con caché caliente y LTO thin no está medido. Las pruebas y la validación del empaquetado pasaron, pero no se ejecutó la interfaz: el comportamiento del ejecutable thin no está comprobado. El perfil de distribución no cambió.
+
+## LTO thin en `Cargo.toml`: ejecuciones fría y caliente (27-10-2026)
+
+Revisión `043dac5`, `trabajos=4`, perfil de distribución con `lto = "thin"`. Ejecuciones [`40436876752`](https://github.com/00faithlss/Icaro-launcher/actions/runs/40436876752) y [`40438245521`](https://github.com/00faithlss/Icaro-launcher/actions/runs/40438245521), una tras otra.
+
+| Medida | LTO completo, caliente `40430942181` | Thin, 1.ª `40436876752` | Thin, 2.ª `40438245521` |
+| --- | ---: | ---: | ---: |
+| Job Windows | 11 min 8 s | 13 min 20 s | 11 min 23 s |
+| Verificar núcleo e interfaz | 2 min 52 s | 2 min 55 s | 2 min 55 s |
+| Release launcher (Cargo) | 5 min 57 s | 7 min 53 s | 5 min 55 s |
+| Release `sync_host` (Cargo) | 58 s | 1 min 9 s | 53 s |
+| Crates compilados al empaquetar | 4 | 426 | 426 |
+| `.exe` portable | 124 083 200 B | 125 688 832 B | 125 688 832 B |
+
+La caché no guardó las dependencias compiladas con thin: ambas ejecuciones restauraron la caché existente con coincidencia exacta y su paso final no la volvió a guardar (1 s y 0 s). La clave de rust-cache no cambia con el perfil de `Cargo.toml`, de modo que la caché sigue conteniendo las dependencias del LTO completo y las pruebas siguen aprovechándola. Por eso ninguna de las dos ejecuciones mide thin con caché caliente.
+
+Aun recompilando las 426 dependencias, la segunda ejecución thin igualó el release con LTO completo y caché caliente (5 min 55 s frente a 5 min 57 s). La diferencia entre las dos ejecuciones thin, casi 2 minutos con el mismo trabajo, indica una variación del runner que una sola muestra no permite descartar. Para medir thin con caché hay que incluir el perfil en la clave de la caché (entrada `key` de rust-cache) y repetir las dos ejecuciones. El comportamiento del ejecutable thin sigue sin probarse.

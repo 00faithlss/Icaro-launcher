@@ -217,6 +217,16 @@ if ($Grupo -in @('Publicacion','Todo')) {
         Comprobar ($taskJobs[0] -match "-ne 'workflow_dispatch'\) \{ throw 'El ensayo de perfil solo se admite") 'Falta el rechazo del ensayo fuera de ejecuciones manuales.'
         Comprobar ($taskJobs[1] -notmatch 'CARGO_PROFILE_RELEASE') 'publicar no debe alterar el perfil release.'
     }
+    Probar 'la clave de caché sigue al LTO del perfil release' {
+        $taskCargo = Get-Content -LiteralPath (Join-Path $taskRoot 'Cargo.toml') -Raw
+        $taskRelease = [regex]::Match($taskCargo, '(?ms)^\[profile\.release\]\s*$(.*?)(?=^\[|\z)')
+        Comprobar $taskRelease.Success 'Falta el perfil release.'
+        $taskLto = [regex]::Match($taskRelease.Groups[1].Value, '(?m)^lto\s*=\s*"?([a-z]+)"?')
+        Comprobar $taskLto.Success 'El perfil release no declara lto.'
+        $taskClave = [regex]::Match($taskJobs[0], '(?m)^\s+key: perfil-\$\{\{ env\.ICARO_PERFIL_RELEASE \}\}-lto-([a-z]+)\r?$')
+        Comprobar $taskClave.Success 'La caché de Cargo no incluye el perfil en su clave.'
+        Comprobar ($taskClave.Groups[1].Value -ceq $taskLto.Groups[1].Value) "La clave usa lto-$($taskClave.Groups[1].Value) y Cargo.toml lto=$($taskLto.Groups[1].Value)."
+    }
     Probar 'publicar revalida la versión y los artefactos de esta ejecución' {
         $taskOrden = @('Get-IcaroDecisionPublicacion','gh run download \$env:GITHUB_RUN_ID','Test-IcaroArtefactosPublicacion','gh release create') |
             ForEach-Object { $m = [regex]::Match($taskJobs[1], $_); Comprobar $m.Success "Falta $_."; $m.Index }
