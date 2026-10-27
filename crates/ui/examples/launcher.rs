@@ -36,6 +36,8 @@ mod red_privada_real;
 mod sincronizacion_real;
 #[path = "launcher_aux/almacenamiento_real.rs"]
 mod almacenamiento_real;
+#[path = "launcher_aux/estadisticas_reales.rs"]
+mod estadisticas_reales;
 #[path = "launcher_aux/java_real.rs"]
 mod java_real;
 #[path = "launcher_aux/capt.rs"]
@@ -133,6 +135,7 @@ struct App {
     /// Texto completo del aviso de error abierto con "Ver detalle".
     detalle_error: Option<String>,
     almacenamiento: almacenamiento_real::Estado,
+    estadisticas: estadisticas_reales::Estado,
     java_global: java_real::Preferencias,
     java_detectadas: Vec<icaro_core::java::Java>,
     java_estado: String,
@@ -266,6 +269,7 @@ impl App {
 enum Mensaje {
     Java(java_real::Accion),
     Almacenamiento(almacenamiento_real::Accion),
+    Estadisticas(estadisticas_reales::Accion),
     Verificacion(verificacion_real::Accion),
     Icono(icono_instancia::Accion),
     ExportarLista(exportar_lista_mods::Accion),
@@ -460,6 +464,10 @@ fn abrir_instancia(app: &mut App, i: usize) {
     app.mods_vista = 0;
     app.seleccionada = Some(i);
     app.editor_inst = i;
+    // Al abrirla se vuelve a medir: mods, mundos o capturas pudieron cambiar fuera.
+    if let Some(id) = app.servicios.instancias.registros.get(i).map(|r| r.id.clone()) {
+        estadisticas_reales::vencer(app, &id);
+    }
     mods_reales::cargar_local(app);
     mods_reales::cargar_recursos(app);
     app.exp = exp;
@@ -497,7 +505,8 @@ fn actualizar(app: &mut App, m: Mensaje) -> Task<Mensaje> {
     if (guardar || instalaciones != app.instalando.len()) && std::env::var_os("ICARO_CAPTURA_DISENO").is_none() {
         guardar_si_cambio(app);
     }
-    tarea
+    // Solo hace trabajo si el editor muestra una instancia sin datos vigentes.
+    Task::batch([tarea, estadisticas_reales::pedir(app)])
 }
 
 fn hay_dialogo(app: &App) -> bool {
@@ -559,6 +568,7 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
         Mensaje::RedPrivada(a)=>return red_privada_real::actualizar(app,a),
         Mensaje::Sincronizacion(a)=>return sincronizacion_real::actualizar(app,a),
         Mensaje::Almacenamiento(a) => return almacenamiento_real::actualizar(app,a),
+        Mensaje::Estadisticas(a) => return estadisticas_reales::actualizar(app, a),
         Mensaje::Java(a) => return java_real::actualizar(app, a),
         Mensaje::Actualizacion(a) => return actualizacion_real::actualizar(app, a),
         Mensaje::Juego(a) => return juego_real::actualizar(app, a),
@@ -2949,12 +2959,16 @@ fn pantalla_editor(app: &App, pestana: usize) -> Element<'_, Mensaje> {
     let instancia = con_instancias(|l| l[app.editor_inst].clone());
     let cantidad_mods = instancia.mods.split_whitespace().next()
         .and_then(|n| n.parse::<usize>().ok()).unwrap_or(0);
+    let medidas = app.servicios.instancias.registros.get(app.editor_inst)
+        .map(|r| estadisticas_reales::datos(app, &r.id)).unwrap_or_default();
     let datos = DatosEditor {
         nombre: app.general.nombre.clone(),
         version: instancia.version,
-        jugado: if app.servicios.demo && app.editor_inst == 0 { "41 h" } else { "—" }.into(),
+        jugado: if app.servicios.demo { if app.editor_inst == 0 { "41 h".into() } else { "—".into() } }
+            else { estadisticas_reales::texto_jugado(medidas.segundos) },
         mods: cantidad_mods.to_string(),
-        tamano: if app.servicios.demo && app.editor_inst == 0 { "2,4 GB" } else { "—" }.into(),
+        tamano: if app.servicios.demo { if app.editor_inst == 0 { "2,4 GB".into() } else { "—".into() } }
+            else { estadisticas_reales::texto_tamano(medidas.bytes) },
         memoria: format!("{} MB", app.configs[app.editor_inst].memoria_max),
         portada: instancia.portada,
     };
@@ -3760,6 +3774,7 @@ fn iniciar_con_guardado(seccion: Seccion, piedra: bool, menu: Option<usize>, con
                 config_error,
                 detalle_error: None,
                 almacenamiento: Default::default(),
+                estadisticas: Default::default(),
                 actualizacion: actualizacion_real::Estado::default(),
                 verificacion: Default::default(),
                 iconos: Default::default(),

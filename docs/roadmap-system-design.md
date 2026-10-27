@@ -93,7 +93,7 @@ Una vista puede estar implementada visualmente y tener su función pendiente. Po
 
 | Referencia original | Estado | Lo que tenemos y lo que falta |
 | --- | --- | --- |
-| `TarjetaInstancia`, `PanelLateral` | Parcial | Lista, selección, grupos y metadatos guardados. Vanilla pasa de instalación a lista y ejecución con datos reales. Fabric usa el perfil oficial y el usuario confirmó su arranque con un mod real en Windows. Quilt, Forge y NeoForge quedan pendientes. Falta tiempo jugado acumulado. |
+| `TarjetaInstancia`, `PanelLateral` | Parcial | Lista, selección, grupos y metadatos guardados. Vanilla pasa de instalación a lista y ejecución con datos reales. Fabric usa el perfil oficial y el usuario confirmó su arranque con un mod real en Windows. Quilt, Forge y NeoForge quedan pendientes. El tiempo jugado se acumula por instancia y el editor lo muestra con su tamaño; falta mostrarlos en la lista. |
 | `Asistente`, `SelectorVersion`, `SelectorLoader` | Parcial | Selectores separados por paso, fechas, búsqueda y versiones antiguas; catálogo oficial de versiones de loaders y elección persistida. Crear Vanilla o Fabric prepara Minecraft, Java y el perfil oficial. Faltan Quilt, Forge y NeoForge y la validación de Fabric con un mod real. |
 | `EditorInstancia` | Parcial | Encabezado y pestañas existentes; nombre, grupo y Java guardados; Vanilla omite Mods. Java, memoria y argumentos aplicados al juego. General requiere icono/color, notas y guardado completo de resolución/servidor. |
 | `AccionesInstancia` | Parcial | Abrir carpeta, eliminar a papelera y Deshacer conectados. Exportación ZIP real con diálogo original. Duplicar, importar y otras acciones aún necesitan núcleo. |

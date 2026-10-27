@@ -47,7 +47,7 @@ Las tareas pendientes de este apartado corresponden a Quilt y a la validación c
 - [ ] Ordenar la prioridad de resourcepacks por arrastre y ampliar el soporte de configuración de shaders a otros motores.
 - [ ] Completar la recuperación de archivos y capturas desde sus papeleras y la revisión de integridad.
 - [ ] Guardar el historial de descargas entre sesiones y unificar los instaladores en la cola global.
-- [ ] Acumular y guardar el tiempo jugado por instancia.
+- [x] Acumular y guardar el tiempo jugado por instancia (`estadisticas.json`, desde que se inicia el juego hasta que se cierra) y mostrar el tamaño de la instancia en el editor. Falta comprobarlo en una partida real y mostrarlo también en la lista de instancias.
 
 ## 4. Cuenta, servidores y publicación
 

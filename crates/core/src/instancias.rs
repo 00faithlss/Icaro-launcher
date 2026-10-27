@@ -3,6 +3,8 @@
 
 //! Instancias locales: identidad estable, carpeta aislada y metadatos persistentes.
 
+mod estadisticas;
+
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
