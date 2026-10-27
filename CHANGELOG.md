@@ -1,5 +1,11 @@
 # Changelog
 
+## [Sin publicar]
+
+- Actualizar o instalar varios mods a la vez ya no descarta todos cuando uno falla: los que se pueden guardar se guardan, cada uno en su propia transacción, y el aviso nombra el mod que falló con su motivo.
+- En la tienda de mods, al pasar de página la lista vuelve arriba con el desplazamiento suave y los botones de página quedan enteros. La rueda ya no se desfasa cuando la lista cambia de alto, lo que antes dejaba los botones fuera de vista al subir y volver a bajar.
+- La tienda permite mostrar 20, 30, 50 o 100 resultados por página.
+
 ## [0.3.4] - 2026-10-27
 
 - El editor de una instancia muestra el tiempo jugado y el espacio que ocupa, en lugar de «—». El tiempo se acumula al cerrar cada partida en `estadisticas.json` de la instancia y empieza en cero; las partidas anteriores a esta versión no se cuentan. Ambos datos se calculan en segundo plano al abrir la instancia.

@@ -33,6 +33,7 @@ async fn consulta_catalogo_proyecto_y_versiones_compatibles() {
             minecraft: Some("1.21.4".into()),
             loader: Some("fabric".into()),
             offset: 0,
+            limit: icaro_core::modrinth::PAGE_SIZE,
             order: Default::default(),
         })
         .await
@@ -89,6 +90,7 @@ async fn modpacks_tienen_filtros_versiones_e_imagen_real() {
             minecraft: Some("1.21.4".into()),
             loader: Some("fabric".into()),
             offset: 0,
+            limit: icaro_core::modrinth::PAGE_SIZE,
             order: icaro_core::modrinth::Order::Downloads,
         })
         .await

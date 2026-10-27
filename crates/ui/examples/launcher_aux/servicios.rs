@@ -61,6 +61,8 @@ pub struct Estado {
     pub(crate) minecraft: String,
     pub(crate) loader: String,
     pub order: Order,
+    /// Resultados del catálogo por página: 20, 30, 50 o 100.
+    pub por_pagina: u32,
     pub(crate) tags: Option<Tags>,
     tags_busy: bool,
     tags_error: Option<String>,
@@ -115,6 +117,7 @@ impl Estado {
             minecraft: "Todas las versiones".into(),
             loader: "Todos los loaders".into(),
             order: Order::Relevance,
+            por_pagina: modrinth::PAGE_SIZE,
             tags: None,
             tags_busy: false,
             tags_error: None,
@@ -207,6 +210,8 @@ pub enum Accion {
     Consulta(String),
     Buscar,
     Pagina(u32),
+    /// Cambia los resultados por página y vuelve a la primera.
+    PorPagina(u32),
     Buscada(u64, Result<Results, String>),
     Proyecto(String),
     ProyectoVersiones(String),
@@ -453,6 +458,7 @@ fn context(app: &App) -> Search {
         minecraft,
         loader,
         offset: 0,
+        limit: app.servicios.por_pagina,
         order: app.servicios.order,
     }
 }
@@ -1323,6 +1329,10 @@ pub fn actualizar(app: &mut App, action: Accion) -> Task<Mensaje> {
         }
         Accion::Buscar => return buscar(app, 0, false),
         Accion::Pagina(offset) => return buscar(app, offset, false),
+        Accion::PorPagina(n) if POR_PAGINA.contains(&n) && n != app.servicios.por_pagina => {
+            app.servicios.por_pagina = n;
+            return buscar(app, 0, false);
+        }
         Accion::Buscada(id, result) if id == app.servicios.search_id => {
             app.servicios.busy = false;
             match result {
@@ -1694,6 +1704,9 @@ pub fn selector<'a>(app: &'a App, window: Element<'a, Mensaje>) -> Element<'a, M
     .into()
 }
 
+/// Opciones de resultados por página del catálogo.
+pub const POR_PAGINA: [u32; 4] = [20, 30, 50, 100];
+
 pub fn store_view(app: &App) -> Element<'_, Mensaje> {
     let p = app.paleta();
     let s = &app.servicios;
@@ -1939,7 +1952,7 @@ pub fn store_view(app: &App) -> Element<'_, Mensaje> {
                         "Anterior",
                         Variante::Secundario,
                         (results.offset > 0 && !s.busy).then(|| m(Accion::Pagina(
-                            results.offset.saturating_sub(modrinth::PAGE_SIZE)
+                            results.offset.saturating_sub(results.limit.max(1))
                         )))
                     ),
                     componentes::boton(
@@ -1950,7 +1963,7 @@ pub fn store_view(app: &App) -> Element<'_, Mensaje> {
                             < results.total_hits
                             && !s.busy)
                             .then(|| m(Accion::Pagina(
-                                results.offset.saturating_add(modrinth::PAGE_SIZE)
+                                results.offset.saturating_add(results.limit.max(1))
                             )))
                     ),
                 ]
@@ -2485,6 +2498,27 @@ mod tests {
         let _ = crate::vista(&real);
         let _ = crate::mods_reales::actualizar(&mut real, crate::mods_reales::Accion::Cancelar);
         assert!(real.servicios.mods.confirmacion.is_none());
+        // Una actualización parcial termina, guarda el resto y nombra el mod que falló.
+        let operacion = real.servicios.mods.operacion;
+        real.servicios.mods.busy = Some(created.id.clone());
+        let _ = crate::mods_reales::actualizar(
+            &mut real,
+            crate::mods_reales::Accion::Terminada(
+                created.id.clone(),
+                operacion,
+                Ok(vec![("Sodium".into(), "El archivo descargado no coincide.".into())]),
+            ),
+        );
+        assert!(real.servicios.mods.busy.is_none());
+        let aviso = &real.avisos.entradas().last().unwrap().aviso;
+        assert!(aviso.error && aviso.texto.contains("Se guardaron los demás mods"));
+        assert!(aviso.texto.contains("Sodium: El archivo descargado no coincide."));
+        // Mods por página: solo valores admitidos y la búsqueda los usa.
+        let _ = actualizar(&mut real, Accion::PorPagina(30));
+        assert_eq!(real.servicios.por_pagina, 30);
+        assert_eq!(context(&real).limit, 30);
+        let _ = actualizar(&mut real, Accion::PorPagina(7));
+        assert_eq!(real.servicios.por_pagina, 30);
         // Ver página conserva la ficha rápida; cerrarla devuelve a los mods.
         let _ = crate::actualizar_estado(&mut real, Mensaje::PanelMod(Some(original.0.id.clone())));
         let generation = real.servicios.search_id;

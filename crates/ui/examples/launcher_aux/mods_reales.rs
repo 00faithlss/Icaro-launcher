@@ -37,7 +37,7 @@ pub struct Estado {
     selector_local: bool,
     comprobando: BTreeMap<String, u64>,
     secuencia: u64,
-    operacion: u64,
+    pub(crate) operacion: u64,
 }
 #[derive(Debug, Clone)]
 pub enum Accion {
@@ -53,7 +53,8 @@ pub enum Accion {
     Confirmar,
     Cancelar,
     Progreso(u64, String),
-    Terminada(String, u64, Result<(), String>),
+    /// Con éxito, los mods que no se pudieron guardar y su motivo.
+    Terminada(String, u64, Result<Vec<(String, String)>, String>),
     Alternar(String),
 }
 fn m(a: Accion) -> Mensaje {
@@ -157,6 +158,12 @@ pub fn recargar(app: &mut App, id: &str) {
         }
     }
 }
+/// «Encabezado Sodium: motivo · Iris: motivo».
+fn texto_fallidos(encabezado: &str, fallidos: &[(String, String)]) -> String {
+    let detalle: Vec<_> = fallidos.iter().map(|(n, e)| format!("{n}: {e}")).collect();
+    format!("{encabezado} {}", detalle.join(" · "))
+}
+
 pub fn ejecutar(app: &mut App, i: Instancia, versions: Vec<Version>) -> Task<Mensaje> {
     let source = app.servicios.catalog.clone();
     let s = &mut app.servicios.mods;
@@ -170,25 +177,69 @@ pub fn ejecutar(app: &mut App, i: Instancia, versions: Vec<Version>) -> Task<Men
     s.progreso = "Preparando los mods…".into();
     let store = app.servicios.instancias.almacen.clone();
     let id = i.id.clone();
+    let nombres: std::collections::HashMap<String, String> = app
+        .servicios
+        .mods
+        .listas
+        .get(&i.id)
+        .map(|l| l.iter().map(|m| (m.project_id.clone(), m.nombre.clone())).collect())
+        .unwrap_or_default();
     Task::run(
         iced::stream::channel(32, async move |mut output| {
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
             let operation = async {
                 let catalog = source.map_err(|e| e.to_string())?;
-                let result = mods::instalar(
+                let avance = |tx: tokio::sync::mpsc::UnboundedSender<String>| {
+                    move |p: &str| {
+                        let _ = tx.send(p.into());
+                    }
+                };
+                let total = versions.len();
+                let result = match mods::instalar(
                     &catalog,
                     &store,
                     &id,
-                    versions,
+                    versions.clone(),
                     &i.minecraft,
                     &i.loader,
-                    move |p| {
-                        let _ = tx.send(p.into());
-                    },
+                    avance(tx.clone()),
                 )
                 .await
-                .map(|_| ())
-                .map_err(|e| e.to_string());
+                {
+                    Ok(_) => Ok(Vec::new()),
+                    Err(e) if total < 2 => Err(e.to_string()),
+                    // La transacción conjunta descarta todo ante un fallo: cada
+                    // mod se repite en su propia transacción para conservar los
+                    // que sí se pueden guardar.
+                    Err(_) => {
+                        let mut fallidos = Vec::new();
+                        for v in versions {
+                            let nombre = nombres
+                                .get(&v.project_id)
+                                .cloned()
+                                .unwrap_or_else(|| v.name.clone());
+                            if let Err(e) = mods::instalar(
+                                &catalog,
+                                &store,
+                                &id,
+                                vec![v],
+                                &i.minecraft,
+                                &i.loader,
+                                avance(tx.clone()),
+                            )
+                            .await
+                            {
+                                fallidos.push((nombre, e.to_string()));
+                            }
+                        }
+                        if fallidos.len() == total {
+                            Err(texto_fallidos("No se pudo guardar ningún mod.", &fallidos))
+                        } else {
+                            Ok(fallidos)
+                        }
+                    }
+                };
+                drop(tx);
                 let _ = catalog.guardar_metadata_cache().await;
                 result
             };
@@ -425,7 +476,7 @@ pub fn actualizar(app: &mut App, action: Accion) -> Task<Mensaje> {
             app.servicios.mods.busy = None;
             app.servicios.mods.progreso.clear();
             match result {
-                Ok(()) => {
+                Ok(fallidos) => {
                     app.servicios.mods.diseno.cestas.remove(&id);
                     app.servicios.mods.diseno.seleccion.remove(&id);
                     let store = &app.servicios.instancias.almacen;
@@ -450,10 +501,17 @@ pub fn actualizar(app: &mut App, action: Accion) -> Task<Mensaje> {
                         }
                     }
                     recargar(app, &id);
-                    app.avisar(
-                        "Mods guardados en la instancia, incluidas sus dependencias obligatorias."
-                            .into(),
-                    );
+                    if fallidos.is_empty() {
+                        app.avisar(
+                            "Mods guardados en la instancia, incluidas sus dependencias obligatorias."
+                                .into(),
+                        );
+                    } else {
+                        app.avisar_error(texto_fallidos(
+                            "Se guardaron los demás mods. No se pudieron guardar:",
+                            &fallidos,
+                        ));
+                    }
                     if let Some(i) = app
                         .servicios
                         .instancias

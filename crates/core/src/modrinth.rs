@@ -74,6 +74,8 @@ pub struct Search {
     pub minecraft: Option<String>,
     pub loader: Option<String>,
     pub offset: u32,
+    /// Resultados por página; la API admite hasta 100.
+    pub limit: u32,
     pub order: Order,
 }
 
@@ -111,7 +113,7 @@ fn search_url_filters(search: &Search, categories: &[String], environment: Optio
             &serde_json::to_string(&facets).expect("Facetas de texto"),
         ),
         ("offset", &search.offset.to_string()),
-        ("limit", &PAGE_SIZE.to_string()),
+        ("limit", &search.limit.clamp(1, 100).to_string()),
         ("index", search.order.as_str()),
     ]);
     url
@@ -878,7 +880,7 @@ mod tests {
         let url = search_url(&Search {
             query: "complementary".into(), kind: Kind::Shader,
             minecraft: Some("1.21.4".into()), loader: None,
-            offset: 0, order: Order::Relevance,
+            offset: 0, limit: PAGE_SIZE, order: Order::Relevance,
         });
         let query: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
         let facets: Vec<Vec<String>> = serde_json::from_str(&query["facets"]).unwrap();
@@ -896,6 +898,7 @@ mod tests {
             minecraft: None,
             loader: None,
             offset: 0,
+            limit: PAGE_SIZE,
             order: Order::Relevance,
         };
         assert!(
@@ -910,6 +913,7 @@ mod tests {
             minecraft: Some("1.21.4".into()),
             loader: Some("Fabric".into()),
             offset: 20,
+            limit: PAGE_SIZE,
             order: Order::Downloads,
         };
         let url = search_url(&search);
