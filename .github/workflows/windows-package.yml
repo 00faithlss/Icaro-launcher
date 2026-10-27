@@ -110,7 +110,8 @@ jobs:
         run: |
           $trabajos = [int]$env:ICARO_CARGO_JOBS
           if ($trabajos -notin @(1,2,4)) { throw 'Paralelismo de CI inválido' }
-          & ./scripts/ci/probar_publicacion_windows.ps1
+          # Proceso propio: los sustitutos de las pruebas no alcanzan al Cargo real.
+          pwsh -NoProfile -File ./scripts/ci/probar_publicacion_windows.ps1
           if ($LASTEXITCODE -ne 0) { throw 'Fallaron las regresiones de CI' }
           cargo test --locked --timings -j $trabajos -p icaro-core --lib --test actualizacion_local
           if ($LASTEXITCODE -ne 0) { throw 'Fallaron las pruebas del núcleo' }

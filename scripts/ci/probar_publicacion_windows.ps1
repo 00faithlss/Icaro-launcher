@@ -16,7 +16,10 @@ function Probar([string]$Nombre, [scriptblock]$Accion) {
 if ($Grupo -in @('Empaquetado','Todo')) {
     $taskTemp = Join-Path ([IO.Path]::GetTempPath()) ('icaro-ci-pruebas-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $taskTemp | Out-Null
-    $taskCargoAnterior = Get-Item Function:global:cargo -ErrorAction SilentlyContinue
+    # `Function:global:cargo` no es una ruta válida del proveedor y Remove-Item
+    # la ignoraba sin error, dejando el sustituto activo para el Cargo real.
+    # Se guarda el bloque, no la función: redefinirla modifica ese mismo objeto.
+    $taskCargoAnterior = (Get-Item -LiteralPath Function:\cargo -ErrorAction SilentlyContinue)?.ScriptBlock
     $global:IcaroTestCargoCalls = [Collections.Generic.List[object]]::new()
     $global:IcaroTestFallarBuild = 2
     # Solo se sustituye la frontera externa de Cargo; se ejecuta el script real.
@@ -69,14 +72,19 @@ if ($Grupo -in @('Empaquetado','Todo')) {
             Comprobar (@(Get-ChildItem -LiteralPath (Join-Path $taskTemp 'fallo') -File).Count -eq 0) 'No deben publicarse paquetes tras el error.'
         }
     } finally {
-        if ($taskCargoAnterior) { Set-Item Function:global:cargo $taskCargoAnterior.ScriptBlock }
-        else { Remove-Item Function:global:cargo }
+        if ($taskCargoAnterior) { Set-Item -LiteralPath Function:\cargo -Value $taskCargoAnterior }
+        else { Remove-Item -LiteralPath Function:\cargo }
         Remove-Variable IcaroTestCargoCalls,IcaroTestFallarBuild -Scope Global
         # La carpeta se creó exclusivamente para esta ejecución; no contiene datos del usuario.
         $taskResolved = [IO.Path]::GetFullPath($taskTemp)
         $taskTempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
         if (-not $taskResolved.StartsWith($taskTempRoot,[StringComparison]::OrdinalIgnoreCase) -or -not ([IO.Path]::GetFileName($taskResolved)).StartsWith('icaro-ci-pruebas-')) { throw 'Carpeta de pruebas fuera del temporal.' }
         Remove-Item -LiteralPath $taskResolved -Recurse -Force
+    }
+    Probar 'restaura el Cargo real tras las pruebas de empaquetado' {
+        $taskActual = Get-Item -LiteralPath Function:\cargo -ErrorAction SilentlyContinue
+        if ($taskCargoAnterior) { Comprobar ($taskActual -and "$($taskActual.ScriptBlock)" -ceq "$taskCargoAnterior") 'No se restauró la función cargo previa.' }
+        else { Comprobar (-not $taskActual) 'El sustituto de Cargo sigue activo.' }
     }
 }
 if ($Grupo -in @('Publicacion','Todo')) {
