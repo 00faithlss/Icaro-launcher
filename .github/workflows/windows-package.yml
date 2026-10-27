@@ -10,6 +10,12 @@ name: Empaquetar Windows
 # artefactos.
 on:
   workflow_dispatch:
+    inputs:
+      trabajos:
+        description: Procesos de Cargo para comparar compilaciones
+        type: choice
+        options: ['1', '2', '4']
+        default: '1'
   push:
     branches: ['main', 'develop']
     paths-ignore:
@@ -17,17 +23,26 @@ on:
       - '**/*.md'
       - '.github/workflows/sync-host-linux.yml'
 permissions:
-  contents: write
-concurrency:
-  group: icaro-windows-publication
-  cancel-in-progress: false
+  contents: read
 jobs:
+  # Construye y verifica sin bloquear a la otra rama de publicación. Solo el
+  # job final se serializa y vuelve a comprobar la versión antes de publicar.
   windows:
     runs-on: windows-latest
     timeout-minutes: 45
+    concurrency:
+      group: icaro-windows-build-${{ github.ref }}
+      cancel-in-progress: false
+    outputs:
+      repetida: ${{ steps.publicacion.outputs.repetida }}
+      version: ${{ steps.publicacion.outputs.version }}
+      revision: ${{ github.sha }}
+      canal: ${{ steps.publicacion.outputs.canal }}
     env:
       ICARO_COMPILACION: ${{ github.run_id }}
       ICARO_CANAL: ${{ github.ref_name == 'develop' && 'beta' || 'estable' }}
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target/ci-tests
+      ICARO_CARGO_JOBS: ${{ inputs.trabajos || '1' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Comprobar la versión del canal
@@ -37,53 +52,69 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           'repetida=false' >> $env:GITHUB_OUTPUT
+          "canal=$env:ICARO_CANAL" >> $env:GITHUB_OUTPUT
           if ('${{ github.event_name }}' -eq 'workflow_dispatch') { exit 0 }
           $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'No se pudo leer la versión de Cargo' }
           $version = ($metadata.packages | Where-Object name -EQ 'icaro-ui').version
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Versión de Cargo no admitida: $version" }
-          $tree = (git rev-parse 'HEAD^{tree}').Trim()
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Import-Module ./scripts/ci/publicacion_windows.psm1 -Force
           $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'No se pudieron consultar las releases' }
-          $patron = if ($env:ICARO_CANAL -eq 'beta') { '^v(\d+\.\d+\.\d+)-beta\.\d+$' } else { '^v(\d+\.\d+\.\d+)-build\.\d+$' }
-          $estables = @($releases | Where-Object { -not $_.draft -and -not $_.prerelease -and $_.tag_name -match '^v(\d+\.\d+\.\d+)-build\.\d+$' })
-          $ultimaEstable = $estables | Sort-Object { [version]($_.tag_name -replace '^v(\d+\.\d+\.\d+)-build\.(\d+)$', '$1') }, { [long]($_.tag_name -replace '^.*\.', '') } | Select-Object -Last 1
-          $previa = $releases | Where-Object { -not $_.draft -and ($_.prerelease -eq ($env:ICARO_CANAL -eq 'beta')) -and $_.tag_name -match $patron -and $Matches[1] -eq $version } | Sort-Object { [long]($_.tag_name -replace '^.*\.', '') } | Select-Object -Last 1
-          # El mismo contenido ya publicado en este canal no se vuelve a compilar.
-          if ($previa) {
-            $assets = @($previa.assets.name)
-            $completa = 'latest.json' -in $assets -and "icaro-$version-windows-x86_64.exe" -in $assets -and "icaro-$version-windows-x86_64-setup.exe" -in $assets
-            $previousTree = gh api "repos/$env:GITHUB_REPOSITORY/commits/$($previa.tag_name)" --jq '.commit.tree.sha'
+          $resolver = {
+            param($tag)
+            $arbol = gh api "repos/$env:GITHUB_REPOSITORY/commits/$tag" --jq '.commit.tree.sha'
             if ($LASTEXITCODE -ne 0) { throw 'No se pudo comprobar la revisión publicada' }
-            if ($completa -and $previousTree.Trim() -eq $tree) {
-              'repetida=true' >> $env:GITHUB_OUTPUT
-              Write-Output "El mismo contenido ya está publicado como $($previa.tag_name)."
-              exit 0
-            }
+            "$arbol".Trim()
           }
-          if ($ultimaEstable) {
-            $estable = [version]($ultimaEstable.tag_name -replace '^v(\d+\.\d+\.\d+)-build\.\d+$', '$1')
-            if ($env:ICARO_CANAL -eq 'beta' -and [version]$version -le $estable) {
-              throw "develop tiene la versión $version y la última estable es $estable. Sube la versión de Cargo a la próxima entrega para publicar betas."
-            }
-            if ($env:ICARO_CANAL -eq 'estable' -and [version]$version -le $estable) {
-              throw "main tiene la versión $version y la última estable es $estable. Cada estable exige subir la versión de Cargo y sus notas."
-            }
-          }
-      # Reutiliza dependencias entre ejecuciones; no guarda artefactos de release
-      # publicados ni altera la verificación de versión del canal.
-      - name: Restaurar caché de Cargo
+          # Comprobación temprana: evita compilar el mismo contenido ya publicado o
+          # una versión que este canal no admite. Se repite antes de publicar.
+          $decision = Get-IcaroDecisionPublicacion -Version $version -Canal $env:ICARO_CANAL -Arbol (git rev-parse 'HEAD^{tree}').Trim() -Releases @($releases) -ResolverArbol $resolver
+          Write-Output $decision.Motivo
+          if ($decision.Repetida) { 'repetida=true' >> $env:GITHUB_OUTPUT }
+      - name: Registrar entorno de compilación
         if: steps.publicacion.outputs.repetida != 'true'
-        uses: Swatinem/rust-cache@401aff9a7a08acb9d27b64936a90db81024cff97 # v2.8.2
+        shell: pwsh
+        run: |
+          $rust = @(rustc -Vv)
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudo identificar Rust' }
+          $cargo = cargo -V
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudo identificar Cargo' }
+          $cpu = Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors
+          $memoria = Get-CimInstance Win32_OperatingSystem | Select-Object TotalVisibleMemorySize,FreePhysicalMemory
+          New-Item -ItemType Directory -Force -Path target/ci | Out-Null
+          [ordered]@{revision=(git rev-parse HEAD).Trim();rust=$rust;cargo=$cargo;cpu=$cpu;memoria=$memoria} |
+            ConvertTo-Json -Depth 4 | Set-Content target/ci/entorno.json -Encoding utf8
+      # Las pruebas y el CRT estático de producción tienen targets independientes.
+      # No se incluyen los paquetes de distribución en la caché.
+      - name: Restaurar caché de Cargo
+        id: cargo_cache
+        if: steps.publicacion.outputs.repetida != 'true'
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
           shared-key: icaro-windows
+          workspaces: |
+            . -> target/ci-tests
+            . -> target/windows-package-build
+      - name: Registrar resultado de caché
+        if: steps.publicacion.outputs.repetida != 'true'
+        shell: pwsh
+        env:
+          ICARO_CACHE_HIT: ${{ steps.cargo_cache.outputs.cache-hit }}
+        run: |
+          "Caché de dependencias (coincidencia exacta): $env:ICARO_CACHE_HIT" >> $env:GITHUB_STEP_SUMMARY
       - name: Verificar núcleo e interfaz
         if: steps.publicacion.outputs.repetida != 'true'
         shell: pwsh
         run: |
-          cargo test --locked -j1 -p icaro-core --lib --test actualizacion_local
+          $trabajos = [int]$env:ICARO_CARGO_JOBS
+          if ($trabajos -notin @(1,2,4)) { throw 'Paralelismo de CI inválido' }
+          & ./scripts/ci/probar_publicacion_windows.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Fallaron las regresiones de CI' }
+          cargo test --locked --timings -j $trabajos -p icaro-core --lib --test actualizacion_local
           if ($LASTEXITCODE -ne 0) { throw 'Fallaron las pruebas del núcleo' }
-          cargo test --locked -j1 -p icaro-ui --lib --example launcher -- --test-threads=1
+          cargo test --locked --timings -j $trabajos -p icaro-ui --lib --example launcher -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { throw 'Fallaron las pruebas de la interfaz' }
       - name: Preparar Inno Setup firmado
         if: steps.publicacion.outputs.repetida != 'true'
@@ -99,7 +130,7 @@ jobs:
       - name: Compilar y empaquetar
         if: steps.publicacion.outputs.repetida != 'true'
         shell: pwsh
-        run: ./scripts/empaquetar_windows.ps1 -Compilador (Join-Path $env:RUNNER_TEMP 'inno-6.7.3/ISCC.exe')
+        run: ./scripts/empaquetar_windows.ps1 -Compilador (Join-Path $env:RUNNER_TEMP 'inno-6.7.3/ISCC.exe') -Trabajos ([int]$env:ICARO_CARGO_JOBS) -Medir
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: steps.publicacion.outputs.repetida != 'true'
         with:
@@ -107,14 +138,69 @@ jobs:
           path: target/dist/windows/*
           if-no-files-found: error
           retention-days: 30
+      - name: Conservar diagnóstico de compilación
+        if: always() && steps.publicacion.outputs.repetida != 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: icaro-windows-diagnostico
+          path: |
+            target/ci/*.json
+            target/ci-tests/cargo-timings/*.html
+            target/windows-package-build/cargo-timings/*.html
+          if-no-files-found: warn
+          retention-days: 14
+
+  publicar:
+    needs: windows
+    if: github.event_name == 'push' && needs.windows.result == 'success' && needs.windows.outputs.repetida != 'true'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: icaro-windows-publication
+      cancel-in-progress: false
+    env:
+      ICARO_COMPILACION: ${{ github.run_id }}
+      ICARO_CANAL: ${{ github.ref_name == 'develop' && 'beta' || 'estable' }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Publicar actualización verificada
-        if: github.event_name != 'workflow_dispatch' && steps.publicacion.outputs.repetida != 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          ICARO_VERSION: ${{ needs.windows.outputs.version }}
+          ICARO_REVISION: ${{ needs.windows.outputs.revision }}
+          ICARO_CANAL_CONSTRUIDO: ${{ needs.windows.outputs.canal }}
         run: |
-          $metadata = Get-Content target/dist/windows/icaro-*-artefactos.json -Raw | ConvertFrom-Json
-          $version = $metadata.version
+          Import-Module ./scripts/ci/publicacion_windows.psm1 -Force
+          $version = $env:ICARO_VERSION
+          $revision = (git rev-parse HEAD).Trim()
+          if ($revision -cne $env:ICARO_REVISION -or $env:ICARO_CANAL_CONSTRUIDO -cne $env:ICARO_CANAL) { throw 'La publicación no corresponde a la revisión o al canal construidos' }
+          # Comprobación final dentro de la exclusión: otra ejecución pudo
+          # publicar mientras esta compilaba.
+          $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudieron consultar las releases' }
+          $resolver = {
+            param($tag)
+            $arbol = gh api "repos/$env:GITHUB_REPOSITORY/commits/$tag" --jq '.commit.tree.sha'
+            if ($LASTEXITCODE -ne 0) { throw 'No se pudo comprobar la revisión publicada' }
+            "$arbol".Trim()
+          }
+          $decision = Get-IcaroDecisionPublicacion -Version $version -Canal $env:ICARO_CANAL -Arbol (git rev-parse 'HEAD^{tree}').Trim() -Releases @($releases) -ResolverArbol $resolver
+          Write-Output $decision.Motivo
+          if ($decision.Repetida) { exit 0 }
+          # Solo el artefacto de esta ejecución, en una carpeta propia vacía.
+          $dir = Join-Path $env:RUNNER_TEMP ('icaro-publicacion-' + [guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $dir | Out-Null
+          gh run download $env:GITHUB_RUN_ID -R $env:GITHUB_REPOSITORY -n icaro-windows-x86_64 -D $dir
+          if ($LASTEXITCODE -ne 0) { throw 'No se pudieron descargar los artefactos de esta ejecución' }
+          $entrega = Test-IcaroArtefactosPublicacion -Directorio $dir -Revision $revision -Version $version -Compilacion ([long]$env:ICARO_COMPILACION) -Canal $env:ICARO_CANAL
+          $registro = @(Get-ChildItem -LiteralPath $dir -File -Filter '*-artefactos.json')
+          $files = @(@($entrega.Metadata.artefactos) | ForEach-Object { Join-Path $dir $_.archivo }) + @($registro.FullName)
+          $extra = @(Get-ChildItem -LiteralPath $dir -Recurse -Force | Where-Object { $_.FullName -notin $files })
+          if ($extra.Count -gt 0) { throw "Archivos no declarados en los artefactos: $($extra.Name -join ', ')" }
           $beta = $env:ICARO_CANAL -eq 'beta'
           $tag = if ($beta) { "v$version-beta.$env:ICARO_COMPILACION" } else { "v$version-build.$env:ICARO_COMPILACION" }
           $notesFile = "docs/releases/$version.md"
@@ -123,9 +209,8 @@ jobs:
           foreach ($note in $notesData.notas) {
             if ($note.tipo -notin @('nuevo','mejora','correccion') -or -not $note.texto -or $note.texto.Length -gt 4096) { throw 'Nota de versión inválida' }
           }
-          $portable = Get-ChildItem target/dist/windows -Filter '*.exe' | Where-Object Name -NotLike '*-setup.exe' | Select-Object -First 1
-          $setup = Get-ChildItem target/dist/windows -Filter '*-setup.exe' | Select-Object -First 1
-          if (-not $portable -or -not $setup) { throw 'Faltan artefactos de actualización' }
+          $portable = $entrega.Portable
+          $setup = $entrega.Setup
           $manifest = @{
             version = $version
             compilacion = [long]$env:ICARO_COMPILACION
@@ -136,9 +221,9 @@ jobs:
               'windows-x86_64-setup' = @{archivo=$setup.Name;sha256=(Get-FileHash -LiteralPath $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
             }
           }
-          $manifest | ConvertTo-Json -Depth 6 | Set-Content target/dist/windows/latest.json -Encoding utf8
-          $files = @(Get-ChildItem target/dist/windows -File | ForEach-Object FullName)
-          $revision = (git rev-parse HEAD).Trim()
+          $latest = Join-Path $dir 'latest.json'
+          $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $latest -Encoding utf8
+          $files += $latest
           if ($beta) {
             # Las prereleases nunca son la más reciente: los launchers estables,
             # también los anteriores a los canales, no las ven.

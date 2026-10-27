@@ -166,3 +166,13 @@ El ejecutable release recibió un enlace de prueba mediante `--oauth-return`, en
 ## Tamaño de compilaciones de desarrollo
 
 El perfil `dev` omite símbolos de depuración para reducir el espacio de `target`. Para restaurarlos en PowerShell durante una sesión, usa `$env:CARGO_PROFILE_DEV_DEBUG = "2"` antes de ejecutar Cargo; en Bash usa `export CARGO_PROFILE_DEV_DEBUG=2`. Esto puede aumentar el espacio y el tiempo de compilación. La compilación incremental sigue activa por defecto. Las mediciones y sus limitaciones están en [el registro de optimización](superpowers/mediciones/2026-10-26-registro.md).
+
+## Medición de compilación en GitHub Actions
+
+El workflow Windows conserva las dependencias de pruebas en `target/ci-tests` y las de producción con CRT estático en `target/windows-package-build`. Las variantes siguen separadas por sus perfiles, target y flags. La caché depende de la versión de Rust y de los manifiestos/lockfile; una caché ausente o invalidada vuelve a construir las dependencias.
+
+El artefacto `icaro-windows-diagnostico` reúne la revisión, toolchain, CPU/memoria del runner y los informes HTML de `cargo --timings`. No contiene los paquetes de distribución. El resumen de la ejecución indica si hubo coincidencia exacta de caché; revisar también sus pasos de restauración y guardado y los crates realmente recompilados.
+
+Comparar dos ejecuciones manuales de la misma revisión, con los mismos parámetros, separando caché fría y caliente. El tiempo de cola se calcula aparte del tiempo de los jobs. Las ejecuciones manuales generan artefactos y no publican releases. La [línea base de Actions](superpowers/mediciones/2026-10-26-actions-linea-base.md) documenta los tiempos previos; las mejoras nuevas requieren medición remota.
+
+La ejecución manual permite elegir 1, 2 o 4 procesos de Cargo. El valor normal sigue siendo 1 hasta disponer de una comparación estable de tiempo y memoria; las pruebas mantienen `--test-threads=1`. Para medir el empaquetado local se puede pasar `-Trabajos 2 -Medir` a `scripts/empaquetar_windows.ps1`: conserva el target/CRT y añade los informes HTML y `target/ci/release-tiempos.json` con tiempos separados del launcher y del servicio.
