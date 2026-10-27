@@ -33,14 +33,21 @@ if ($Grupo -in @('Empaquetado','Todo')) {
         $global:LASTEXITCODE = if ($global:IcaroTestCargoCalls.Count -eq $global:IcaroTestFallarBuild) { 1 } else { 0 }
     }
     try {
-        Probar 'el paralelismo elegido alcanza ambos builds y conserva CRT y target' {
+        Probar 'una sola compilación incluye launcher y servicio con el paralelismo, CRT y target' {
             $global:IcaroTestCargoCalls.Clear()
-            $global:IcaroTestFallarBuild = 2
+            # El fallo detiene el script antes de empaquetar; basta para inspeccionar la invocación.
+            $global:IcaroTestFallarBuild = 1
             $errorBuild = ''
             try { & (Join-Path $taskRoot 'scripts/empaquetar_windows.ps1') -Compilador (Join-Path $PSHOME 'pwsh.exe') -Salida (Join-Path $taskTemp 'salida') -Trabajos 2 -Medir }
             catch { $errorBuild = $_.Exception.Message }
-            Comprobar ($errorBuild -eq 'Falló la compilación del servicio de mods.') "No alcanzó el segundo build: $errorBuild"
-            Comprobar ($global:IcaroTestCargoCalls.Count -eq 2) 'Deben ejecutarse ambos builds.'
+            Comprobar ($errorBuild -eq 'Falló la compilación del launcher o del servicio de mods.') "Error inesperado: $errorBuild"
+            Comprobar ($global:IcaroTestCargoCalls.Count -eq 1) 'Launcher y servicio deben compilarse en una invocación.'
+            $invocacion = $global:IcaroTestCargoCalls[0]
+            foreach ($par in @(@('-p','icaro-ui'),@('-p','icaro-core'),@('--example','launcher'),@('--example','sync_host'))) {
+                $hallado = $false
+                for ($i = 0; $i -lt $invocacion.Count - 1; $i++) { if ($invocacion[$i] -ceq $par[0] -and $invocacion[$i + 1] -ceq $par[1]) { $hallado = $true } }
+                Comprobar $hallado "Falta $($par -join ' ')."
+            }
             foreach ($invocacion in $global:IcaroTestCargoCalls) {
                 $n = [Array]::IndexOf($invocacion, '-j')
                 Comprobar ($n -ge 0 -and $invocacion[$n + 1] -eq '2') 'No se propagó el paralelismo.'
@@ -61,13 +68,13 @@ if ($Grupo -in @('Empaquetado','Todo')) {
                 Comprobar ($global:IcaroTestCargoCalls.Count -eq 0) 'Cargo no debe ejecutarse con un valor inválido.'
             }
         }
-        Probar 'un fallo del launcher impide compilar el servicio y empaquetar' {
+        Probar 'un fallo de compilación impide empaquetar' {
             $global:IcaroTestCargoCalls.Clear()
             $global:IcaroTestFallarBuild = 1
             $errorBuild = ''
             try { & (Join-Path $taskRoot 'scripts/empaquetar_windows.ps1') -Compilador (Join-Path $PSHOME 'pwsh.exe') -Salida (Join-Path $taskTemp 'fallo') -Trabajos 1 }
             catch { $errorBuild = $_.Exception.Message }
-            Comprobar ($errorBuild -eq 'Falló la compilación del launcher.') "No propagó el error del launcher: $errorBuild"
+            Comprobar ($errorBuild -eq 'Falló la compilación del launcher o del servicio de mods.') "No propagó el error de compilación: $errorBuild"
             Comprobar ($global:IcaroTestCargoCalls.Count -eq 1) 'No debe continuar después de un error.'
             Comprobar (@(Get-ChildItem -LiteralPath (Join-Path $taskTemp 'fallo') -File).Count -eq 0) 'No deben publicarse paquetes tras el error.'
         }
@@ -224,8 +231,10 @@ if ($Grupo -in @('Publicacion','Todo')) {
         $taskLto = [regex]::Match($taskRelease.Groups[1].Value, '(?m)^lto\s*=\s*"?([a-z]+)"?')
         Comprobar $taskLto.Success 'El perfil release no declara lto.'
         # rust-cache ignora `key` cuando hay `shared-key`: el perfil va en esta última.
-        Comprobar ($taskJobs[0] -notmatch '(?m)^\s+key:') 'rust-cache ignora `key` junto a `shared-key`.'
-        $taskClave = [regex]::Match($taskJobs[0], '(?m)^\s+shared-key: icaro-windows-perfil-\$\{\{ env\.ICARO_PERFIL_RELEASE \}\}-lto-([a-z]+)\r?$')
+        $taskRustCache = [regex]::Match($taskJobs[0], '(?s)uses: Swatinem/rust-cache@.*?(?=\r?\n      - )').Value
+        Comprobar ($taskRustCache -ne '') 'Falta el paso de rust-cache.'
+        Comprobar ($taskRustCache -notmatch '(?m)^\s+key:') 'rust-cache ignora `key` junto a `shared-key`.'
+        $taskClave = [regex]::Match($taskRustCache,'(?m)^\s+shared-key: icaro-windows-perfil-\$\{\{ env\.ICARO_PERFIL_RELEASE \}\}-lto-([a-z]+)\r?$')
         Comprobar $taskClave.Success 'La caché de Cargo no incluye el perfil en su clave.'
         Comprobar ($taskClave.Groups[1].Value -ceq $taskLto.Groups[1].Value) "La clave usa lto-$($taskClave.Groups[1].Value) y Cargo.toml lto=$($taskLto.Groups[1].Value)."
     }

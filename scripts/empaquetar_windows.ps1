@@ -30,29 +30,29 @@ try {
         $taskBuildDir = Join-Path $taskRoot 'target\windows-package-build'
         $taskBuildArgs = @('build','--locked','--release','-j',"$Trabajos",'--target-dir',$taskBuildDir,'--target','x86_64-pc-windows-msvc','--config','target.x86_64-pc-windows-msvc.rustflags=["-C","target-feature=+crt-static"]')
         if ($Medir) { $taskBuildArgs += '--timings' }
-        $taskBuildTimes = [Collections.Generic.List[object]]::new()
+        $Binario = Join-Path $taskBuildDir 'x86_64-pc-windows-msvc\release\examples\launcher.exe'
+        $Servicio = Join-Path $taskBuildDir 'x86_64-pc-windows-msvc\release\examples\sync_host.exe'
+        # Una sola invocación unifica las features: icaro-core y sus dependencias
+        # se compilan una vez para el launcher y el servicio.
+        $taskCode = $null
+        $taskTimer = [Diagnostics.Stopwatch]::StartNew()
         try {
-            foreach ($taskBuild in @(
-                @{Paquete='icaro-ui';Ejemplo='launcher';Error='Falló la compilación del launcher.'},
-                @{Paquete='icaro-core';Ejemplo='sync_host';Error='Falló la compilación del servicio de mods.'}
-            )) {
-                $taskTimer = [Diagnostics.Stopwatch]::StartNew()
-                & cargo @taskBuildArgs -p $taskBuild.Paquete --example $taskBuild.Ejemplo
-                $taskCode = $LASTEXITCODE
-                $taskTimer.Stop()
-                $taskBuildTimes.Add([ordered]@{ejemplo=$taskBuild.Ejemplo;segundos=$taskTimer.Elapsed.TotalSeconds;salida=$taskCode;trabajos=$Trabajos})
-                if ($taskCode -ne 0) { throw $taskBuild.Error }
-            }
+            & cargo @taskBuildArgs -p icaro-ui -p icaro-core --example launcher --example sync_host
+            $taskCode = $LASTEXITCODE
         } finally {
+            $taskTimer.Stop()
             if ($Medir) {
                 $taskDiagnostics = Join-Path $taskRoot 'target/ci'
                 New-Item -ItemType Directory -Force -Path $taskDiagnostics | Out-Null
-                ConvertTo-Json -InputObject @($taskBuildTimes.ToArray()) -Depth 3 |
+                $taskBytes = [ordered]@{}
+                foreach ($taskExe in @($Binario,$Servicio)) {
+                    $taskBytes[[IO.Path]::GetFileNameWithoutExtension($taskExe)] = if ($taskCode -eq 0 -and (Test-Path -LiteralPath $taskExe)) { (Get-Item -LiteralPath $taskExe).Length } else { $null }
+                }
+                ConvertTo-Json -InputObject @([ordered]@{ejemplo='launcher+sync_host';segundos=$taskTimer.Elapsed.TotalSeconds;salida=$taskCode;trabajos=$Trabajos;bytes=$taskBytes}) -Depth 3 |
                     Set-Content -LiteralPath (Join-Path $taskDiagnostics 'release-tiempos.json') -Encoding utf8
             }
         }
-        $Binario = Join-Path $taskBuildDir 'x86_64-pc-windows-msvc\release\examples\launcher.exe'
-        $Servicio = Join-Path $taskBuildDir 'x86_64-pc-windows-msvc\release\examples\sync_host.exe'
+        if ($taskCode -ne 0) { throw 'Falló la compilación del launcher o del servicio de mods.' }
     }
     if (-not $Servicio) { throw 'Indica el ejecutable del servicio de mods.' }
     $taskBinary = (Resolve-Path -LiteralPath $Binario).Path

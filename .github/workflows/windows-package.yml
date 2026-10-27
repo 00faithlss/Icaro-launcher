@@ -47,6 +47,9 @@ jobs:
       ICARO_COMPILACION: ${{ github.run_id }}
       ICARO_CANAL: ${{ github.ref_name == 'develop' && 'beta' || 'estable' }}
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/ci-tests
+      # Grabados preparados por crates/ui/build.rs, compartidos entre pruebas
+      # y release; rust-cache no conserva los OUT_DIR del workspace.
+      ICARO_CACHE_IMAGENES: ${{ github.workspace }}/target/cache-imagenes
       # 4 procesos: medido en 40430942181 sin errores de memoria en el runner.
       ICARO_CARGO_JOBS: ${{ inputs.trabajos || '4' }}
       ICARO_PERFIL_RELEASE: ${{ inputs.perfil_release || 'distribucion' }}
@@ -107,13 +110,25 @@ jobs:
           workspaces: |
             . -> target/ci-tests
             . -> target/windows-package-build
+      # Cada archivo se identifica por el hash de su contenido; build.rs ignora
+      # las entradas que no correspondan a las imágenes actuales.
+      - name: Restaurar grabados preparados
+        id: imagenes_cache
+        if: steps.publicacion.outputs.repetida != 'true'
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v6.1.0
+        with:
+          path: target/cache-imagenes
+          key: icaro-imagenes-${{ hashFiles('Cargo.lock', 'crates/ui/build.rs', 'crates/ui/preparar_imagenes.rs', 'crates/ui/src/catalogo_laminas.rs', 'crates/ui/src/derivadas.rs', 'crates/ui/src/originales.rs', 'crates/ui/assets/laminas/**', 'crates/ui/assets/originales/**') }}
+          restore-keys: icaro-imagenes-
       - name: Registrar resultado de caché
         if: steps.publicacion.outputs.repetida != 'true'
         shell: pwsh
         env:
           ICARO_CACHE_HIT: ${{ steps.cargo_cache.outputs.cache-hit }}
+          ICARO_IMAGENES_HIT: ${{ steps.imagenes_cache.outputs.cache-hit }}
         run: |
           "Caché de dependencias (coincidencia exacta): $env:ICARO_CACHE_HIT" >> $env:GITHUB_STEP_SUMMARY
+          "Caché de grabados (coincidencia exacta): $env:ICARO_IMAGENES_HIT" >> $env:GITHUB_STEP_SUMMARY
       - name: Verificar núcleo e interfaz
         if: steps.publicacion.outputs.repetida != 'true'
         shell: pwsh

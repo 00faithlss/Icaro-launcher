@@ -7,7 +7,6 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::SystemTime;
 
 #[path = "src/derivadas.rs"]
 mod derivadas;
@@ -42,7 +41,8 @@ fn preparar(
     unica: bool,
     tinta: bool,
     salida: &Path,
-    codigo: SystemTime,
+    codigo: &str,
+    cache: Option<&Path>,
 ) {
     use laminas::Lamina;
     let (fuente, recorte, invertir) = match lamina {
@@ -68,18 +68,6 @@ fn preparar(
     let tema = if tinta { "tinta" } else { "piedra" };
     let webp = salida.join(format!("{nombre}-{tema}.webp"));
     let rgba = salida.join(format!("{nombre}-{tema}.rgba"));
-    let cambiado = fs::metadata(&fuente)
-        .unwrap()
-        .modified()
-        .unwrap()
-        .max(codigo);
-    if [&webp, &rgba].iter().all(|p| {
-        fs::metadata(p)
-            .and_then(|m| m.modified())
-            .is_ok_and(|t| t >= cambiado)
-    }) {
-        return;
-    }
     // Una segunda copia en Tinta que solo invierte Piedra, o que la repite,
     // duplicaría el ejecutable: se deja una marca y se deriva al decodificar.
     let derivada = if !tinta {
@@ -92,11 +80,39 @@ fn preparar(
         None
     };
     if let Some(marca) = derivada {
-        fs::write(webp, marca).unwrap();
-        fs::write(rgba, marca).unwrap();
+        escribir_si_cambia(&webp, marca);
+        escribir_si_cambia(&rgba, marca);
         return;
     }
     let fuente = fs::read(&fuente).expect("leer original del grabado");
+    // Se compara el contenido y no la fecha: un checkout nuevo renueva todas
+    // las fechas y obligaba a recodificar cada grabado en CI.
+    let clave = clave_contenido(&[
+        codigo.as_bytes(),
+        &fuente,
+        format!("{nombre}|{tema}|{unica}|{invertir}|{recorte:?}").as_bytes(),
+    ]);
+    let registro = salida.join(format!("{nombre}-{tema}.clave"));
+    if fs::read_to_string(&registro).is_ok_and(|c| c == clave)
+        && webp.is_file()
+        && rgba.is_file()
+    {
+        return;
+    }
+    let en_cache = cache.map(|c| {
+        (
+            c.join(format!("{clave}.webp")),
+            c.join(format!("{clave}.rgba")),
+        )
+    });
+    if let Some((cache_webp, cache_rgba)) = &en_cache {
+        if cache_webp.is_file() && cache_rgba.is_file() {
+            fs::copy(cache_webp, &webp).unwrap();
+            fs::copy(cache_rgba, &rgba).unwrap();
+            fs::write(&registro, &clave).unwrap();
+            return;
+        }
+    }
     let imagen = preparar_imagenes::preparar(&fuente, recorte, invertir, lamina == Lamina::Faeton)
         .unwrap_or_else(|e| panic!("Preparar {nombre}: {e}"));
     let dimensiones = image::io::Reader::new(std::io::Cursor::new(&fuente))
@@ -110,11 +126,11 @@ fn preparar(
     if intacta && fuente.starts_with(b"RIFF") {
         // Sin recorte, inversión ni escala: el WebP original decodifica los
         // mismos píxeles y ocupa una fracción de volver a codificarlo sin pérdida.
-        fs::write(webp, &fuente).unwrap();
+        fs::write(&webp, &fuente).unwrap();
     } else {
         // VP8L conserva cada canal RGBA y comprime los grabados sin reducir su
         // resolución. La decodificación sigue en los trabajadores de imágenes.
-        WebPEncoder::new_lossless(File::create(webp).unwrap())
+        WebPEncoder::new_lossless(File::create(&webp).unwrap())
         .write_image(
             imagen.as_raw(),
             imagen.width(),
@@ -128,10 +144,55 @@ fn preparar(
     let previa = image::DynamicImage::ImageRgba8(imagen)
         .thumbnail(320, 320)
         .into_rgba8();
-    let mut archivo = File::create(rgba).unwrap();
+    let mut archivo = File::create(&rgba).unwrap();
     archivo.write_all(&previa.width().to_le_bytes()).unwrap();
     archivo.write_all(&previa.height().to_le_bytes()).unwrap();
     archivo.write_all(previa.as_raw()).unwrap();
+    drop(archivo);
+    fs::write(&registro, &clave).unwrap();
+    if let Some((cache_webp, cache_rgba)) = en_cache {
+        publicar_en_cache(&webp, &cache_webp);
+        publicar_en_cache(&rgba, &cache_rgba);
+    }
+}
+
+/// Identifica entradas por contenido con 128 bits de dos SipHash con dominios
+/// distintos. Solo selecciona salidas de compilación propias; no verifica datos
+/// de terceros.
+fn clave_contenido(partes: &[&[u8]]) -> String {
+    use std::hash::Hasher;
+    let resumen = |dominio: u8| {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        h.write_u8(dominio);
+        for parte in partes {
+            h.write_usize(parte.len());
+            h.write(parte);
+        }
+        h.finish()
+    };
+    format!("{:016x}{:016x}", resumen(1), resumen(2))
+}
+
+/// Evita renovar la fecha de salidas idénticas, que forzaría a recompilar la
+/// interfaz por sus `include_bytes!`.
+fn escribir_si_cambia(ruta: &Path, contenido: &[u8]) {
+    if fs::read(ruta).is_ok_and(|actual| actual == contenido) {
+        return;
+    }
+    fs::write(ruta, contenido).unwrap();
+}
+
+/// Copia mediante un temporal y un renombrado: otro hilo o compilación nunca
+/// lee un archivo de caché a medias. Un destino existente se conserva.
+fn publicar_en_cache(origen: &Path, destino: &Path) {
+    if destino.is_file() {
+        return;
+    }
+    let temporal = destino.with_extension(format!("tmp-{}", std::process::id()));
+    fs::copy(origen, &temporal).unwrap();
+    if fs::rename(&temporal, destino).is_err() {
+        let _ = fs::remove_file(&temporal);
+    }
 }
 
 fn main() {
@@ -151,15 +212,26 @@ fn main() {
         "src/derivadas.rs",
         "src/originales.rs",
     ];
-    let mut codigo = SystemTime::UNIX_EPOCH;
-    for fuente in fuentes {
+    // El lockfile fija la versión del codificador: otra versión puede producir
+    // bytes distintos con las mismas entradas.
+    let mut entradas = Vec::new();
+    for fuente in fuentes.iter().chain(&["../../Cargo.lock"]) {
         println!("cargo:rerun-if-changed={fuente}");
-        codigo = codigo.max(fs::metadata(fuente).unwrap().modified().unwrap());
+        entradas.push(fs::read(fuente).unwrap());
     }
+    let entradas: Vec<&[u8]> = entradas.iter().map(Vec::as_slice).collect();
+    let codigo = clave_contenido(&entradas);
     println!("cargo:rerun-if-changed=assets/laminas");
     println!("cargo:rerun-if-changed=assets/originales");
     let salida = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("imagenes");
     fs::create_dir_all(&salida).unwrap();
+    // Carpeta opcional compartida entre compilaciones (el CI la conserva con
+    // actions/cache). Sin ella, cada OUT_DIR prepara sus propias imágenes.
+    println!("cargo:rerun-if-env-changed=ICARO_CACHE_IMAGENES");
+    let cache = std::env::var_os("ICARO_CACHE_IMAGENES").map(std::path::PathBuf::from);
+    if let Some(cache) = &cache {
+        fs::create_dir_all(cache).unwrap();
+    }
     let siguiente = AtomicUsize::new(0);
     let hilos = std::thread::available_parallelism().map_or(2, |n| n.get().min(4));
     std::thread::scope(|scope| {
@@ -170,7 +242,7 @@ fn main() {
                     break;
                 };
                 for tinta in [false, true] {
-                    preparar(lamina, nombre, unica, tinta, &salida, codigo);
+                    preparar(lamina, nombre, unica, tinta, &salida, &codigo, cache.as_deref());
                 }
             });
         }
