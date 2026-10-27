@@ -177,14 +177,44 @@ impl Guardado {
         serde_json::to_string_pretty(self).unwrap_or_default()
     }
 
-    pub fn escribir(texto: &str, demo: bool) -> Result<(), String> {
+    /// Configuraciones de instancia de `texto` que difieren de `anterior`, o
+    /// todas si `anterior` no es un estado válido.
+    fn configs_cambiadas(texto: &str, anterior: &str) -> Result<Vec<(String, serde_json::Value)>, String> {
+        let saved: Self = serde_json::from_str(texto).map_err(|e| e.to_string())?;
+        let previo: Option<Self> = serde_json::from_str(anterior).ok();
+        let previas: std::collections::HashMap<&str, serde_json::Value> = previo
+            .as_ref()
+            .map(|p| {
+                p.ids.iter().map(String::as_str).zip(&p.configs)
+                    .filter_map(|(id, c)| Some((id, serde_json::to_value(c).ok()?)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut cambiadas = Vec::new();
+        for (id, config) in saved.ids.iter().zip(&saved.configs) {
+            let valor = serde_json::to_value(config).map_err(|e| e.to_string())?;
+            if previas.get(id.as_str()) != Some(&valor) {
+                cambiadas.push((id.clone(), valor));
+            }
+        }
+        Ok(cambiadas)
+    }
+
+    /// Escribe el estado. `anterior` es el último texto escrito con éxito: solo
+    /// se guardan las configuraciones de instancia que cambiaron desde él, y
+    /// `almacen` conserva las rutas ya resueltas. Sin texto anterior válido se
+    /// guardan todas.
+    pub fn escribir(
+        texto: &str,
+        anterior: &str,
+        almacen: &icaro_core::instancias::Almacen,
+        demo: bool,
+    ) -> Result<(), String> {
         let r = ruta(demo);
         let mut value: serde_json::Value = serde_json::from_str(texto).map_err(|e| e.to_string())?;
         if !demo {
-            let saved: Self = serde_json::from_str(texto).map_err(|e| e.to_string())?;
-            let store = icaro_core::instancias::Almacen::nuevo(directorio(false).join("instances"));
-            for (id, config) in saved.ids.iter().zip(&saved.configs) {
-                store.guardar_configuracion(id, &serde_json::to_value(config).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+            for (id, valor) in Self::configs_cambiadas(texto, anterior)? {
+                almacen.guardar_configuracion(&id, &valor).map_err(|e| e.to_string())?;
             }
             value.as_object_mut().ok_or("Estado inválido")?.remove("configs");
             value["schema"] = 2.into();
@@ -206,6 +236,26 @@ impl Guardado {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn solo_se_guardan_las_configuraciones_de_instancia_que_cambiaron() {
+        let base = crate::config_por_defecto();
+        let mut otra = crate::config_por_defecto();
+        otra.memoria_max = base.memoria_max + 1024;
+        let estado = |configs: &[ConfigJava], escala| {
+            let mut g = Guardado::nuevo(&[], &[None, None], &[], configs, &[]);
+            g.asociar(vec!["a".into(), "b".into()]);
+            g.apariencia.escala = escala;
+            g.texto()
+        };
+        let anterior = estado(&[base.clone(), base.clone()], 100);
+        // Un ajuste global no reescribe ninguna instancia.
+        assert!(Guardado::configs_cambiadas(&estado(&[base.clone(), base.clone()], 110), &anterior).unwrap().is_empty());
+        // Cambiar una instancia guarda solo esa.
+        let cambiadas = Guardado::configs_cambiadas(&estado(&[base.clone(), otra], 100), &anterior).unwrap();
+        assert_eq!(cambiadas.iter().map(|(id, _)| id.as_str()).collect::<Vec<_>>(), ["b"]);
+        // Sin un estado anterior válido (inicio) se guardan todas.
+        assert_eq!(Guardado::configs_cambiadas(&anterior, "").unwrap().len(), 2);
+    }
     #[test]
     fn estados_anteriores_restauran_apariencia_por_defecto() {
         let a: Guardado = serde_json::from_str(r#"{"lista_grupos":[],"grupos":[],"cerrados":[],"configs":[]}"#).unwrap();

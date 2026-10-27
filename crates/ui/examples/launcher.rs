@@ -541,7 +541,7 @@ fn guardar_si_cambio(app: &mut App) {
     guardado.canal = (app.aj.canal != actualizacion_real::canal_compilado()).then_some(app.aj.canal);
     let texto = guardado.texto();
     if texto != app.ultimo_guardado {
-        match estado::Guardado::escribir(&texto, app.servicios.demo) {
+        match estado::Guardado::escribir(&texto, &app.ultimo_guardado, &app.servicios.instancias.almacen, app.servicios.demo) {
             Ok(()) => app.ultimo_guardado = texto,
             Err(error) => app.avisar(format!("No se pudo guardar la configuración: {error}")),
         }
