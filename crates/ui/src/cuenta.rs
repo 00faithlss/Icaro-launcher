@@ -650,19 +650,32 @@ fn boton_base<'a, M: Clone + 'a>(
     b.into()
 }
 
-/// Boton solo de icono de 28 px.
+/// Botón solo de icono de 28 px.
 fn boton_solo_icono<'a, M: Clone + 'a>(p: Paleta, glifo: Icono, al_pulsar: M) -> Element<'a, M> {
+    boton_cuadrado(p, glifo, medida::CONTROL_SM, Some(al_pulsar))
+}
+
+/// Botón cuadrado de icono con el glifo centrado en ambos ejes. Sin acción
+/// queda deshabilitado.
+fn boton_cuadrado<'a, M: Clone + 'a>(p: Paleta, glifo: Icono, lado: f32, al_pulsar: Option<M>) -> Element<'a, M> {
     let estilo = move |_: &Theme, st: button::Status| {
         let hov = matches!(st, button::Status::Hovered | button::Status::Pressed);
+        let apagado = matches!(st, button::Status::Disabled);
         button::Style {
             background: hov.then_some(Background::Color(p.text)),
-            text_color: if hov { p.bg } else { p.text },
-            border: Border { color: p.text, width: borde::MEDIO, radius: 0.0.into() },
+            text_color: if apagado { p.text_disabled } else if hov { p.bg } else { p.text },
+            border: Border { color: if apagado { p.border } else { p.text }, width: borde::MEDIO, radius: 0.0.into() },
             ..Default::default()
         }
     };
-    let est = container(crate::iconos::icono_texto(glifo, Tam::Base));
-    button(est).width(28).height(28).padding(0).on_press(al_pulsar).style(estilo).into()
+    let centro = container(crate::iconos::icono_texto(glifo, Tam::Base)).center(Length::Fill);
+    button(centro)
+        .width(lado)
+        .height(lado)
+        .padding(0)
+        .on_press_maybe(al_pulsar)
+        .style(estilo)
+        .into()
 }
 
 /// Cargando: cuatro bloques de 8 px; se enciende uno cada 200 ms.
@@ -889,11 +902,18 @@ fn detalle_para<'a, M: 'a>(p: Paleta, e: EstadoSesion, invertida: bool) -> Eleme
 
 // ------------------------------------------------------------ pantalla Cuenta
 
-/// Datos que necesita la pantalla de cuenta.
+/// Una capa (cape) de la cuenta.
+pub struct CapaCuenta<'a> {
+    pub nombre: &'a str,
+    /// RGBA de 64 × 32, si ya se descargó.
+    pub rgba: Option<&'a [u8]>,
+}
+
+/// Datos que necesita la pantalla de cuenta. No incluye UUID, correo ni
+/// detalles de la sesión: la pantalla no los muestra.
 pub struct DatosCuenta<'a> {
     pub estado: EstadoSesion,
     pub nombre: &'a str,
-    pub correo: &'a str,
     /// Fecha en que se podrá cambiar de nuevo el nombre (DD-MM-AAAA).
     pub proximo_cambio: &'a str,
     /// Nombres de las últimas skins; cada uno genera su cabeza.
@@ -901,9 +921,21 @@ pub struct DatosCuenta<'a> {
     /// Skin en uso y skin elegida en el historial.
     pub en_uso: usize,
     pub elegida: usize,
+    /// Textura que muestra el visor: la elegida en el historial o la actual.
     pub textura: Option<&'a [u8]>,
     pub historial_real: Vec<std::sync::Arc<[u8]>>,
     pub delgado: bool,
+    /// Ángulo animado del visor y cara en reposo (0, 90, 180 o 270).
+    pub angulo: f32,
+    pub grados: i32,
+    pub capas: Vec<CapaCuenta<'a>>,
+    /// Capa puesta (`None`: ninguna) y la que se está cambiando.
+    pub capa_puesta: Option<usize>,
+    pub capa_cambiando: Option<Option<usize>>,
+    /// «41 h», o «—» si no hay datos.
+    pub tiempo_total: String,
+    /// Instancia más jugada con su tiempo.
+    pub mas_jugada: Option<(String, String)>,
 }
 
 /// Mensajes de la pantalla de cuenta.
@@ -911,6 +943,10 @@ pub struct MensajesCuenta<'a, M> {
     pub abrir_estudio: M,
     pub elegir_skin: Box<dyn Fn(usize) -> M + 'a>,
     pub usar_de_nuevo: M,
+    pub descartar: M,
+    pub girar: fn(i32) -> M,
+    pub elegir_capa: Box<dyn Fn(Option<usize>) -> M + 'a>,
+    pub descargar: Option<M>,
     pub cerrar_sesion: M,
     pub iniciar_sesion: M,
     pub volver_a_entrar: M,
@@ -994,14 +1030,126 @@ fn tarjeta_estado<'a, M: 'a>(p: Paleta, titulo: &str, cuerpo_: &str, acciones: V
     .into()
 }
 
+/// Miniatura 3:4 de una capa: su cara exterior (10 × 16 texels desde 1, 1).
+/// Sin textura, «Ninguna», queda rayada.
+struct ProgCapa<'a> {
+    paleta: Paleta,
+    rgba: Option<&'a [u8]>,
+}
+
+impl<M> canvas::Program<M> for ProgCapa<'_> {
+    type State = ();
+
+    fn draw(&self, _: &(), renderer: &Renderer, _: &Theme, bounds: Rectangle, _: mouse::Cursor) -> Vec<Geometry> {
+        let p = self.paleta;
+        let mut f = Frame::new(renderer, bounds.size());
+        rellenar(&mut f, 0.0, 0.0, bounds.width, bounds.height, p.surface_sunken);
+        match self.rgba.filter(|t| t.len() == 64 * 32 * 4) {
+            Some(t) => {
+                let (cw, ch) = (bounds.width / 10.0, bounds.height / 16.0);
+                for v in 0..16 {
+                    for u in 0..10 {
+                        let i = ((1 + v) * 64 + 1 + u) * 4;
+                        let c = Color::from_rgba8(t[i], t[i + 1], t[i + 2], 1.0);
+                        let (x0, x1) = ((u as f32 * cw).round(), ((u + 1) as f32 * cw).round());
+                        let (y0, y1) = ((v as f32 * ch).round(), ((v + 1) as f32 * ch).round());
+                        rellenar(&mut f, x0, y0, x1 - x0, y1 - y0, c);
+                    }
+                }
+            }
+            None => rayado(&mut f, 0.0, 0.0, bounds.width, bounds.height, p.border, 8.0, 4.0, 1.0),
+        }
+        vec![f.into_geometry()]
+    }
+}
+
+/// Escena del visor 3D con suelo de grabado, sobre el pozo.
+fn escena_visor<'a, M: 'a>(
+    p: Paleta,
+    textura: Option<&'a [u8]>,
+    capa: Option<&'a [u8]>,
+    delgado: bool,
+    angulo: f32,
+    al_girar: Box<dyn Fn(i32) -> M + 'a>,
+) -> Element<'a, M> {
+    container(
+        Canvas::new(crate::visor_skin::Visor {
+            paleta: p,
+            textura,
+            capa,
+            delgado,
+            capas: [true; 4],
+            angulo,
+            plano: false,
+            busto: false,
+            caminar: None,
+            suelo: true,
+            soltando: false,
+            al_girar,
+        })
+        .width(Length::Fill)
+        .height(Length::Fill),
+    )
+    .width(Length::Fill)
+    .height(420)
+    .style(move |_: &Theme| container::Style {
+        border: Border { color: p.border, width: borde::FINO, radius: 0.0.into() },
+        ..Default::default()
+    })
+    .into()
+}
+
+/// Girar a la izquierda, el ángulo y el nombre de la cara, girar a la derecha.
+fn controles_giro<'a, M: Clone + 'a>(p: Paleta, grados: i32, girar: &dyn Fn(i32) -> M) -> Element<'a, M> {
+    row![
+        boton_solo_icono(p, Icono::Deshacer, girar(-1)),
+        column![
+            txt::<M>(format!("{grados}°"), fuentes::MONO, texto::MONO, p.text),
+            txt::<M>(crate::visor_skin::nombre_cara(grados), fuentes::CUERPO, texto::BODY_SM, p.text_muted),
+        ]
+        .align_x(Alignment::Center)
+        .width(Length::Fill),
+        boton_solo_icono(p, Icono::Rehacer, girar(1)),
+    ]
+    .align_y(Alignment::Center)
+    .into()
+}
+
+/// Bloque con su etiqueta y, a la derecha, un dato breve.
+fn bloque<'a, M: 'a>(p: Paleta, titulo: &str, dato: Option<String>, contenido: Element<'a, M>) -> Element<'a, M> {
+    let mut cabecera = row![etiqueta(titulo, p.text), Space::with_width(Length::Fill)].align_y(Alignment::Center);
+    if let Some(d) = dato {
+        cabecera = cabecera.push(mono_sm(&d, p.text_muted));
+    }
+    column![cabecera, contenido].spacing(espacio::S4).into()
+}
+
+/// Fila de dato de 52 px: rótulo a la izquierda y valor.
+fn fila_dato<'a, M: 'a>(p: Paleta, rotulo: &str, valor: String) -> Element<'a, M> {
+    container(
+        row![
+            txt::<M>(rotulo.to_owned(), fuentes::CUERPO, texto::BODY_SM, p.text_muted).width(160),
+            txt::<M>(valor, fuentes::CUERPO, texto::BODY_SM, p.text).width(Length::Fill),
+        ]
+        .align_y(Alignment::Center),
+    )
+    .height(52)
+    .align_y(iced::alignment::Vertical::Center)
+    .style(move |_: &Theme| container::Style {
+        border: Border { color: p.border, width: 0.0, radius: 0.0.into() },
+        ..Default::default()
+    })
+    .into()
+}
+
 /// Pantalla de cuenta en sus cuatro variantes de sesión.
 pub fn pantalla_cuenta<'a, M: Clone + 'a>(p: Paleta, d: DatosCuenta<'a>, m: MensajesCuenta<'a, M>) -> Element<'a, M> {
     let sin_skin = matches!(d.estado, EstadoSesion::SinConexion | EstadoSesion::SinJuego);
     let detalle = match d.estado {
-        EstadoSesion::SinConexion => "Sin conexión · sin cuenta de Microsoft".to_owned(),
-        _ => format!("{} · Microsoft", d.correo),
+        EstadoSesion::SinConexion => "Sin conexión · sin cuenta de Microsoft",
+        _ => "Minecraft Java · Microsoft",
     };
-    let mut pagina = column![encabezado(p, "Cuenta", &detalle, Lamina::ApoloBelvedere)].spacing(espacio::S8);
+    let mut pagina = column![encabezado(p, "Cuenta", detalle, Lamina::ApoloBelvedere)].spacing(espacio::S8);
     if matches!(d.estado, EstadoSesion::Vencida | EstadoSesion::CodigoVencido) {
         pagina = pagina.push(banner_vencida(
             p,
@@ -1011,7 +1159,7 @@ pub fn pantalla_cuenta<'a, M: Clone + 'a>(p: Paleta, d: DatosCuenta<'a>, m: Mens
         ));
     }
 
-    // Columna del cuerpo de la skin.
+    // Columna del visor.
     let izquierda: Element<M> = if sin_skin {
         container(
             column![
@@ -1021,9 +1169,8 @@ pub fn pantalla_cuenta<'a, M: Clone + 'a>(p: Paleta, d: DatosCuenta<'a>, m: Mens
             .spacing(espacio::S4)
             .align_x(Alignment::Center),
         )
-        .padding(Padding::from([espacio::S6 + 1.0, espacio::S8 + 1.0]))
-        .width(288)
-        .height(284)
+        .width(360)
+        .height(420)
         .align_x(iced::alignment::Horizontal::Center)
         .align_y(iced::alignment::Vertical::Center)
         .style(move |_: &Theme| container::Style {
@@ -1033,20 +1180,41 @@ pub fn pantalla_cuenta<'a, M: Clone + 'a>(p: Paleta, d: DatosCuenta<'a>, m: Mens
         })
         .into()
     } else {
-        container(
-            column![
-                row![cuerpo_textura(false, 6.0, d.textura, d.delgado), cuerpo_textura(true, 6.0, d.textura, d.delgado)].spacing(espacio::S8),
-                boton_icono(p, Some(Icono::Pincel), "Abrir estudio", Tipo::Normal, medida::CONTROL_SM, Some(m.abrir_estudio.clone())),
+        let capa = d.capa_puesta.and_then(|i| d.capas.get(i)).and_then(|c| c.rgba);
+        let mut escena = column![escena_visor(p, d.textura, capa, d.delgado, d.angulo, Box::new(m.girar))];
+        if d.elegida != d.en_uso {
+            // Vista previa de una skin del historial, con sus dos salidas.
+            escena = escena.push(
+                container(
+                    row![
+                        txt::<M>("Vista previa de una skin anterior", fuentes::CUERPO, texto::BODY_SM, p.text)
+                            .width(Length::Fill),
+                        boton_icono(p, None, "Descartar", Tipo::Fantasma, medida::CONTROL_SM, Some(m.descartar.clone())),
+                        boton_icono(p, None, "Usar esta skin", Tipo::Primario, medida::CONTROL_SM, Some(m.usar_de_nuevo.clone())),
+                    ]
+                    .spacing(espacio::S2)
+                    .align_y(Alignment::Center),
+                )
+                .padding(Padding::from([espacio::S2, espacio::S3]))
+                .width(Length::Fill)
+                .style(move |_: &Theme| container::Style {
+                    background: Some(Background::Color(p.surface_raised)),
+                    border: Border { color: p.text, width: borde::FINO, radius: 0.0.into() },
+                    ..Default::default()
+                }),
+            );
+        }
+        column![
+            escena,
+            controles_giro(p, d.grados, &m.girar),
+            row![
+                boton_ancho(p, Some(Icono::Pincel), "Abrir estudio", Tipo::Normal, medida::CONTROL, Some(m.abrir_estudio.clone())),
+                boton_solo_icono_opcional(p, Icono::Descargas, m.descargar.clone()),
             ]
-            .spacing(espacio::S4)
-            .align_x(Alignment::Center),
-        )
-        .padding(Padding::from([espacio::S6 + 1.0, espacio::S8 + 1.0]))
-        .style(move |_: &Theme| container::Style {
-            background: Some(Background::Color(p.surface_sunken)),
-            border: Border { color: p.border, width: borde::FINO, radius: 0.0.into() },
-            ..Default::default()
-        })
+            .spacing(espacio::S2),
+        ]
+        .spacing(espacio::S4)
+        .width(360)
         .into()
     };
 
@@ -1060,67 +1228,104 @@ pub fn pantalla_cuenta<'a, M: Clone + 'a>(p: Paleta, d: DatosCuenta<'a>, m: Mens
         EstadoSesion::SinJuego => tarjeta_estado(
             p,
             "Esta cuenta no tiene Minecraft",
-            &format!(
-                "Entraste como {}, pero la cuenta no tiene el juego. Puedes comprarlo o usar una cuenta sin conexión.",
-                d.correo
-            ),
+            "Entraste con una cuenta de Microsoft que no tiene el juego. Puedes comprarlo o usar una cuenta sin conexión.",
             vec![
                 boton_icono(p, Some(Icono::Externo), "Comprar Minecraft", Tipo::Normal, medida::CONTROL_SM, Some(m.comprar.clone())),
                 boton_icono(p, None, "Usar cuenta sin conexión", Tipo::Fantasma, medida::CONTROL_SM, Some(m.jugar_invitado.clone())),
             ],
         ),
         _ => {
-            let mut cabezas = row![].spacing(espacio::S3 - 10.0).align_y(Alignment::Center);
-            for (i, n) in d.historial.iter().enumerate() {
-                let c = button(if let Some(rgba)=d.historial_real.get(i) {cabeza_textura(p,rgba,48.,i==d.elegida)} else {cabeza_historial(p,n,48.,i==d.elegida)})
-                    .padding(0)
-                    .on_press((m.elegir_skin)(i))
-                    .style(estilo::sin_estilo(p.text));
-                cabezas = cabezas.push(c);
-            }
-            let mut historial = column![etiqueta("Historial de skins", p.text), cabezas].spacing(espacio::S3);
-            if d.elegida != d.en_uso {
-                historial = historial.push(boton_icono(
-                    p,
-                    Some(Icono::Deshacer),
-                    "Usar de nuevo",
-                    Tipo::Normal,
-                    medida::CONTROL_SM,
-                    Some(m.usar_de_nuevo.clone()),
-                ));
-            }
-            column![
-                column![
-                    row![
-                        column![
-                            etiqueta("Nombre de usuario", p.text_muted),
-                            txt::<M>(d.nombre.to_owned(), fuentes::TITULO, (20.0, 28.0), p.text),
-                            txt::<M>(
-                                if d.proximo_cambio.is_empty() {"Gestiona tu nombre de usuario en Minecraft.net.".into()} else {format!("Puedes cambiarlo de nuevo el {}.", d.proximo_cambio)},
-                                fuentes::CUERPO,
-                                texto::BODY_SM,
-                                p.text_muted
-                            ),
-                        ]
-                        .spacing(4)
-                        .width(Length::Fill),
-                        boton_icono::<M>(p, None, "Cambiar", Tipo::Normal, medida::CONTROL_SM, m.cambiar_nombre.clone()),
+            // Perfil: nombre y actividad en Ícaro.
+            let mut perfil = column![
+                row![
+                    column![
+                        txt::<M>(d.nombre.to_owned(), fuentes::TITULO, (28.0, 32.0), p.text),
+                        txt::<M>(
+                            if d.proximo_cambio.is_empty() {"Gestiona tu nombre de usuario en Minecraft.net.".into()} else {format!("Puedes cambiarlo de nuevo el {}.", d.proximo_cambio)},
+                            fuentes::CUERPO,
+                            texto::BODY_SM,
+                            p.text_muted
+                        ),
                     ]
-                    .spacing(espacio::S6),
-                    Space::with_height(espacio::S5),
-                    regla(p.border, borde::FINO),
-                ],
-                historial,
-                boton_icono(
-                    p,
-                    Some(Icono::Salir),
-                    &format!("Cerrar sesión de {}", d.nombre),
-                    Tipo::Peligro,
-                    medida::CONTROL_SM,
-                    Some(m.cerrar_sesion.clone())
-                ),
+                    .spacing(6)
+                    .width(Length::Fill),
+                    boton_icono::<M>(p, Some(Icono::Editar), "Cambiar", Tipo::Normal, medida::CONTROL_SM, m.cambiar_nombre.clone()),
+                ]
+                .spacing(espacio::S6)
+                .align_y(Alignment::Center),
+                fila_dato(p, "Tiempo jugado", d.tiempo_total.clone()),
+            ];
+            if let Some((nombre, tiempo)) = &d.mas_jugada {
+                perfil = perfil.push(fila_dato(p, "Más jugada", format!("{nombre} · {tiempo}")));
+            }
+
+            // Capa: Ninguna y las capas de la cuenta.
+            let mut capas = row![].spacing(espacio::S3);
+            let opciones = std::iter::once((None, "Ninguna", None))
+                .chain(d.capas.iter().enumerate().map(|(i, c)| (Some(i), c.nombre, c.rgba)));
+            for (indice, nombre, rgba) in opciones {
+                let puesta = d.capa_puesta == indice;
+                let cambiando = d.capa_cambiando == Some(indice);
+                let miniatura = container(Canvas::new(ProgCapa { paleta: p, rgba }).width(45).height(60))
+                    .padding(2)
+                    .style(move |_: &Theme| container::Style {
+                        border: Border {
+                            color: if puesta { p.text } else { p.border },
+                            width: if puesta { borde::MEDIO } else { borde::FINO },
+                            radius: 0.0.into(),
+                        },
+                        ..Default::default()
+                    });
+                let pie: Element<M> = if cambiando {
+                    cargando(p, 0)
+                } else {
+                    txt::<M>(nombre.to_owned(), fuentes::CUERPO, texto::BODY_SM, if puesta { p.text } else { p.text_muted }).into()
+                };
+                let contenido = column![miniatura, pie].spacing(espacio::S2).align_x(Alignment::Center);
+                capas = capas.push(
+                    button(contenido)
+                        .padding(0)
+                        .on_press_maybe((!puesta && d.capa_cambiando.is_none()).then(|| (m.elegir_capa)(indice)))
+                        .style(estilo::sin_estilo(p.text)),
+                );
+            }
+
+            // Historial de skins, con la actual marcada.
+            let mut cabezas = row![].spacing(espacio::S3).align_y(Alignment::Start);
+            for (i, n) in d.historial.iter().enumerate() {
+                let cara: Element<M> = if let Some(rgba) = d.historial_real.get(i) {
+                    cabeza_textura(p, rgba, 48., i == d.elegida)
+                } else {
+                    cabeza_historial(p, n, 48., i == d.elegida)
+                };
+                let mut celda = column![cara].spacing(6).align_x(Alignment::Center);
+                if i == d.en_uso {
+                    celda = celda.push(crate::componentes::insignia_solida(p, "Actual"));
+                }
+                cabezas = cabezas.push(
+                    button(celda).padding(0).on_press((m.elegir_skin)(i)).style(estilo::sin_estilo(p.text)),
+                );
+            }
+
+            let sesion = row![
+                column![
+                    txt::<M>("Cerrar sesión en este equipo", fuentes::CUERPO, texto::BODY_SM, p.text),
+                    txt::<M>("Tus instancias y mundos se quedan aquí.", fuentes::CUERPO, texto::BODY_SM, p.text_muted),
+                ]
+                .spacing(4)
+                .width(Length::Fill),
+                boton_icono(p, Some(Icono::Salir), &format!("Cerrar sesión de {}", d.nombre), Tipo::Peligro, medida::CONTROL_SM, Some(m.cerrar_sesion.clone())),
             ]
             .spacing(espacio::S6)
+            .align_y(Alignment::Center);
+
+            column![
+                bloque(p, "Perfil", None, perfil.into()),
+                bloque(p, "Capa", Some(format!("{} de la cuenta", d.capas.len())), capas.into()),
+                bloque(p, "Historial de skins", Some(format!("{} de 8", d.historial.len().max(d.historial_real.len()))), cabezas.into()),
+                column![regla(p.border, borde::FINO), sesion].spacing(espacio::S6),
+            ]
+            .spacing(40)
             .width(Length::Fill)
             .into()
         }
@@ -1128,10 +1333,16 @@ pub fn pantalla_cuenta<'a, M: Clone + 'a>(p: Paleta, d: DatosCuenta<'a>, m: Mens
 
     pagina = pagina.push(
         row![izquierda, container(derecha).width(Length::Fill).align_y(iced::alignment::Vertical::Top)]
-            .spacing(espacio::S12)
+            .spacing(48)
             .height(Length::Shrink),
     );
     pagina.padding(Padding { top: 40.0, right: 48.0, bottom: 48.0, left: 48.0 }).into()
+}
+
+/// Botón de solo icono, deshabilitado sin acción.
+/// Botón de icono del mismo alto que los botones de acción (`control`).
+fn boton_solo_icono_opcional<'a, M: Clone + 'a>(p: Paleta, glifo: Icono, al_pulsar: Option<M>) -> Element<'a, M> {
+    boton_cuadrado(p, glifo, medida::CONTROL, al_pulsar)
 }
 
 // ----------------------------------------------------------- Estudio de skin
@@ -1139,15 +1350,32 @@ pub fn pantalla_cuenta<'a, M: Clone + 'a>(p: Paleta, d: DatosCuenta<'a>, m: Mens
 /// Datos del estudio de skin.
 pub struct DatosEstudio<'a> {
     pub modelo: usize,
+    /// Sombrero, chaqueta, mangas y pantalones.
     pub capas: [bool; 4],
-    pub giro: u8,
+    pub angulo: f32,
+    pub grados: i32,
+    pub plano: bool,
+    pub busto: bool,
+    /// Fase de la caminata en segundos, si está activa.
+    pub caminar: Option<f32>,
     /// Milisegundos desde que empezó la subida; `None` si no se está subiendo.
     pub subiendo: Option<u64>,
+    /// Archivo cargado, para el encabezado.
     pub textura: Option<&'a str>,
     pub error: Option<&'a str>,
     pub soltando: bool,
     pub rgba: Option<&'a [u8]>,
     pub puede_aplicar: bool,
+    /// La skin se acaba de aplicar: el botón lo confirma unos segundos.
+    pub aplicada: bool,
+    pub capas_cuenta: Vec<CapaCuenta<'a>>,
+    pub capa_puesta: Option<usize>,
+    pub capa_cambiando: Option<Option<usize>>,
+    /// Skins guardadas en Ícaro.
+    pub biblioteca: Vec<std::sync::Arc<[u8]>>,
+    pub biblioteca_elegida: Option<usize>,
+    /// Capa visible cuya zona se marca en la textura plana.
+    pub zona: Option<usize>,
 }
 
 /// Mensajes del estudio de skin.
@@ -1156,63 +1384,192 @@ pub struct MensajesEstudio<M> {
     pub modelo: fn(usize) -> M,
     pub capa: fn(usize, bool) -> M,
     pub girar: fn(i32) -> M,
+    pub ir: fn(i32) -> M,
+    pub vista: fn(usize) -> M,
+    pub encuadre: fn(usize) -> M,
+    pub caminar: fn(bool) -> M,
+    pub zona: fn(Option<usize>) -> M,
+    pub elegir_capa: fn(Option<usize>) -> M,
+    pub elegir_biblioteca: fn(usize) -> M,
+    pub guardar_biblioteca: Option<M>,
     pub cargar: M,
+    pub descargar: Option<M>,
     pub aplicar: M,
 }
 
-/// Estudio de skin: escena con el cuerpo de frente y de espalda sobre un suelo
-/// de líneas de grabado, y el panel con modelo, capas y acciones.
+/// Zonas de la textura de cada capa visible, en texels (x, y, ancho, alto).
+const ZONAS: [(f32, f32, f32, f32); 4] =
+    [(32.0, 0.0, 32.0, 16.0), (16.0, 32.0, 24.0, 16.0), (40.0, 32.0, 16.0, 16.0), (0.0, 32.0, 16.0, 16.0)];
+
+/// Textura plana a 3×, con píxeles nítidos, rejilla de 8 px y la zona marcada.
+struct ProgTextura<'a> {
+    paleta: Paleta,
+    rgba: Option<&'a [u8]>,
+    zona: Option<usize>,
+}
+
+impl<M> canvas::Program<M> for ProgTextura<'_> {
+    type State = ();
+
+    fn draw(&self, _: &(), renderer: &Renderer, _: &Theme, bounds: Rectangle, _: mouse::Cursor) -> Vec<Geometry> {
+        let p = self.paleta;
+        let mut f = Frame::new(renderer, bounds.size());
+        rayado(&mut f, 0.0, 0.0, bounds.width, bounds.height, p.border, 8.0, 4.0, 1.0);
+        let e = bounds.width / 64.0;
+        if let Some(t) = self.rgba.filter(|t| t.len() == 64 * 64 * 4) {
+            for v in 0..64 {
+                for u in 0..64 {
+                    let i = (v * 64 + u) * 4;
+                    if t[i + 3] == 0 {
+                        continue;
+                    }
+                    let c = Color::from_rgba8(t[i], t[i + 1], t[i + 2], f32::from(t[i + 3]) / 255.0);
+                    rellenar(&mut f, u as f32 * e, v as f32 * e, e, e, c);
+                }
+            }
+        }
+        let mut x = 0.0;
+        while x <= 64.0 {
+            let mut g = p.border;
+            g.a = 0.6;
+            rellenar(&mut f, x * e, 0.0, 1.0, bounds.height, g);
+            rellenar(&mut f, 0.0, x * e, bounds.width, 1.0, g);
+            x += 8.0;
+        }
+        if let Some((zx, zy, zw, zh)) = self.zona.and_then(|z| ZONAS.get(z).copied()) {
+            contorno(&mut f, zx * e, zy * e, zw * e, zh * e, p.text);
+            contorno(&mut f, zx * e + 2.0, zy * e + 2.0, zw * e - 4.0, zh * e - 4.0, p.text);
+        }
+        vec![f.into_geometry()]
+    }
+}
+
+/// Estudio de skin: escena grande con el visor 3D, controles de vista arriba,
+/// caras y giro de a 90° abajo, y el panel con modelo, capas, textura, capa,
+/// biblioteca y acciones.
 pub fn estudio_skin<'a, M: Clone + 'a>(p: Paleta, d: DatosEstudio<'a>, m: MensajesEstudio<M>) -> Element<'a, M> {
-    let escena = Canvas::new(Escena {
+    let bloqueado = d.subiendo.is_some();
+    let capa_visor = d.capa_puesta.and_then(|i| d.capas_cuenta.get(i)).and_then(|c| c.rgba);
+    let visor = Canvas::new(crate::visor_skin::Visor {
         paleta: p,
-        giro: d.giro,
-        capas: d.capas,
-        delgado: d.modelo == 1,
-        soltando: d.soltando,
         textura: d.rgba,
+        capa: capa_visor,
+        delgado: d.modelo == 1,
+        capas: d.capas,
+        angulo: d.angulo,
+        plano: d.plano,
+        busto: d.busto,
+        caminar: d.caminar,
+        suelo: !d.busto,
+        soltando: d.soltando,
         al_girar: Box::new(m.girar),
     })
     .width(Length::Fill)
     .height(Length::Fill);
-    let mandos = container(
-        row![
-            boton_solo_icono(p, Icono::Deshacer, (m.girar)(-1)),
-            boton_solo_icono(p, Icono::Rehacer, (m.girar)(1)),
-        ]
-        .spacing(espacio::S2),
-    )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .center_x(Length::Fill)
-    .align_y(iced::alignment::Vertical::Bottom)
-    .padding(Padding { bottom: 20.0, ..Padding::ZERO });
-    let escena = container(stack![escena, mandos])
-        .width(Length::FillPortion(1))
-        .height(Length::Fill);
+    let barra = row![
+        crate::componentes::segmentado(p, &["3D", "Plano"], usize::from(d.plano), m.vista),
+        crate::componentes::segmentado(p, &["Cuerpo", "Busto"], usize::from(d.busto), m.encuadre),
+        Space::with_width(Length::Fill),
+        crate::componentes::casilla(p, "Caminar", d.caminar.is_some(), m.caminar),
+    ]
+    .spacing(espacio::S3)
+    .align_y(Alignment::Center);
+    let pie = row![
+        crate::componentes::segmentado(p, &["Frente", "Derecho", "Espalda", "Izquierdo"], (d.grados / 90) as usize, {
+            let ir = m.ir;
+            move |i: usize| ir(i as i32 * 90)
+        }),
+        Space::with_width(Length::Fill),
+        container(controles_giro(p, d.grados, &m.girar)).width(180),
+    ]
+    .spacing(espacio::S4)
+    .align_y(Alignment::Center);
+    let ayuda = container(mono_sm("Arrastra o usa las flechas · de a 90°", p.text_muted)).center_x(Length::Fill);
+    let escena = container(column![barra, visor, pie, ayuda].spacing(espacio::S4))
+        .padding(espacio::S5)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(estilo::bloque(p.surface_sunken));
 
+    // Capas visibles: al pasar sobre una, la textura marca su zona.
     let mut capas = column![etiqueta("Capas visibles", p.text)].spacing(10);
     for (i, n) in ["Sombrero", "Chaqueta", "Mangas", "Pantalones"].iter().enumerate() {
-        let marcada = d.capas[i];
-        capas = capas.push(crate::componentes::casilla(p, n, marcada, {
-            let f = m.capa;
-            move |v: bool| f(i, v)
-        }));
+        let f = m.capa;
+        capas = capas.push(
+            iced::widget::mouse_area(crate::componentes::casilla(p, n, d.capas[i], move |v: bool| f(i, v)))
+                .on_enter((m.zona)(Some(i)))
+                .on_exit((m.zona)(None)),
+        );
+    }
+    let textura = column![
+        etiqueta("Textura", p.text),
+        container(Canvas::new(ProgTextura { paleta: p, rgba: d.rgba, zona: d.zona }).width(144).height(144))
+            .style(move |_: &Theme| container::Style {
+                border: Border { color: p.border, width: borde::FINO, radius: 0.0.into() },
+                ..Default::default()
+            }),
+    ]
+    .spacing(10);
+
+    // Capa de la cuenta, en miniaturas pequeñas.
+    let mut tiras = row![].spacing(espacio::S2);
+    let opciones = std::iter::once((None, None)).chain(d.capas_cuenta.iter().enumerate().map(|(i, c)| (Some(i), c.rgba)));
+    for (indice, rgba) in opciones {
+        let puesta = d.capa_puesta == indice;
+        let miniatura: Element<M> = if d.capa_cambiando == Some(indice) {
+            container(cargando(p, 0)).width(30).height(40).center(Length::Fixed(40.0)).into()
+        } else {
+            Canvas::new(ProgCapa { paleta: p, rgba }).width(30).height(40).into()
+        };
+        tiras = tiras.push(
+            button(container(miniatura).padding(2).style(move |_: &Theme| container::Style {
+                border: Border {
+                    color: if puesta { p.text } else { p.border },
+                    width: if puesta { borde::MEDIO } else { borde::FINO },
+                    radius: 0.0.into(),
+                },
+                ..Default::default()
+            }))
+            .padding(0)
+            .on_press_maybe((!puesta && d.capa_cambiando.is_none()).then(|| (m.elegir_capa)(indice)))
+            .style(estilo::sin_estilo(p.text)),
+        );
     }
 
-    let mut acciones = column![].spacing(espacio::S2);
+    // Biblioteca de skins guardadas en Ícaro.
+    let mut cabezas = row![].spacing(espacio::S2);
+    for (i, rgba) in d.biblioteca.iter().enumerate() {
+        cabezas = cabezas.push(
+            button(cabeza_textura(p, rgba, 36.0, d.biblioteca_elegida == Some(i)))
+                .padding(0)
+                .on_press_maybe((!bloqueado).then(|| (m.elegir_biblioteca)(i)))
+                .style(estilo::sin_estilo(p.text)),
+        );
+    }
+    let biblioteca = column![
+        row![
+            etiqueta("Biblioteca", p.text),
+            Space::with_width(Length::Fill),
+            boton_icono(p, Some(Icono::Mas), "Guardar actual", Tipo::Fantasma, medida::CONTROL_SM, m.guardar_biblioteca.clone()),
+        ]
+        .align_y(Alignment::Center),
+        if d.biblioteca.is_empty() {
+            Element::from(txt::<M>("Aún no hay skins guardadas.", fuentes::CUERPO, texto::BODY_SM, p.text_muted))
+        } else {
+            cabezas.wrap().into()
+        },
+    ]
+    .spacing(10);
+
+    let mut acciones = column![row![
+        boton_ancho(p, Some(Icono::Subir), "Cargar .png", Tipo::Normal, medida::CONTROL, (!bloqueado).then_some(m.cargar.clone())),
+        boton_solo_icono_opcional(p, Icono::Descargas, m.descargar.clone()),
+    ]
+    .spacing(espacio::S2)]
+    .spacing(espacio::S2);
     if let Some(e) = d.error {
         acciones = acciones.push(txt::<M>(e.to_owned(), fuentes::CUERPO, texto::BODY_SM, p.error));
-    } else if let Some(t) = d.textura {
-        acciones = acciones.push(mono_sm(&format!("{t} · 64 × 64"), p.text_muted));
     }
-    acciones = acciones.push(boton_ancho(
-        p,
-        Some(Icono::Subir),
-        "Cargar .png",
-        Tipo::Normal,
-        medida::CONTROL,
-        d.subiendo.is_none().then_some(m.cargar.clone()),
-    ));
     let aplicar: Element<M> = match d.subiendo {
         Some(ms) => container(
             row![cargando(p, ms), txt::<M>("SUBIENDO SKIN", fuentes::ETIQUETA, texto::LABEL, p.text_muted)]
@@ -1229,6 +1586,7 @@ pub fn estudio_skin<'a, M: Clone + 'a>(p: Paleta, d: DatosEstudio<'a>, m: Mensaj
             ..Default::default()
         })
         .into(),
+        None if d.aplicada => boton_ancho(p, Some(Icono::Check), "Skin aplicada", Tipo::Primario, medida::CONTROL, None),
         None => boton_ancho(
             p,
             Some(Icono::Check),
@@ -1240,28 +1598,36 @@ pub fn estudio_skin<'a, M: Clone + 'a>(p: Paleta, d: DatosEstudio<'a>, m: Mensaj
     };
     acciones = acciones.push(aplicar);
 
+    let archivo = d.textura.map_or_else(|| "Skin de la cuenta · 64 × 64".to_owned(), |t| format!("{t} · 64 × 64"));
     let panel = container(
-        column![
-            row![
-                boton_solo_icono(p, Icono::Flecha, m.volver.clone()),
-                txt::<M>("Estudio de skin", fuentes::TITULO, (20.0, 28.0), p.text),
-            ]
-            .spacing(espacio::S3)
-            .align_y(Alignment::Center),
+        iced::widget::scrollable(
             column![
-                etiqueta("Modelo", p.text),
-                crate::componentes::segmentado(p, &["Clásico", "Delgado"], d.modelo, m.modelo),
+                row![
+                    boton_solo_icono(p, Icono::Flecha, m.volver.clone()),
+                    column![
+                        txt::<M>("Estudio de skin", fuentes::TITULO, (22.0, 28.0), p.text),
+                        mono_sm(&archivo, p.text_muted),
+                    ]
+                    .spacing(6),
+                ]
+                .spacing(espacio::S3)
+                .align_y(Alignment::Center),
+                column![
+                    etiqueta("Modelo", p.text),
+                    crate::componentes::segmentado(p, &["Clásico", "Delgado"], d.modelo, m.modelo),
+                ]
+                .spacing(10),
+                row![capas.width(Length::Fill), textura].spacing(espacio::S5),
+                column![etiqueta("Capa", p.text), tiras].spacing(10),
+                biblioteca,
+                acciones,
             ]
-            .spacing(espacio::S2),
-            capas,
-            Space::with_height(Length::Fill),
-            acciones,
-        ]
-        .spacing(espacio::S6)
+            .spacing(espacio::S6),
+        )
         .height(Length::Fill),
     )
     .padding(espacio::S6)
-    .width(300)
+    .width(380)
     .height(Length::Fill)
     .style(estilo::bloque(p.surface));
 

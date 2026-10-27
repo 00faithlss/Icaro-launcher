@@ -5,6 +5,8 @@
 - Actualizar o instalar varios mods a la vez ya no descarta todos cuando uno falla: los que se pueden guardar se guardan, cada uno en su propia transacción, y el aviso nombra el mod que falló con su motivo.
 - En la tienda de mods, al pasar de página la lista vuelve arriba con el desplazamiento suave y los botones de página quedan enteros. La rueda ya no se desfasa cuando la lista cambia de alto, lo que antes dejaba los botones fuera de vista al subir y volver a bajar.
 - La tienda permite mostrar 20, 30, 50 o 100 resultados por página.
+- La cuenta y el estudio de skin siguen el System Design actualizado, con un visor 3D compartido que gira de a 90° (Frente, Lado derecho, Espalda, Lado izquierdo). La cuenta muestra el tiempo jugado total y la instancia más jugada en lugar de UUID, correo o sesión; permite elegir la capa de la cuenta, previsualizar una skin del historial y descargar la skin. El estudio añade vista plana, encuadre de busto, caminata, la textura plana con la zona de cada capa, biblioteca y descarga. Se admiten skins antiguas de 64 × 32.
+- Los iconos de los botones de solo icono quedan centrados en ambos ejes.
 
 ## [0.3.4] - 2026-10-27
 

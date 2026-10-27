@@ -33,5 +33,6 @@ pub mod superficies;
 pub mod tema;
 pub mod vacios;
 pub mod visor;
+pub mod visor_skin;
 pub mod scroll;
 pub mod zona_soltar;
