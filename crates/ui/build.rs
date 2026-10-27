@@ -93,10 +93,7 @@ fn preparar(
         format!("{nombre}|{tema}|{unica}|{invertir}|{recorte:?}").as_bytes(),
     ]);
     let registro = salida.join(format!("{nombre}-{tema}.clave"));
-    if fs::read_to_string(&registro).is_ok_and(|c| c == clave)
-        && webp.is_file()
-        && rgba.is_file()
-    {
+    if fs::read_to_string(&registro).is_ok_and(|c| c == clave) && webp.is_file() && rgba.is_file() {
         return;
     }
     let en_cache = cache.map(|c| {
@@ -242,7 +239,15 @@ fn main() {
                     break;
                 };
                 for tinta in [false, true] {
-                    preparar(lamina, nombre, unica, tinta, &salida, &codigo, cache.as_deref());
+                    preparar(
+                        lamina,
+                        nombre,
+                        unica,
+                        tinta,
+                        &salida,
+                        &codigo,
+                        cache.as_deref(),
+                    );
                 }
             });
         }

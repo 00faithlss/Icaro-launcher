@@ -52,12 +52,3 @@ lto = "thin"
 codegen-units = 1
 panic = "abort"
 strip = true
-
-# Con una unidad, el ejemplo launcher (161 s) e icaro-core (62 s) se generaban
-# en un solo núcleo aunque las dependencias ya estuvieran en caché. Las
-# dependencias conservan una unidad y su caché no cambia.
-[profile.release.package.icaro-ui]
-codegen-units = 16
-
-[profile.release.package.icaro-core]
-codegen-units = 16

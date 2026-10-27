@@ -90,3 +90,22 @@ Aun recompilando las 426 dependencias, la segunda ejecución thin igualó el rel
 Con caché, LTO thin reduce el release del launcher en 1 min 39 s y el job en 1 min 28 s frente a LTO completo; respecto de la línea base de 29 min 16 s, el job queda en 9 min 40 s (−67 %). El coste es un ejecutable 1,6 MB mayor (+1,3 %). Una muestra por configuración; el runner varió hasta 2 minutos entre ejecuciones con el mismo trabajo. El comportamiento del ejecutable thin no se probó: falta abrir el launcher e iniciar una partida antes de publicarlo.
 
 Cada cambio de perfil o de la versión de Rust deja la primera ejecución sin caché (unos 18 minutos con 4 procesos).
+
+## Grabados por hash, codegen-units y un solo build release (27-10-2026)
+
+Revisión `0ecfab0`, `trabajos=4`, LTO thin. La caché de dependencias ya estaba caliente en ambas; la diferencia es la caché nueva de grabados (`target/cache-imagenes`, vacía en la primera).
+
+| Medida | Thin caliente `40444389010` | Grabados fríos [`40448214873`](https://github.com/00faithlss/Icaro-launcher/actions/runs/40448214873) | Grabados calientes [`40448967631`](https://github.com/00faithlss/Icaro-launcher/actions/runs/40448967631) |
+| --- | ---: | ---: | ---: |
+| Job Windows | 9 min 40 s | **7 min 9 s** | **7 min 31 s** |
+| Verificar núcleo e interfaz | 3 min 0 s | 2 min 41 s | 2 min 42 s |
+| Compilar y empaquetar | 5 min 37 s | 3 min 51 s | 3 min 31 s |
+| Release (Cargo, launcher + `sync_host`) | 4 min 18 s + 56 s | 2 min 54 s (una invocación) | 3 min 9 s (una invocación) |
+| Build script de `icaro-ui` (pruebas / release) | 38 s / 91 s | 32,5 s / reutilizado | 1,1 s / reutilizado |
+| `icaro-core` en el release | 2 veces (62 s + 33 s) | 1 vez (22 s) | 1 vez (23 s) |
+| Ejemplo `launcher` (release) | 161 s | 151 s | 165 s |
+| `launcher.exe` / `sync_host.exe` | 125 688 832 B / — | 126 627 328 B / 2 697 728 B | 126 627 328 B / 2 697 728 B |
+
+La caché de grabados funciona: con ella el build script pasa de 32–91 s a 1 s, y el release ya no espera a recodificar las imágenes. Unificar el build compila `icaro-core` una sola vez. `codegen-units = 16` apenas cambia el ejemplo `launcher` (151–165 s frente a 161 s): su tiempo es sobre todo análisis del crate, que no se reparte entre núcleos, y el ejecutable crece un 0,75 %. Sin una mejora medible, se retiró en la revisión siguiente y vuelve `codegen-units = 1` para todo el workspace. Sin dividir ese ejemplo en crates más pequeños, no hay más margen ahí. La diferencia de 22 s entre las dos ejecuciones nuevas está dentro de la variación observada del runner.
+
+Respecto de la línea base de 29 min 16 s, el job queda en unos 7 min 10–30 s (−75 %). El build script se compiló y verificó por primera vez en el CI y después en local con Rust 1.99.1. El comportamiento del ejecutable sigue sin probarse en una partida.
