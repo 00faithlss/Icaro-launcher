@@ -212,6 +212,11 @@ if ($Grupo -in @('Publicacion','Todo')) {
         Comprobar ($taskJobs[0] -notmatch 'gh release create') 'La construcción no debe publicar.'
         Comprobar ($taskWorkflow -notmatch 'cancel-in-progress: true') 'Una publicación activa no debe cancelarse.'
     }
+    Probar 'el ensayo de perfil release se limita a ejecuciones manuales' {
+        Comprobar ($taskJobs[0] -match "ICARO_PERFIL_RELEASE: \$\{\{ inputs\.perfil_release \|\| 'distribucion' \}\}") 'Un push debe usar el perfil de distribución.'
+        Comprobar ($taskJobs[0] -match "-ne 'workflow_dispatch'\) \{ throw 'El ensayo de perfil solo se admite") 'Falta el rechazo del ensayo fuera de ejecuciones manuales.'
+        Comprobar ($taskJobs[1] -notmatch 'CARGO_PROFILE_RELEASE') 'publicar no debe alterar el perfil release.'
+    }
     Probar 'publicar revalida la versión y los artefactos de esta ejecución' {
         $taskOrden = @('Get-IcaroDecisionPublicacion','gh run download \$env:GITHUB_RUN_ID','Test-IcaroArtefactosPublicacion','gh release create') |
             ForEach-Object { $m = [regex]::Match($taskJobs[1], $_); Comprobar $m.Success "Falta $_."; $m.Index }
