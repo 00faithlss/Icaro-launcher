@@ -10,6 +10,7 @@ pub mod barrido;
 pub mod botones;
 pub mod capturas;
 pub mod componentes;
+pub mod compartir;
 pub mod consola;
 pub mod cuenta;
 mod derivadas;

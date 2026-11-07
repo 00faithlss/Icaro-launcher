@@ -525,7 +525,9 @@ pub fn vista(app: &App) -> Element<'_, Mensaje> {
         (0, 0),
         m(Accion::GestionarRed),
     );
-    body = column![network, body].spacing(24);
+    body = if app.servicios.compartir.habilitado && !app.servicios.demo {
+        column![crate::compartir_real::accesos(app), network].spacing(24)
+    } else {column![network, body].spacing(24)};
     if let Some(error) = &s.error {
         body = body.push(
             column![

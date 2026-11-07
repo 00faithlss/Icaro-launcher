@@ -73,6 +73,10 @@ mod picar_real;
 mod apariencia_real;
 #[path = "launcher_aux/componentes_nuevos_qa.rs"]
 mod componentes_nuevos_qa;
+#[path = "launcher_aux/compartir_diseno.rs"]
+mod compartir_diseno;
+#[path = "launcher_aux/compartir_real/mod.rs"]
+mod compartir_real;
 #[path = "launcher_aux/actualizacion_real.rs"]
 mod actualizacion_real;
 #[path = "launcher_aux/instancias_reales.rs"]
@@ -284,6 +288,7 @@ enum Mensaje {
     DisenoMods(diseno_mods::Accion),
     Modpacks(modpacks_reales::Accion),
     Servidores(servidores_reales::Accion),
+    Compartir(compartir_real::Accion),
     RedPrivada(red_privada_real::Accion),
     Sincronizacion(sincronizacion_real::Accion),
     ModsReales(mods_reales::Accion),
@@ -550,6 +555,7 @@ fn guardar_si_cambio(app: &mut App) {
 
 fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
     if app.servicios.sincronizacion.modal() && matches!(m,Mensaje::Ir(_)){return Task::none();}
+    if app.servicios.compartir.modal() && matches!(m,Mensaje::Ir(_)|Mensaje::Jugar(_)){return Task::none();}
     if matches!(&m, Mensaje::Pant(pantallas::Accion::Abrir(pantallas::Pantalla::Actualizacion))) {
         return actualizacion_real::actualizar(app, actualizacion_real::Accion::Abrir);
     }
@@ -565,6 +571,7 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
     match m {
         Mensaje::Modpacks(a) => return modpacks_reales::actualizar(app,a),
         Mensaje::Servidores(a)=>return servidores_reales::actualizar(app,a),
+        Mensaje::Compartir(a)=>return compartir_real::actualizar(app,a),
         Mensaje::RedPrivada(a)=>return red_privada_real::actualizar(app,a),
         Mensaje::Sincronizacion(a)=>return sincronizacion_real::actualizar(app,a),
         Mensaje::Almacenamiento(a) => return almacenamiento_real::actualizar(app,a),
@@ -1194,6 +1201,7 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
         }
         Mensaje::Eliminar => {app.dialogo=false;}
         Mensaje::Escape => {
+            if app.servicios.compartir.modal() {return compartir_real::actualizar(app,compartir_real::Accion::Vista(icaro_ui::compartir::Accion::Cerrar));}
             if app.servicios.local.abierta {
                 return cuenta_sin_conexion::actualizar(app, cuenta_sin_conexion::Accion::Cerrar);
             }
@@ -3405,6 +3413,9 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
     } else { None };
     ventana = icaro_ui::superficies::capa_flotante(ventana, capa_mod);
     ventana=icaro_ui::superficies::capa_flotante(ventana,servidores_reales::panel(app));
+    if let Some(vista)=compartir_real::vista(app) {
+        ventana=con_velo_losa(p,ventana,vista,Mensaje::Compartir(compartir_real::Accion::Vista(icaro_ui::compartir::Accion::Cerrar)),desfase_losa(app));
+    }
     if let Some(s) = &app.asistente {
         ventana = con_velo_losa(p, ventana, pantallas::asistente(app, s), Mensaje::Pant(pantallas::Accion::AsistenteCancelar), desfase_losa(app));
     }

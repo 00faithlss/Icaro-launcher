@@ -27,6 +27,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub struct Estado {
+    pub compartir:crate::compartir_real::Estado,
     pub sincronizacion:crate::sincronizacion_real::Estado,
     pub red_privada:crate::red_privada_real::Estado,
     pub servidores:crate::servidores_reales::Estado,
@@ -79,6 +80,7 @@ impl Default for Estado {
 impl Estado {
     pub fn nuevo(demo: bool) -> Self {
         Self {
+            compartir:Default::default(),
             sincronizacion:Default::default(),
             red_privada:Default::default(),
             servidores:Default::default(),

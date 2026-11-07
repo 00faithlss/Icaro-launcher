@@ -6,6 +6,8 @@ use icaro_ui::{componentes::{self, Estado}, fuentes, iconos::Icono, progreso, su
 use iced::{widget::{column, container, row, text, Space}, Element, Length};
 
 pub fn vista<'a>(app: &'a App, scene: &str) -> Option<Element<'a, Mensaje>> {
+    if scene.starts_with("compartir-controlador") {return None;}
+    if scene.starts_with("compartir-") { return crate::compartir_diseno::vista(app, scene); }
     let p = app.paleta();
     let vista: Element<'a, Mensaje> = match scene {
         "picar" => return None,

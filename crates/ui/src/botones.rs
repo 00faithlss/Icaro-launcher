@@ -52,7 +52,10 @@ impl<M> Widget<M, iced::Theme, iced::Renderer> for IconoHeredado {
 
 /// Icono que hereda el color del texto del botón en que está.
 pub fn icono_heredado<'a, M: 'a>(icono: Icono, tam: Tam) -> Element<'a, M> {
-    Element::new(IconoHeredado { icono, tam: tam.px() })
+    Element::new(IconoHeredado {
+        icono,
+        tam: tam.px(),
+    })
 }
 
 /// Tamaño de un botón con rótulo.
@@ -75,9 +78,15 @@ pub fn boton<'a, M: Clone + 'a>(
     al_pulsar: Option<M>,
 ) -> Element<'a, M> {
     match variante {
-        Variante::Primario => boton_estilo(glifo, rotulo, tam, estilo::boton_primario(p), al_pulsar),
-        Variante::Secundario => boton_estilo(glifo, rotulo, tam, estilo::boton_secundario(p), al_pulsar),
-        Variante::Fantasma => boton_estilo(glifo, rotulo, tam, estilo::boton_fantasma(p), al_pulsar),
+        Variante::Primario => {
+            boton_estilo(glifo, rotulo, tam, estilo::boton_primario(p), al_pulsar)
+        }
+        Variante::Secundario => {
+            boton_estilo(glifo, rotulo, tam, estilo::boton_secundario(p), al_pulsar)
+        }
+        Variante::Fantasma => {
+            boton_estilo(glifo, rotulo, tam, estilo::boton_fantasma(p), al_pulsar)
+        }
         Variante::Peligro => boton_estilo(glifo, rotulo, tam, estilo::boton_peligro(p), al_pulsar),
     }
 }
@@ -95,22 +104,25 @@ pub fn boton_estilo<'a, M: Clone + 'a>(
         TamBoton::Lg => (medida::CONTROL_LG, espacio::S6, 12.0),
     };
     let mut contenido = row![].spacing(espacio::S1).align_y(Alignment::Center);
-    // El icono de 24 px lleva un margen de -4 px a cada lado, como `.ic-btn`.
-    let mut relleno = Padding::from([0.0, lateral]);
+    let relleno = Padding::from([0.0, lateral]);
     if let Some(g) = glifo {
         contenido = contenido.push(icono_heredado(g, Tam::Base));
-        relleno.left = lateral - espacio::S1;
     }
     contenido = contenido.push(
         text(rotulo.to_uppercase())
             .font(fuentes::ETIQUETA)
             .size(letra),
     );
-    let b = button(container(contenido).height(Length::Fill).align_y(iced::alignment::Vertical::Center))
-        .height(alto)
-        .padding(relleno)
-        .on_press_maybe(al_pulsar)
-        .style(estilo);
+    let b = button(
+        container(contenido)
+            .height(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center),
+    )
+    .height(alto)
+    .padding(relleno)
+    .on_press_maybe(al_pulsar)
+    .style(estilo);
     b.into()
 }
 
