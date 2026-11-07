@@ -37,8 +37,14 @@ falla después del guardado, la interfaz conserva la revisión como detenida. Pe
 generar/editar/revocar códigos, revisar/revocar accesos y detener/reabrir la publicación.
 La edición conserva los ajustes confirmados si el servicio falla.
 
-Es un bloque experimental, no una función entregada: falta validar sus operaciones
-de red desde la interfaz con el servicio local, actualizar automáticamente contadores
+El controlador tiene una prueba contra Worker/D1 local con inventario y contenido
+reales: publicación seleccionada, privados, consentimiento, pack externo y código
+mostrado en el panel. También comprueba aceptación, edición del mismo código sin
+otra revisión y reapertura con nueva aceptación. Usa los futuros y reductores del
+publicador; no automatiza clics ni el recorrido completo de `App`.
+
+Es un bloque experimental, no una función entregada: falta recorrer todas sus
+operaciones desde la ventana, actualizar automáticamente contadores
 y disponibilidad, y completar el recorrido del invitado/Jugar/cierre del launcher.
 El botón de aceptar indica esa limitación. Se admite un anfitrión activo en este
 controlador; el panel no es todavía una biblioteca persistente de publicaciones.
@@ -98,6 +104,19 @@ La prueba `rust_interopera_con_worker_d1_local` requiere levantar explícitament
 el Worker local y establecer `ICARO_INVITACIONES_TEST_URL=http://127.0.0.1:8787`.
 Se ejecuta con `--test compartir_invitaciones -- --ignored`. No utiliza producción.
 No se configura una URL pública inexistente ni se despliega sin cuenta/autorización.
+
+Con ese mismo Worker levantado, comprobar el controlador del publicador:
+
+```powershell
+$env:CARGO_INCREMENTAL = '0'
+$env:ICARO_PRUEBA_WORKER_URL = 'http://127.0.0.1:8787'
+cargo test --locked -j 2 -p icaro-ui --example launcher publicador_real_publica_seleccion -- --ignored --test-threads=1
+```
+
+La prueba exige loopback, crea identidades en memoria y una instancia temporal;
+no usa el keyring ni datos personales. Detiene los nodos antes de limpiar sus
+archivos. Las pruebas normales comprueban además que una configuración ausente o
+inválida rechaza publicar antes de escribir la selección o la revisión.
 
 Escenas: `compartir-publicacion`, `compartir-privados`, `compartir-retirada`,
 `compartir-packs`, `compartir-conflicto`, `compartir-invitacion`, `compartir-cupo`,

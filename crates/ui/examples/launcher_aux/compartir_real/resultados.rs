@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 use super::{modelos, tareas, Estado, Etapa, Operacion};
-use crate::Mensaje;
 use icaro_ui::compartir as v;
-use iced::Task;
 
 pub fn analizada(s: &mut Estado, id: u64, resultado: Result<tareas::Trabajo, String>) {
     if !s.vigente(id) || s.etapa != Etapa::Analizando {
@@ -22,13 +20,10 @@ pub fn analizada(s: &mut Estado, id: u64, resultado: Result<tareas::Trabajo, Str
         }
     }
 }
-pub fn publicada(
-    s: &mut Estado,
-    id: u64,
-    resultado: Result<tareas::Publicada, String>,
-) -> Task<Mensaje> {
+/// Devuelve `true` si la publicación quedó activa y hay que generar la invitación.
+pub fn publicada(s: &mut Estado, id: u64, resultado: Result<tareas::Publicada, String>) -> bool {
     if !s.vigente(id) || s.etapa != Etapa::Publicando {
-        return Task::none();
+        return false;
     }
     match resultado {
         Err(e) => {
@@ -39,7 +34,7 @@ pub fn publicada(
         }
         Ok(publicada) => {
             let Some(t) = s.trabajo.as_mut() else {
-                return Task::none();
+                return false;
             };
             t.anterior = Some(publicada.revision.clone());
             s.publicacion = Some(tareas::PublicacionLocal::desde(t));
@@ -77,7 +72,7 @@ pub fn publicada(
             });
             s.etapa = Etapa::Panel;
             if activa && !s.cerrar_al_terminar {
-                return super::acciones::invitar(s);
+                return true;
             }
         }
     }
@@ -85,7 +80,7 @@ pub fn publicada(
         s.cerrar_al_terminar = false;
         s.cerrar();
     }
-    Task::none()
+    false
 }
 pub fn invitacion(
     s: &mut Estado,

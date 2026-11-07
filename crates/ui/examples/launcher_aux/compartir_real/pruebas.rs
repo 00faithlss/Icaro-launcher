@@ -372,6 +372,67 @@ fn propios_necesitan_permiso_expreso_y_una_respuesta_vieja_no_lo_transfiere() {
 }
 
 #[tokio::test]
+async fn configuracion_invalida_rechaza_publicar_antes_de_escribir_la_revision() {
+    use super::servicio::Servicio;
+    use icaro_core::compartir::{publicacion::Eleccion, transporte::Modo};
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let raiz = std::env::temp_dir().join(format!(
+        "icaro-config-invalida-{}-{nonce}",
+        std::process::id()
+    ));
+    let mut t = trabajo();
+    t.contexto.juego = raiz.join("juego");
+    t.contexto.almacen = raiz.join("publicacion");
+    std::fs::create_dir_all(&t.contexto.juego).unwrap();
+    std::fs::create_dir_all(&t.contexto.almacen).unwrap();
+    // Con una elección privada, guardar la selección escribiría en el juego: así se
+    // detecta cualquier escritura anterior a la validación del servicio.
+    t.elegir("mods/propio.jar", Eleccion::Privado).unwrap();
+    let invalidas = [
+        None,
+        Some(Servicio {
+            url: "http://192.0.2.10:8787/".into(),
+            modo: Modo::Local,
+        }),
+        Some(Servicio {
+            url: "https://usuario:clave@invitaciones.example/".into(),
+            modo: Modo::Internet,
+        }),
+        Some(Servicio {
+            url: "no es una url".into(),
+            modo: Modo::Local,
+        }),
+    ];
+    for servicio in invalidas {
+        let sin_servicio = servicio.is_none();
+        let r = super::tareas::publicar_con(
+            t.clone(),
+            None,
+            servicio,
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await;
+        let error = r
+            .err()
+            .expect("una configuración inválida no debe publicar");
+        if sin_servicio {
+            assert!(error.contains("no está configurado"), "{error}");
+        }
+        for carpeta in [&t.contexto.juego, &t.contexto.almacen] {
+            assert!(
+                std::fs::read_dir(carpeta).unwrap().next().is_none(),
+                "no debe escribir antes de validar el servicio: {}",
+                carpeta.display()
+            );
+        }
+    }
+    std::fs::remove_dir_all(raiz).unwrap();
+}
+
+#[tokio::test]
 async fn guardar_privados_del_controlador_persiste_sin_publicar_revision() {
     use icaro_core::compartir::{
         publicacion::{Eleccion, Seleccion},

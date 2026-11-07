@@ -24,13 +24,13 @@ Las interfaces de las tareas 6 y 8 son el objetivo pendiente de integración.
 | Tarea | Estado |
 | --- | --- |
 | 1 | Base local implementada y probada; inventario nuevo conservador, sin optimización incremental. |
-| 2 | Implementada; pendientes espacio, limpieza y conexión de clasificación/selecciones al controlador. |
+| 2 | Implementada y conectada al publicador experimental; pendientes espacio y limpieza. |
 | 3 | Implementada y probada localmente; faltan disco lleno y resolución visual del orden de packs. |
 | 4 | Identidad/transporte implementados y probados con endpoints locales; sin validación entre redes. |
 | 5 | Servicio/cliente implementados; 17 pruebas D1 y recorrido Rust local; sin despliegue. |
 | 6 | Parcial: vínculo, destino nuevo y coordinadores; faltan instalación, exclusión de partida y eventos completos. |
 | 7 | Quince vistas y capturas implementadas; acciones reales, foco/teclado y escala pendientes. |
-| 8 | Publicador experimental conectado bajo bandera, con 14 pruebas; invitado/Jugar y cierre/bandeja pendientes. |
+| 8 | Publicador experimental bajo bandera, con 15 pruebas normales y un recorrido explícito contra Worker local; invitado/Jugar y cierre/bandeja pendientes. |
 | 9 | Verificación local/documentación parciales; entrega, mediciones y validación externa pendientes. |
 
 ## Restricciones globales
@@ -151,10 +151,13 @@ No son nuevos requisitos atribuidos al usuario. Se revisan con este plan antes d
 
 Avance tras la limpieza: existe `launcher_aux/compartir_real/`, protegido por
 `ICARO_COMPARTIR_DESARROLLO=1`. Revisión/publicación, consentimiento, privados,
-invitaciones/accesos y detención/reapertura tienen controlador inicial. Catorce pruebas
+invitaciones/accesos y detención/reapertura tienen controlador inicial. Quince pruebas
 cubren cancelación, errores de guardado, respuestas tardías, consentimiento, separación
-de publicación/borrador y aislamiento del modo demo. Falta validar operaciones de red
-desde la UI y completar invitado, Jugar y cierre/bandeja; no cerrar esta tarea todavía.
+de publicación/borrador, configuración inválida sin escrituras y aislamiento del modo
+demo. Una prueba explícita con Worker/D1 local cubre publicación y código del panel,
+pack externo, aceptación, ajustes y reapertura, usando futuros/reductores reales.
+Falta recorrer todas las acciones desde la ventana y completar invitado, Jugar y
+cierre/bandeja; no cerrar esta tarea todavía.
 
 **Archivos:** crear `crates/ui/examples/launcher_aux/compartir_real.rs` y submódulos de estado/tareas/vistas; modificar `launcher.rs`, `launcher_aux/servicios.rs`, `servidores_reales.rs`, `sincronizacion_real.rs`, `juego_real.rs`, `pantallas.rs` y `pruebas_diseno.rs` según sus puntos de entrada existentes.
 

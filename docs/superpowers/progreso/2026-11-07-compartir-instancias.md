@@ -17,13 +17,13 @@ Referencias: [acuerdos](../specs/2026-11-07-sincronizacion-entre-launchers-desig
 | Etapa del plan | Estado comprobado | Qué falta |
 | --- | --- | --- |
 | 1. Contratos e inventario | Manifiesto acotado, rutas portables, hashes por bloques, cancelación y diagnóstico de archivos prohibidos. | Inventario incremental de las carpetas nuevas y mediciones; la lectura inicial es completa. |
-| 2. Selección y publicación | Nuevos privados, exclusiones, consentimiento por hash, snapshots y pospuestos. El publicador experimental conecta clasificación por lotes y guardado de elecciones mediante tareas. | Validar el recorrido desde la interfaz con red; precomprobar espacio y limpiar contenido no usado. |
+| 2. Selección y publicación | Nuevos privados, exclusiones, consentimiento por hash, snapshots y pospuestos. Controlador probado con D1 local, archivos reales y selección privada. | Recorrer todas las acciones desde la ventana; precomprobar espacio y limpiar contenido no usado. |
 | 3. Comparación y aplicación | Comparación de tres vías y transacción conjunta de archivos, packs, options y base. Respaldos, recuperación y cambios archivo/carpeta probados. | Resolver el conflicto de orden de packs desde la interfaz y ampliar inyección de fallos, incluido disco lleno. |
 | 4. Identidad y transporte | Firma Ed25519, keyring sin fallback plano, endpoint iroh fijado a la clave completa, ACL persistente, streaming, reanudación y revocación. | Probar directo/relé entre equipos y redes reales; completar la coordinación con el ciclo de vida del launcher. |
 | 5. Invitaciones | Worker/D1 y cliente Rust; caducidad, cupo, aceptación idempotente, revocaciones, renovación y reapertura comprobados localmente. | Configurar y desplegar con cuenta/autorización; validar costes y retención en el entorno real. |
 | 6. Coordinación | Origen estable, instancia nueva con loader fijado, autorización del anfitrión y preparación remota sin aplicación automática. | Instalación del perfil, confianza persistente, exclusión entre partida/aplicación, reintentos y eventos de progreso del recorrido completo. |
 | 7. Componentes iced | Quince vistas con acciones tipadas, recursos originales y escenas de captura. Centrado, padding simétrico y celdas uniformes corregidos. | Conectar modelos a datos reales, recorrer todas las acciones y completar foco/teclado/escala. Las capturas usan fixtures. |
-| 8. Launcher y segundo plano | Controlador experimental del publicador registrado en Servidores, deshabilitado por defecto; tareas, consentimientos, privados y operaciones de invitación/accesos conectados. | Aceptación/instalación del invitado, Sincronizar/Jugar, biblioteca persistente de publicaciones, cierre del launcher y bandeja; validar operaciones de red desde UI. |
+| 8. Launcher y segundo plano | Controlador experimental del publicador registrado en Servidores, deshabilitado por defecto; publicación/código y futuros de edición/reapertura probados con D1 local. | Aceptación/instalación del invitado, Sincronizar/Jugar, biblioteca persistente de publicaciones, cierre/bandeja y recorrido completo de ventana. |
 | 9. Entrega y documentación | Pruebas locales, capturas, compilación del workspace y documentación de estado. | Mediciones, revisión final del recorrido completo y validaciones nativas/entre equipos. No es una entrega terminada. |
 
 ## Evidencia anterior a la limpieza
@@ -85,6 +85,27 @@ un área desplazable. Las dos últimas cuentan con pruebas de construcción que
 fallaron antes de corregirse. Las celdas de resumen comparten altura y espacios
 para rótulo, valor y descripción; los botones no usan desplazamientos manuales.
 
+## Continuación: publicador y servicio local
+
+Claude Code implementó un bloque acotado bajo supervisión; se revisó el diff y se
+ejecutaron las pruebas desde esta sesión. La configuración del servicio y la
+identidad son inyectables, sin añadir dependencias ni cambiar el diseño. Los
+futuros usados por las pruebas son los mismos del publicador. La reapertura cierra
+explícitamente el nodo nuevo si falla la operación remota.
+
+Verificación posterior al último push: **159 pruebas UI** (70 de biblioteca y
+89 del launcher; 4 ignoradas), **17 del Worker**, y dos recorridos explícitos con
+Worker/D1 local: el del núcleo y el del controlador del publicador. Este último
+comprueba selección privada, consentimiento, contenido y pack externo, conservación
+de `options.txt`, código del panel, aceptación, ajuste a 48 horas/cupo 3 sin nueva
+revisión, detención y reapertura con el mismo origen y nueva aceptación.
+
+Se observó el fallo de compilación de las pruebas antes de añadir sus interfaces;
+después pasaron contra el servicio real local. La revisión independiente no encontró
+regresiones. Esto no acredita clics en la ventana, instalación del invitado, relés,
+dos equipos ni partida. Este bloque se registra y sube a `v0.4.x` por solicitud
+expresa del usuario, sin versión nueva ni despliegue.
+
 ## Qué sigue, en orden
 
 Antes de registrar cada commit se aislaron los cambios restantes mediante un
@@ -94,8 +115,8 @@ Los resguardos de esta operación se restauran sin incluir caches, SQLite local,
 datos de instancia ni credenciales. El código sigue siendo experimental y las
 validaciones externas enumeradas abajo continúan pendientes.
 
-1. Validar el publicador experimental contra el Worker local desde la interfaz;
-   completar diagnóstico, actualización de estados/contadores y biblioteca de
+1. Completar el recorrido del publicador desde la ventana, diagnóstico,
+   actualización de estados/contadores y biblioteca de
    publicaciones. Sus módulos, tareas, consentimiento y guardado de privados ya existen.
 2. Conectar invitación, confianza del anfitrión y destino nuevo; instalar las
    versiones exactas sin añadir mods ajenos al manifiesto. Conservar un destino

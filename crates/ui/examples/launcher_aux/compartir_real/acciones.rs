@@ -100,12 +100,22 @@ fn analizar(app: &mut App, id: String) -> Task<Mensaje> {
     )
 }
 pub fn invitar(s: &mut Estado) -> Task<Mensaje> {
-    if s.red_ocupada {
-        return Task::none();
-    }
-    let Some(h) = s.anfitrion.clone() else {
+    let Some((id, futuro)) = iniciar_invitacion(s) else {
         return Task::none();
     };
+    Task::perform(futuro, move |r| m(Accion::Invitacion(id, r)))
+}
+/// Marca la invitación en curso y devuelve el trabajo de red sin envolverlo en un Task.
+pub fn iniciar_invitacion(
+    s: &mut Estado,
+) -> Option<(
+    u64,
+    impl std::future::Future<Output = Result<InvitacionCreada, String>> + Send + 'static,
+)> {
+    if s.red_ocupada {
+        return None;
+    }
+    let h = s.anfitrion.clone()?;
     s.red_ocupada = true;
     if let Some(p) = &mut s.panel {
         p.invitacion = Some(v::Invitacion {
@@ -116,10 +126,9 @@ pub fn invitar(s: &mut Estado) -> Task<Mensaje> {
         });
     }
     let (id, cad, cupo) = (s.solicitud, caducidad(s.caducidad), s.cupo);
-    Task::perform(
-        async move { h.invitar(cad, cupo).await.map_err(|e| e.to_string()) },
-        move |r| m(Accion::Invitacion(id, r)),
-    )
+    Some((id, async move {
+        h.invitar(cad, cupo).await.map_err(|e| e.to_string())
+    }))
 }
 fn operar(s: &mut Estado, op: Operacion) -> Task<Mensaje> {
     if s.red_ocupada {
@@ -165,7 +174,9 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
     match a {
         Accion::Analizada(id, r) => resultados::analizada(&mut app.servicios.compartir, id, r),
         Accion::Publicada(id, r) => {
-            return resultados::publicada(&mut app.servicios.compartir, id, r)
+            if resultados::publicada(&mut app.servicios.compartir, id, r) {
+                return invitar(&mut app.servicios.compartir);
+            }
         }
         Accion::Invitacion(id, r) => resultados::invitacion(&mut app.servicios.compartir, id, r),
         Accion::Ajustada(id, cad, r) => {

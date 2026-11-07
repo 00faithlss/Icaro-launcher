@@ -117,7 +117,10 @@ transacción y PK `(publication,guest)`. El reintento firmado con nonce nuevo no
 consume otro cupo. Las autorizaciones existentes sobreviven a caducar o revocar
 el código y pueden resolverlo/reclamarlo de nuevo; un invitado desconocido no.
 Cambiar ajustes exige código vigente, fecha futura y cupo no inferior al ya
-consumido. Una publicación detenida no se reactiva: se necesita otra publicación.
+consumido. Volver a compartir es una operación explícita: conserva el origen,
+genera otra invitación y exige nueva aceptación a los invitados anteriores.
+Crear un código tras detener limpia las autorizaciones de la generación anterior;
+renovar un código mientras se comparte conserva los accesos y las revocaciones.
 
 `authorizations` devuelve hasta 100 claves, ordenadas, con cursor `next` para la
 página siguiente. Un anfitrión consulta al recibir una petición de conexión y
@@ -166,7 +169,7 @@ y política de retención administrativa necesitan definirse antes de producció
 no se eliminan accesos persistentes automáticamente.
 
 Medición automatizada local de sentencias preparadas (incluye seguridad, no el
-SQL interno del trigger): crear **9**, resolver **7**, aceptar **8**, reintentar
+SQL interno del trigger): crear **11**, resolver **7**, aceptar **8**, reintentar
 aceptación **8**. El trigger suma una actualización en la primera aceptación.
 No equivale a filas facturadas: índices y limpieza añaden escrituras. La cuota
 gratuita consultada permite 5 millones de filas leídas y 100000 escritas/día;

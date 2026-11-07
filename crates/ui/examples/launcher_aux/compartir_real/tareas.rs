@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! Trabajo de disco/red del publicador, siempre fuera de update/view.
+use super::servicio::Servicio;
 use icaro_core::{
     compartir::{
         self as c,
@@ -103,9 +104,24 @@ pub async fn analizar(
     catalogo: Option<Catalog>,
     cancel: CancellationToken,
 ) -> Result<Trabajo, String> {
+    analizar_con(raiz, almacen, instancia, None, catalogo, cancel).await
+}
+
+/// Sin identidad usa la del almacén seguro del sistema; las pruebas inyectan una en memoria.
+pub async fn analizar_con(
+    raiz: PathBuf,
+    almacen: Almacen,
+    instancia: Instancia,
+    identidad: Option<Identidad>,
+    catalogo: Option<Catalog>,
+    cancel: CancellationToken,
+) -> Result<Trabajo, String> {
     let cancel_disco = cancel.clone();
     let mut trabajo = tokio::task::spawn_blocking(move || {
-        let identidad = Identidad::cargar_o_crear(&raiz).map_err(|e| e.to_string())?;
+        let identidad = match identidad {
+            Some(identidad) => identidad,
+            None => Identidad::cargar_o_crear(&raiz).map_err(|e| e.to_string())?,
+        };
         let contexto =
             c::vinculos::publicacion(&raiz, &almacen, &instancia, &identidad.clave_publica())
                 .map_err(|e| e.to_string())?;
@@ -204,8 +220,18 @@ pub async fn publicar(
     anterior: Option<Arc<PublicacionActiva>>,
     cancel: CancellationToken,
 ) -> Result<Publicada, String> {
-    let url = std::env::var("ICARO_SERVICIO_INVITACIONES")
-        .map_err(|_| "El servicio de invitaciones todavía no está configurado.".to_string())?;
+    publicar_con(trabajo, anterior, Servicio::desde_entorno(), cancel).await
+}
+
+/// Valida el servicio antes de guardar la selección o escribir la revisión.
+pub async fn publicar_con(
+    trabajo: Trabajo,
+    anterior: Option<Arc<PublicacionActiva>>,
+    servicio: Option<Servicio>,
+    cancel: CancellationToken,
+) -> Result<Publicada, String> {
+    let Servicio { url, modo } = servicio
+        .ok_or_else(|| "El servicio de invitaciones todavía no está configurado.".to_string())?;
     c::invitaciones::ClienteInvitaciones::nuevo(&url, trabajo.identidad.clone())
         .map_err(|e| e.to_string())?;
     let identidad = trabajo.identidad.clone();
@@ -228,11 +254,6 @@ pub async fn publicar(
             .map(|_| anterior)
             .map_err(|e| e.to_string())
     } else {
-        let modo = if std::env::var("ICARO_COMPARTIR_LOCAL").as_deref() == Ok("1") {
-            c::transporte::Modo::Local
-        } else {
-            c::transporte::Modo::Internet
-        };
         PublicacionActiva::iniciar(
             identidad,
             revision.clone(),

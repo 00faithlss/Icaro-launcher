@@ -2,6 +2,7 @@
 //! Edición del mismo código y reapertura explícita; nunca publicar al cambiar un ajuste.
 use super::{
     acciones::{caducidad, Accion},
+    servicio::Servicio,
     Estado,
 };
 use crate::Mensaje;
@@ -46,17 +47,24 @@ pub fn ajustar(s: &mut Estado, cad: v::Caducidad, cupo: u32) -> Task<Mensaje> {
         i.ajustes_editables = false;
     }
     Task::perform(
-        async move {
-            let url = std::env::var("ICARO_SERVICIO_INVITACIONES")
-                .map_err(|_| "El servicio de invitaciones no está configurado.".to_string())?;
-            let cliente = ClienteInvitaciones::nuevo(&url, identidad).map_err(|e| e.to_string())?;
-            cliente
-                .actualizar(&codigo, caducidad(cad), cupo, None)
-                .await
-                .map_err(|e| e.to_string())
-        },
+        async move { ajustar_con(identidad, codigo, cad, cupo, Servicio::desde_entorno()).await },
         move |r| Mensaje::Compartir(Accion::Ajustada(id, cad, r)),
     )
+}
+pub async fn ajustar_con(
+    identidad: c::identidad::Identidad,
+    codigo: Codigo,
+    cad: v::Caducidad,
+    cupo: u32,
+    servicio: Option<Servicio>,
+) -> Result<InvitacionResuelta, String> {
+    let Servicio { url, .. } =
+        servicio.ok_or_else(|| "El servicio de invitaciones no está configurado.".to_string())?;
+    ClienteInvitaciones::nuevo(&url, identidad)
+        .map_err(|e| e.to_string())?
+        .actualizar(&codigo, caducidad(cad), cupo, None)
+        .await
+        .map_err(|e| e.to_string())
 }
 pub fn ajustada(s: &mut Estado, id: u64, cad: v::Caducidad, r: Result<InvitacionResuelta, String>) {
     if !s.vigente(id) {
@@ -92,42 +100,51 @@ pub fn reanudar(s: &mut Estado) -> Task<Mensaje> {
     let Some(t) = datos_publicacion(s) else {
         return Task::none();
     };
-    let (id, cad, cupo) = (s.solicitud, caducidad(s.caducidad), s.cupo);
+    let (id, cad, cupo) = (s.solicitud, s.caducidad, s.cupo);
     s.red_ocupada = true;
     Task::perform(
-        async move {
-            let url = std::env::var("ICARO_SERVICIO_INVITACIONES")
-                .map_err(|_| "El servicio de invitaciones no está configurado.".to_string())?;
-            let contexto = t.contexto.clone();
-            let revision = tokio::task::spawn_blocking(move || {
-                c::revisiones::vigente(&contexto).map_err(|e| e.to_string())
-            })
-            .await
-            .map_err(|_| "No se pudo leer la publicación guardada.".to_string())??
-            .ok_or_else(|| "No hay una revisión publicada para reabrir.".to_string())?;
-            let modo = if std::env::var("ICARO_COMPARTIR_LOCAL").as_deref() == Ok("1") {
-                c::transporte::Modo::Local
-            } else {
-                c::transporte::Modo::Internet
-            };
-            let h = std::sync::Arc::new(
-                c::anfitrion::PublicacionActiva::iniciar(
-                    t.identidad,
-                    revision,
-                    &t.contexto.almacen.join("accesos.json"),
-                    &url,
-                    modo,
-                    t.contexto.limites,
-                )
-                .await
-                .map_err(|e| e.to_string())?,
-            );
-            let i = h
-                .volver_a_compartir(cad, cupo)
-                .await
-                .map_err(|e| e.to_string())?;
-            Ok((h, i))
-        },
+        async move { reanudar_con(t, cad, cupo, Servicio::desde_entorno()).await },
         move |r| Mensaje::Compartir(Accion::Reanudada(id, r)),
     )
+}
+pub async fn reanudar_con(
+    t: super::tareas::PublicacionLocal,
+    cad: v::Caducidad,
+    cupo: u32,
+    servicio: Option<Servicio>,
+) -> Result<
+    (
+        std::sync::Arc<c::anfitrion::PublicacionActiva>,
+        c::invitaciones::InvitacionCreada,
+    ),
+    String,
+> {
+    let Servicio { url, modo } =
+        servicio.ok_or_else(|| "El servicio de invitaciones no está configurado.".to_string())?;
+    let contexto = t.contexto.clone();
+    let revision = tokio::task::spawn_blocking(move || {
+        c::revisiones::vigente(&contexto).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|_| "No se pudo leer la publicación guardada.".to_string())??
+    .ok_or_else(|| "No hay una revisión publicada para reabrir.".to_string())?;
+    let h = std::sync::Arc::new(
+        c::anfitrion::PublicacionActiva::iniciar(
+            t.identidad,
+            revision,
+            &t.contexto.almacen.join("accesos.json"),
+            &url,
+            modo,
+            t.contexto.limites,
+        )
+        .await
+        .map_err(|e| e.to_string())?,
+    );
+    match h.volver_a_compartir(caducidad(cad), cupo).await {
+        Ok(i) => Ok((h, i)),
+        Err(e) => {
+            h.cerrar().await;
+            Err(e.to_string())
+        }
+    }
 }

@@ -6,7 +6,10 @@ mod invitaciones;
 mod modelos;
 #[cfg(test)]
 mod pruebas;
+#[cfg(test)]
+mod pruebas_worker;
 mod resultados;
+mod servicio;
 mod tareas;
 mod vistas;
 pub use acciones::{actualizar, Accion, Operacion};
