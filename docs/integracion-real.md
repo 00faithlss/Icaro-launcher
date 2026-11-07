@@ -1,5 +1,23 @@
 # Integración del launcher
 
+## Actualización de Compartir instancias — 07-11-2026
+
+En `v0.4.x` existen el núcleo `compartir`, los componentes iced y el servicio local
+Workers/D1. Una prueba Rust recorre aceptación, transporte iroh autenticado,
+descarga y aplicación de configuración/texturas y revocación. No hay endpoint de
+producción configurado. Hay un publicador experimental en Servidores bajo
+`ICARO_COMPARTIR_DESARROLLO=1`; el recorrido normal sigue deshabilitado y Jugar
+todavía no está conectado.
+
+El controlador inicial ya tiene tareas, consentimiento y privados persistentes.
+Faltan su validación con red desde UI, confianza persistente, instalación exacta,
+exclusión con una partida, resolución visual del orden de packs y cierre/bandeja.
+Las escenas del launcher usan fixtures: no acreditan esos recorridos. Consultar
+[guía técnica](compartir-instancias.md) y
+[progreso con evidencias](superpowers/progreso/2026-11-07-compartir-instancias.md).
+
+## Integraciones existentes
+
 Estado y plan de implementación de la autenticación, la instalación del juego y las tiendas de mods. La guía de [inicio de sesión y catálogo](login-y-catalogo.md) describe cómo probar los servicios conectados.
 
 Actualizado el **22-10-2026**. El [roadmap general](../README.md#roadmap) y el [roadmap del diseño](roadmap-system-design.md) distinguen los recorridos conectados de las maquetas y pendientes.

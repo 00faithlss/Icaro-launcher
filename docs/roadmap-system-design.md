@@ -1,6 +1,6 @@
 # Roadmap del System Design
 
-Actualizado el **12-10-2026**. Referencias: `icaro-design-system.rar` y `icaro-componentes-nuevos.zip` (`CambioVersionInstancia`, `InfoProyecto` y `PaginaMod`), `icaro-exportar-instancia.zip`, `icaro-icono-instancia.zip` e `icaro-exportar-lista-mods.zip`, sus componentes, definiciones y previews originales. Este archivo sigue la implementación del diseño; el [roadmap general](../README.md#roadmap) sigue las funciones del launcher.
+Actualización de Compartir instancias: **07-11-2026**; base del roadmap: **12-10-2026**. Referencias: `icaro-design-system.rar` y `icaro-componentes-nuevos.zip` (`CambioVersionInstancia`, `InfoProyecto` y `PaginaMod`), `icaro-exportar-instancia.zip`, `icaro-icono-instancia.zip` e `icaro-exportar-lista-mods.zip`, sus componentes, definiciones y previews originales; referencias de compartir en el apartado de avances. Este archivo sigue la implementación del diseño; el [roadmap general](../README.md#roadmap) sigue las funciones del launcher.
 
 Las siguientes entregas deben conectar y completar esos diseños, conservando sus composiciones, iconos, tipografías, colores y controles. Las diferencias conocidas se registran para evaluación antes de sustituir una vista.
 
@@ -14,9 +14,26 @@ Las siguientes entregas deben conectar y completar esos diseños, conservando su
 | Pendiente | Falta implementar o integrar el componente indicado. |
 | A evaluar | Hay una diferencia con la referencia o una decisión de alcance que debe revisarse con el usuario. |
 
-Una vista puede estar implementada visualmente y tener su función pendiente. Por ejemplo, el asistente instala Vanilla y Fabric; Quilt, Forge y NeoForge siguen pendientes; el diálogo de exportación genera ZIP, pero no MRPACK.
+Una vista puede estar implementada visualmente y tener su función pendiente. Por ejemplo, Compartir instancias tiene componentes iced y núcleo probados, pero falta conectarlos al recorrido normal; el diálogo de exportación genera ZIP, pero no MRPACK. Quilt, Forge y NeoForge ya tienen instalación oficial, con validaciones de partida/migración/Linux pendientes.
 
 ## Avances recientes
+
+### Compartir instancias — 07-11-2026, v0.4.x
+
+Referencias añadidas: `icaro-compartir-instancia.zip` y
+`icaro-revisar-publicacionv2.zip`, conservados en
+[referencias originales](superpowers/referencias/compartir-instancia/README.md).
+
+| Área | Estado | Validación y trabajo restante |
+| --- | --- | --- |
+| Quince componentes de compartir/publicación/invitación/revisión | Visual implementado; publicador experimental | Vistas puras y controlador de publicación en Servidores bajo bandera, con capturas y pruebas. Aceptación/Jugar, cierre/bandeja y validación UI con red pendientes. |
+| Publicación, privados, posponer y consentimiento | Núcleo y controlador experimental | Guardado mediante tareas, permiso explícito y respuestas tardías probados. Falta validar el recorrido real de red desde la interfaz. |
+| Centrado y medidas uniformes | Aplicado a los componentes nuevos y botones comunes | Icono/texto centrados, padding simétrico, celdas iguales y pie visible. Comprobado en Tinta/Piedra y ventana pequeña; regla en `AGENTS.md`. |
+| Cierre y segundo plano | Vista y primitivas de transporte | Drenaje disponible en núcleo; faltan coordinación del cierre y bandeja restaurable. |
+
+Siguiente paso: conectar modelos y acciones sin disco/red en update/view, y revisar
+otra vez foco, teclado, escala y ventanas pequeñas con datos reales. El estado
+completo y las pruebas están en [progreso](superpowers/progreso/2026-11-07-compartir-instancias.md).
 
 - [x] Esquinas exteriores de la ventana con radio pequeño mediante DWM en Windows 11; al maximizar o acoplar, Windows aplica su geometría habitual. Botones, tarjetas y paneles conservan esquinas rectas. Windows anteriores y Linux mantienen la geometría disponible del sistema; redondeado explícito en Linux pendiente de evaluación.
 
@@ -144,12 +161,16 @@ Una vista puede estar implementada visualmente y tener su función pendiente. Po
 
 ## Orden para completar el diseño
 
+Prioridad actual: integrar los componentes de Compartir instancias con los servicios
+ya implementados, siguiendo [el orden de continuación](superpowers/progreso/2026-11-07-compartir-instancias.md#qué-sigue-en-orden).
+Conservar la regla de centrado y medidas uniformes. El resto del roadmap continúa abajo.
+
 El [detalle de implementación pendiente](pendientes-implementacion.md) define el alcance de instalación oficial de loaders, importación de modpacks y las comprobaciones que faltan.
 
 Los nuevos instaladores deben conservar la [organización de datos](organizacion-datos.md) ya implementada: assets y bibliotecas compartidos, migración de `.icaro`, configuración por instancia y sustitución de papeleras internas por la del sistema con recuperación de los datos anteriores.
 
 1. **Instancia jugable:** extender el instalador a loaders manteniendo los componentes ya conectados; repetir en Linux el recorrido de Vanilla confirmado en Windows. Completar historial de descargas y unificar los instaladores en la cola global.
-2. **Editor y acciones:** completar General/Java, recuperación de Archivos/Capturas, prioridad de Recursos y Mundos; importar/clonar y exportar MRPACK. El cambio de versión con respaldo/copia ya está conectado; Fabric ya se prepara con la versión elegida; faltan los instaladores de Quilt, Forge y NeoForge.
+2. **Editor y acciones:** completar General/Java, recuperación de Archivos/Capturas, prioridad de Recursos y Mundos; ampliar importación y exportar MRPACK. El cambio de versión con respaldo/copia y los instaladores oficiales de Fabric, Quilt, Forge y NeoForge ya existen; validar los recorridos pendientes de partida, migración y Linux.
 3. **Cuenta:** probar subida de skin con una cuenta real, conectar capes propias y gestión persistente de varias cuentas Microsoft. La composición original y el estudio ya usan texturas reales.
 4. **Servicios adicionales:** servidores, red/sincronización, integridad, integración de archivos sin verificar con futuros importes, almacenamiento y bandeja. Publicar los artefactos para validar la actualización del launcher ya implementada.
 5. **Revisión transversal:** ventanas angostas, escala, metales, foco y teclado, tooltips, virtualización y movimientos pendientes; comprobar ambas paletas.

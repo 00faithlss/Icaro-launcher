@@ -2,6 +2,11 @@
 
 ## [Sin publicar]
 
+- Se añade el controlador experimental del publicador de instancias, deshabilitado por defecto: revisión y consentimiento, guardado de privados mediante tareas, publicación e invitaciones/accesos. Incluye cancelación y separación del panel publicado frente a otros borradores. Invitado, Jugar y cierre/bandeja siguen pendientes; ver el registro de progreso.
+
+- En desarrollo en `v0.4.x`: núcleo de Compartir instancias con revisiones seleccionadas, firmas, invitaciones Workers/D1, transporte iroh y aplicación recuperable. Los componentes visuales y el recorrido local de servicios tienen pruebas; la función completa sigue deshabilitada por defecto, con invitado/Jugar y despliegue pendientes. Ver [progreso](docs/superpowers/progreso/2026-11-07-compartir-instancias.md).
+- Los botones comunes centran icono/texto con padding simétrico; los controles segmentados y resúmenes de compartir conservan alineación y medidas uniformes. Se corrigen el pie recortado y las dimensiones de las invitaciones dentro de paneles desplazables, con pruebas y capturas en ambos temas.
+
 - Actualizar o instalar varios mods a la vez ya no descarta todos cuando uno falla: los que se pueden guardar se guardan, cada uno en su propia transacción, y el aviso nombra el mod que falló con su motivo.
 - En la tienda de mods, al pasar de página la lista vuelve arriba con el desplazamiento suave y los botones de página quedan enteros. La rueda ya no se desfasa cuando la lista cambia de alto, lo que antes dejaba los botones fuera de vista al subir y volver a bajar.
 - La tienda permite mostrar 20, 30, 50 o 100 resultados por página.

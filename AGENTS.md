@@ -53,7 +53,7 @@ Reglas acordadas con el usuario; prevalecen sobre costumbres de otros proyectos.
 
 ### Ramas
 
-- Se trabaja directamente en la rama de mantenimiento vigente `v0.X.x` (hoy `v0.3.x`). **No crear ramas nuevas** (`feat/`, `fix/`, `chore/`, `codex/`, `perf/`…) ni worktrees salvo que el usuario lo pida explícitamente. Una carpeta de trabajo: `Icaro-launcher`.
+- Compartir instancias se desarrolla directamente en `v0.4.x`, creada desde `v0.3.x` por petición expresa del usuario el 07-11-2026. `v0.3.x` conserva la línea anterior. **No crear otras ramas** (`feat/`, `fix/`, `chore/`, `codex/`, `perf/`…) ni worktrees salvo que el usuario lo pida explícitamente. Una carpeta de trabajo: `Icaro-launcher`.
 - Un push a `v0.X.x` no publica nada. `develop` publica beta y `main` estable (ver Publicación): solo se integra en ellas cuando el usuario lo pide.
 - Antes de borrar o integrar ramas, comprobar que su contenido ya está en las líneas `v0.X.x`/`develop`/`main` (ancestría o `git cherry`); lo que no esté, aplicarlo o preguntar.
 
@@ -67,6 +67,7 @@ Reglas acordadas con el usuario; prevalecen sobre costumbres de otros proyectos.
 
 - **Fidelidad al System Design**: la referencia es el artifact [Ícaro — System Design](https://claude.ai/artifact/PvXuHUuhzfwkxtQThWyf9a) (`project/components/<Componente>/README.md` y `preview.html`, más `project/iced.md` y `project/tokens.json`). Las pantallas deben seguir su estructura, textos, medidas y estados; no inventar componentes ni estilos. Si el diseño pide algo que el código no tiene, implementarlo; si el usuario decide apartarse del diseño, su decisión manda (por ejemplo, la cuenta no muestra UUID, correo ni estado de sesión: en su lugar, tiempo jugado total e instancia más jugada).
 - **Todos los iconos van centrados en ambos ejes, sin desfase.** En botones de solo icono: tamaño fijo y `container(icono).center(Length::Fill)` con `padding(0)`, o relleno simétrico alrededor de un icono de tamaño fijo. Un botón de icono junto a botones con texto usa su mismo alto (`medida::CONTROL` o `CONTROL_SM`).
+- **Centrado y medidas uniformes:** los rótulos y el conjunto icono/texto de los botones se centran en ambos ejes dentro del área útil, con padding simétrico; no usar márgenes negativos ni desplazamientos para compensar su posición. Los controles equivalentes de una misma fila tienen el mismo alto. Las celdas de un mismo resumen tienen igual ancho y alto, reservando espacio para textos de varias líneas: ninguna crece o queda desalineada por su contenido. Comprobarlo en ambos temas y ventana pequeña.
 - Revisar cada cambio visual con capturas reales antes de entregarlo: `ICARO_DEMO=1`, `ICARO_CAPTURA_DISENO=<png>` y `ICARO_VISTA_DISENO=<escena>` (escenas en `launcher_aux/pruebas_diseno.rs` y `docs/desarrollo.md`; `ICARO_TEMA_DISENO=piedra|tinta`, `ICARO_GIRO=<pasos>` para el visor de skin). Comprobar ambos temas cuando el cambio afecte colores.
 - Nada de trabajo de disco o red en `update`/`view` de iced: usar `Task::perform` con `spawn_blocking` o servicios del núcleo.
 
@@ -86,7 +87,21 @@ Reglas acordadas con el usuario; prevalecen sobre costumbres de otros proyectos.
 
 ## Estado y fuentes de referencia
 
-Base de trabajo: `0.3.4` en `v0.3.x`. La estable vigente es 0.3.3 (`v0.3.3-build.40389040180`, 26-10-2026) y la beta 0.3.4 se publicó como `v0.3.4-beta.40452130273` el 27-10-2026; `v0.3.x` lleva además cambios posteriores a esa beta. Consultar `git status` y las referencias remotas antes de asumir rama, publicación o estado de CI. Desde 0.3.0 se publica por canales: `develop` → beta (prerelease `v<versión>-beta.<compilación>`) y `main` → estable (`v<versión>-build.<compilación>` más el tag fuente `v<versión>`, creado por el workflow). `v0.2.x` queda como historial y ya no publica. Revalidar con `gh release list` antes de asumir el estado. La versión visible y el actualizador deben usar `env!("CARGO_PKG_VERSION")`, heredado del workspace; nunca escribir `0.1.0` u otra versión fija en la interfaz.
+Estado comprobado el 07-11-2026: trabajo de Compartir instancias en `v0.4.x`,
+versión `0.3.4` sin bump. El plan está en `d78e628`; el núcleo/servicio se registran
+en `d48181f` y la interfaz experimental en `f4fbf08`. El usuario autorizó registrar
+y subir este bloque a `v0.4.x`; eso no autoriza publicaciones ni futuros cambios.
+Núcleo, Worker/D1 local y componentes iced implementados;
+hay un controlador experimental del publicador en `launcher_aux/compartir_real/`,
+protegido por `ICARO_COMPARTIR_DESARROLLO=1`. Faltan aceptación/instalación del
+invitado, Sincronizar/Jugar, cierre/bandeja y validación del controlador con red.
+Consultar [progreso y siguientes pasos](docs/superpowers/progreso/2026-11-07-compartir-instancias.md)
+y [guía técnica](docs/compartir-instancias.md) antes de continuar. No confundir
+escenas de diseño ni pruebas locales con una función habilitada o desplegada.
+Las referencias de publicaciones del párrafo siguiente son el registro previo;
+esta actualización documental no revalidó releases ni CI remotos.
+
+Base anterior: `0.3.4` en `v0.3.x`, de la que nace `v0.4.x` sin cambio de versión. Últimas publicaciones registradas en estas guías: estable 0.3.3 (`v0.3.3-build.40389040180`, 26-10-2026) y beta 0.3.4 (`v0.3.4-beta.40452130273`, 27-10-2026); `v0.3.x` lleva además cambios posteriores a esa beta. Consultar `git status` y las referencias remotas antes de asumir rama, publicación o estado de CI. Desde 0.3.0 se publica por canales: `develop` → beta (prerelease `v<versión>-beta.<compilación>`) y `main` → estable (`v<versión>-build.<compilación>` más el tag fuente `v<versión>`, creado por el workflow). `v0.2.x` queda como historial y ya no publica. Revalidar con `gh release list` antes de asumir el estado. La versión visible y el actualizador deben usar `env!("CARGO_PKG_VERSION")`, heredado del workspace; nunca escribir `0.1.0` u otra versión fija en la interfaz.
 
 - [Notas de 0.2.5](docs/releases/0.2.5.md): cuentas sin conexión persistentes y skins locales con el componente original; conservar las limitaciones de autenticación y la validación pendiente en una partida real.
 - [Notas de 0.2.4](docs/releases/0.2.4.md): inventario incremental, plan sin red, consultas por lotes y presupuesto de la API, descargas en streaming y paralelas, y host incremental con ETag/304, conexiones persistentes y reanudación.

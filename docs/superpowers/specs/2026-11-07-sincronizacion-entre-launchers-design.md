@@ -1,8 +1,8 @@
 # Compartir instancias y publicar revisiones entre dos Ícaro
 
-Estado: acuerdos de producto y referencias visuales; diseño técnico pendiente de concretar. Fecha: 07-11-2026.
+Estado al 07-11-2026: acuerdos de producto vigentes, núcleo y componentes implementados; integración funcional del launcher y validación externa pendientes. [Progreso y evidencia](../progreso/2026-11-07-compartir-instancias.md).
 
-No hay implementación del transporte nuevo, del servicio de invitaciones ni de estas pantallas en el launcher. Los acuerdos siguientes sustituyen los puntos incompatibles de la propuesta inicial, conservada al final como antecedente.
+El transporte iroh, el servicio Workers/D1 local y las quince vistas iced ya existen, con pruebas locales. Hay un controlador experimental del publicador en Servidores bajo `ICARO_COMPARTIR_DESARROLLO=1`; por defecto sigue deshabilitado. Invitado/Jugar y cierre/bandeja no completan aún el recorrido, y no hay despliegue remoto. Los acuerdos siguientes sustituyen los puntos incompatibles de la propuesta inicial, conservada al final como antecedente.
 
 ## Acuerdos vigentes
 
@@ -12,17 +12,22 @@ Los [dos paquetes de diseño](../referencias/compartir-instancia/README.md) se c
 
 Los acuerdos explícitos prevalecen sobre las notas de los ZIP. Sus apartados «En iced» son orientación técnica, no decisiones de arquitectura confirmadas. La comparación de documentación y CSS no sustituye la revisión de previews renderizadas ni las capturas reales iced en Tinta/Piedra.
 
+Regla añadida expresamente por el usuario: rótulos e iconos de botones centrados
+en ambos ejes, padding simétrico y controles equivalentes con el mismo alto; las
+celdas de un resumen comparten ancho y alto aunque sus textos ocupen varias líneas.
+Evitar compensaciones mediante márgenes negativos o desplazamientos manuales.
+
 ### Encuentro y presupuesto
 
-Se eligió Cloudflare Workers Free + D1 Free para resolver códigos cortos de invitación, con presupuesto de cero y sin contratar planes de pago. Solo guardará datos pequeños de encuentro e invitaciones; no alojará mods ni partidas. No se ha creado ni desplegado. Se propone iroh como canal autenticado entre equipos, conservando el recorrido HTTP privado existente y sin exigir ZeroTier.
+Se eligió Cloudflare Workers Free + D1 Free para resolver códigos cortos de invitación, con presupuesto de cero y sin contratar planes de pago. Solo intercambia metadatos de encuentro y autorizaciones; no aloja mods ni partidas. El servicio se implementó y probó localmente, sin crear recursos remotos ni desplegar. iroh está implementado como canal autenticado entre equipos, conservando el recorrido HTTP privado existente y sin exigir ZeroTier.
 
 Fuentes consultadas: [límites de Workers](https://developers.cloudflare.com/workers/platform/limits/) y [precios de D1](https://developers.cloudflare.com/d1/platform/pricing/). Revalidar las condiciones antes de desplegar. El servicio y los relés tienen límites propios; no se promete capacidad gratuita ilimitada.
 
-Falta concretar la vinculación segura entre código, identidad y publicación, protección frente a intentos y abuso de cuota, y aceptación atómica del último cupo. Un código de 12 caracteres no contiene una invitación completa ni un secreto de 256 bits. Los detalles de la invitación autocontenida del antecedente no se trasladan automáticamente a este recorrido.
+La implementación vincula código, clave pública y publicación mediante peticiones y encuentro firmados; D1 aplica aceptación atómica, límites y protección de repetición. Se prueba localmente; falta validar el entorno desplegado y su consumo real. Un código de 12 caracteres no contiene una invitación completa ni un secreto de 256 bits. Los detalles de la invitación autocontenida del antecedente no se trasladan automáticamente a este recorrido.
 
 ### Invitaciones y accesos
 
-- Caducidad configurable: 24 horas por defecto, 2 días o 1 semana. Puede cambiar mientras esté vigente y sin usar; para códigos parcialmente aceptados falta concretar cómo se modifica el plazo.
+- Caducidad configurable: 24 horas por defecto, 2 días o 1 semana. La implementación permite editar una invitación vigente incluso tras aceptaciones, sin reducir el cupo por debajo de los aceptados ni llevar el vencimiento al pasado; falta conectar esos ajustes al controlador.
 - Cupo configurable de identidades distintas, por ejemplo 10. Con límite 1 funciona como invitación de un uso. Reconectarse no consume otro cupo.
 - Al vencer, revocarse o completarse el cupo, no admite personas nuevas. Generar otra invitación invalida el código anterior sin revocar accesos aceptados.
 - Los accesos aceptados permanecen hasta revocarlos, incluso tras cerrar y abrir Ícaro. Para sincronizar deben estar conectados ambos equipos y disponible la publicación.
@@ -58,15 +63,15 @@ Minimizar mantiene la publicación funcionando. Al cerrar con transferencias act
 
 El texto «Pausada: Ícaro en segundo plano» de PanelPublicacion contradice este acuerdo y debe corregirse en la implementación y en una futura actualización de la referencia. Los ZIP originales se conservan intactos.
 
-### Diseño técnico y validación pendientes
+### Implementación técnica y validación pendiente
 
-El índice actual solo cubre parte del alcance: configuraciones, scripts, resourcepacks, orden y comparación de tres vías necesitan ampliar y versionar el manifiesto y la gestión local. No basta con añadir iroh al descargador. Reutilizar inventario, presupuesto de API, streaming, integridad, conservación de mods personales, transacción incremental y diario recuperable; leer antes la investigación de rendimiento según AGENTS.md.
+El índice HTTP anterior solo cubre parte del alcance. El nuevo manifiesto `icaro-compartir/1` ya contempla configuraciones, scripts, resourcepacks, orden y comparación de tres vías, sin ampliar silenciosamente aquel contrato. Conservar el presupuesto de API, streaming, integridad, mods personales y recuperación; leer antes la investigación de rendimiento según AGENTS.md. La optimización incremental de las carpetas nuevas sigue pendiente.
 
-Concretar almacenamiento seguro de claves, identidades de publicación estables, revisiones coherentes y retención de versiones pospuestas, límites, reanudación, cancelación, validación de rutas, respaldos y limpieza. Los scripts compartidos pueden ejecutarse mediante mods al jugar y requieren una política explícita de revisión y autorización. No prometer que son inocuos. No duplicar todos los archivos del invitado ni usar enlaces duros a JAR mutables como copias independientes.
+Claves seguras, origen estable, revisiones inmutables/pospuestas, límites, reanudación, cancelación, validación de rutas y respaldos están implementados con pruebas locales. Faltan limpieza, control previo de espacio y coordinación con instalación, partida y launcher. Los scripts seleccionados requieren autorización por hash; su integración visual aún está pendiente. No prometer que son inocuos ni duplicar todos los archivos del invitado o usar enlaces duros a JAR mutables como copias independientes.
 
-La utilidad inicial de consola, límites técnicos concretos y mecanismo de almacenamiento son propuestas, no preferencias aprobadas. La integración final incluye la interfaz. No hay despliegue autorizado por elegir el proveedor: esta solicitud autoriza commit y push documental en v0.3.x, sin merge, tag o release.
+Los límites técnicos y módulos concretos son decisiones de implementación registradas en el plan; no se atribuyen como preferencias del usuario. La utilidad de consola sigue pendiente y no sustituye la integración visual. La autorización documental original en `v0.3.x` y la creación/publicación del plan en `v0.4.x` no autorizan commits posteriores de implementación, merges, tags, releases ni despliegues.
 
-Validar plazos, cupos concurrentes, reconexión sin gastar cupo, persistencia y revocación, contenido privado, versiones pospuestas, conflictos, orden de packs, identidad distinta, hashes, cortes, cancelación y revisión cambiada. Usar datos aislados y APPDATA temporal. Faltan pruebas en dos equipos por LAN, Internet directo, relé y Linux, y revisión visual de previews y capturas reales. La partida LAN es otro recorrido todavía pendiente; sincronizar no acredita jugar.
+Las pruebas locales cubren plazos/cupos, aceptación idempotente, persistencia y revocación, privados/pospuestos, comparación de tres vías, packs, identidad, integridad, cortes y cancelación. Se produjeron capturas reales con fixtures en ambos temas y ventana pequeña. Falta completar el recorrido integrado, disco lleno, mediciones y pruebas en dos equipos por LAN, Internet directo, relé y Linux. Usar datos aislados y APPDATA temporal. La partida LAN es otro recorrido todavía pendiente; sincronizar no acredita jugar.
 
 ## Antecedente: propuesta inicial no aprobada
 

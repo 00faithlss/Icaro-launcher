@@ -178,14 +178,22 @@ El instalador y las releases son entregas separadas. El contrato y las decisione
 
 ### Próximas entregas, en orden
 
+**Prioridad de desarrollo al 07-11-2026:** completar la integración de Compartir
+instancias en `v0.4.x`. El núcleo, las invitaciones y las vistas están implementados
+y probados localmente; hay un publicador experimental en Servidores bajo bandera.
+Faltan aceptación/instalación del invitado, Sincronizar/Jugar y cierre/bandeja.
+Consulta el [progreso por etapas](docs/superpowers/progreso/2026-11-07-compartir-instancias.md)
+y la [guía técnica](docs/compartir-instancias.md). No está habilitado en el recorrido
+normal ni hay despliegue público. Los puntos siguientes son el resto del roadmap.
+
 Consulta el [detalle de implementación pendiente](docs/pendientes-implementacion.md) para el alcance y las comprobaciones de loaders oficiales, importación de packs y funciones restantes.
 
-1. **Instancias con loader:** instalar Fabric, NeoForge, Forge y Quilt desde sus fuentes oficiales, respetar la versión elegida y comprobar el lanzamiento con los mods ya gestionados. Fabric ya fue validado por el usuario con un mod real y usa el perfil oficial, bibliotecas verificadas y la versión elegida. Quilt, Forge y NeoForge todavía requieren sus instaladores.
+1. **Instancias con loader:** completar la validación de Quilt, Forge y NeoForge en partida con mods, migración y Linux. Sus perfiles/instaladores oficiales ya están implementados; Fabric tiene confirmación del usuario en Windows. Ver [alcance](docs/loaders-forge-neoforge.md).
 2. **Validación multiplataforma:** repetir el recorrido de Vanilla en Arch Linux y completar las opciones de cierre en Windows; el lanzamiento real en Windows ya fue confirmado.
-3. **Importación y modpacks:** importar MRPACK/ZIP y otros launchers, duplicar instancias y exportar MRPACK. El cambio de versión ya permite respaldo, copia y actualización de mods; los instaladores de Quilt, Forge y NeoForge siguen pendientes.
+3. **Importación y modpacks:** completar descubrimiento de otros launchers, exportación MRPACK y CurseForge por ID con una integración válida. La importación local MRPACK/ZIP completo y los instaladores oficiales ya existen; mantener sus limitaciones y validaciones pendientes.
 4. **Editor completo:** conectar mundos, prioridad de resourcepacks, otros motores de shaders, integridad y eliminación/recuperación de archivos y capturas; completar el historial persistente y unificar los instaladores en la cola global. Recursos, shaders, capturas y consola ya tienen sus recorridos reales descritos arriba.
 5. **Servidores y servicios adicionales:** conectar servidores con una instancia compatible, detectar ZeroTier y gestionar la conexión a su red, comparar y sincronizar mods con revisión previa. Completar Cuenta y Estudio de skin y proveedores opcionales.
-6. **Primera publicación:** crear y validar el instalador de Windows y el paquete portable; automatizar artefactos, requisitos y hashes. Validar Windows y Arch Linux, rendimiento, teclado y ventanas angostas.
+6. **Distribución y validación:** comprobar actualización completa, instalación limpia, reinstalación y desinstalación en un equipo de prueba; la publicación por canales y los paquetes ya existen. Validar Windows y Arch Linux, rendimiento, teclado y ventanas angostas.
 
 ### Servidores, ZeroTier y sincronización
 

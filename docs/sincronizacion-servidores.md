@@ -1,5 +1,11 @@
 # Sincronización con el servidor de un amigo
 
+Esta guía describe el servicio HTTP del servidor dedicado. El nuevo sistema de
+invitaciones y revisiones seleccionadas entre launchers se desarrolla por separado
+en `v0.4.x`; no sustituye este protocolo ni está conectado aún a Servidores/Jugar.
+Consultar [Compartir instancias](compartir-instancias.md) y su
+[progreso del 07-11-2026](superpowers/progreso/2026-11-07-compartir-instancias.md).
+
 El servicio lee directamente `mods` de la carpeta del servidor dedicado que ejecuta el PC del anfitrión. No requiere una instancia cliente de Ícaro ni instalar el launcher en ese equipo. Al pulsar Jugar, con **Sincronizar mods al iniciar** activado, el launcher consulta ese índice por ZeroTier, muestra las diferencias en la pantalla original `SincronizarMods` y descarga archivos exactos desde Modrinth o los JAR propios publicados por el anfitrión.
 
 ## Preparar al anfitrión

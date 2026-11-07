@@ -1,5 +1,11 @@
 # Servidores y ZeroTier
 
+**Compartir instancias (07-11-2026):** el nuevo recorrido por invitación se desarrolla
+en `v0.4.x`; hay un publicador experimental bajo `ICARO_COMPARTIR_DESARROLLO=1`.
+La función completa no está habilitada por defecto ni desplegada. Ver
+[estado y siguientes pasos](superpowers/progreso/2026-11-07-compartir-instancias.md).
+Las instrucciones siguientes corresponden al recorrido de servidores existente.
+
 La sección Servidores usa las tarjetas existentes con datos guardados y consultas reales. La demostración sigue separada mediante ICARO_DEMO=1.
 
 ## Guardar y conectar

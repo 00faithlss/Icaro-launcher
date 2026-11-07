@@ -1,6 +1,23 @@
 # Implementación pendiente
 
-Actualizado el **22-10-2026**. Este documento describe el trabajo que falta; no presenta estas funciones como disponibles. El [roadmap del System Design](roadmap-system-design.md) detalla los componentes y sus diferencias visuales.
+Actualizado el **07-11-2026** para Compartir instancias; los demás apartados conservan sus validaciones previas. Este documento describe el trabajo que falta; no presenta estas funciones como disponibles. El [roadmap del System Design](roadmap-system-design.md) detalla los componentes y sus diferencias visuales.
+
+## Prioridad actual: Compartir instancias en v0.4.x
+
+El núcleo, las invitaciones Workers/D1 y las quince vistas existen y tienen pruebas
+locales. **El recorrido normal de Servidores/Jugar todavía no los conecta.**
+La sincronización HTTP del servidor dedicado es un recorrido distinto que se conserva.
+Ver [progreso y evidencias](superpowers/progreso/2026-11-07-compartir-instancias.md).
+
+- [ ] Validar/completar el publicador experimental ya conectado bajo `ICARO_COMPARTIR_DESARROLLO=1`: publicación, privados, consentimiento y operaciones de red desde UI. Sus 14 pruebas de controlador no completan el recorrido real.
+- [ ] Conectar confianza, invitación y destino nuevo con instalación exacta; recuperar instalaciones incompletas sin presentar éxito.
+- [ ] Conectar Sincronizar/Jugar, resolución de archivos y orden de packs, y exclusión real frente a una partida.
+- [ ] Integrar accesos, reconexión, cierre y bandeja restaurable con drenaje de transferencias.
+- [ ] Completar precomprobación de espacio, limpieza de staging/contenido y caché/concurrencia; medir los recorridos nuevos.
+- [ ] Configurar/desplegar el servicio gratuito con autorización y validar entre dos equipos, directo/relé, Windows/Linux y partida real.
+
+La base conserva origen estable, crea otra instancia al aceptar y aplica una revisión
+como transacción recuperable. Eso no completa las tareas de integración enumeradas.
 
 ## 1. Instalación y ejecución de loaders oficiales
 
@@ -62,6 +79,10 @@ Las tareas pendientes de este apartado corresponden a Quilt y a la validación c
 - [ ] Publicar el ejecutable y los metadatos de actualización y probar una actualización completa. La comprobación y descarga del actualizador ya están conectadas; ver el [contrato de publicación](actualizaciones-launcher.md).
 
 ### Alcance de Servidores, ZeroTier y sincronización
+
+Este apartado describe el recorrido HTTP existente y sus mediciones anteriores;
+no mide el sistema de invitaciones de `v0.4.x`. Para este último, las vistas del
+publicador ya existen; su conexión funcional sigue pendiente en la prioridad actual.
 
 El [roadmap general](../README.md#servidores-zerotier-y-sincronización) cuenta ocho tareas separadas. Las pantallas originales de lista, PanelLateral, RedPrivada y SincronizarMods usan datos reales; los ejemplos quedan en la maqueta aislada. Ver [servidores](servidores.md) y [servicio del anfitrión](sincronizacion-servidores.md).
 
