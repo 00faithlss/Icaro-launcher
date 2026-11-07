@@ -141,14 +141,16 @@ pub(crate) fn guardia(game: &Path) -> Result<fs::File, Error> {
     file.try_lock().map_err(|_| Error::Ocupada)?;
     Ok(file)
 }
-fn recuperar(game: &Path) -> Result<(), Error> {
+pub(crate) fn recuperar(game: &Path) -> Result<(), Error> {
     let mods = game.join("mods");
     let backup = game.join(".icaro-mods-backup");
     if !mods.exists() && backup.exists() {
         regular(&backup, true)?;
         fs::rename(backup, mods).map_err(|_| Error::Disco)?;
     }
-    sincronizacion::recuperar_transacciones(game)
+    sincronizacion::recuperar_transacciones(game)?;
+    crate::compartir::aplicacion::recuperar_bajo_bloqueo(game)
+        .map_err(|e| Error::Archivo(e.to_string()))
 }
 fn registros(game: &Path) -> Result<Vec<Instalado>, Error> {
     let dir = game.join("mods");

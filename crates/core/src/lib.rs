@@ -4,6 +4,7 @@
 //! Núcleo de Ícaro: manifiestos de Mojang, descargas, instancias y lanzamiento.
 
 pub mod auth;
+pub mod compartir;
 pub mod cuenta;
 pub mod cuentas_locales;
 pub mod skin_local;
