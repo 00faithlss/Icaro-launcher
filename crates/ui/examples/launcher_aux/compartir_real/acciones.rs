@@ -11,6 +11,13 @@ use iced::Task;
 
 #[derive(Clone)]
 pub enum Accion {
+    Resuelta(
+        u64,
+        Result<super::invitado_tareas::Resuelta, super::invitado_tareas::ErrorEntrada>,
+    ),
+    Visitada(u64, Result<super::invitado_tareas::Visita, String>),
+    Confiada(u64, Result<(), String>),
+    Instalada(u64, super::invitado_instalacion::Resultado),
     Vista(v::Accion),
     Analizada(u64, Result<tareas::Trabajo, String>),
     Publicada(u64, Result<tareas::Publicada, String>),
@@ -172,6 +179,10 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
         return Task::none();
     }
     match a {
+        Accion::Instalada(id, r) => super::invitado::instalada(app, id, r),
+        Accion::Resuelta(id, r) => super::invitado::resuelta(&mut app.servicios.compartir, id, r),
+        Accion::Visitada(id, r) => super::invitado::visitada(&mut app.servicios.compartir, id, r),
+        Accion::Confiada(id, r) => super::invitado::confiada(&mut app.servicios.compartir, id, r),
         Accion::Analizada(id, r) => resultados::analizada(&mut app.servicios.compartir, id, r),
         Accion::Publicada(id, r) => {
             if resultados::publicada(&mut app.servicios.compartir, id, r) {
@@ -272,7 +283,17 @@ fn vista(app: &mut App, a: v::Accion) -> Task<Mensaje> {
     if let v::Accion::ElegirInstancia(id) = a {
         return analizar(app, id);
     }
-    if matches!(a, v::Accion::RevisarPublicacion | v::Accion::Reintentar) {
+    if matches!(a, v::Accion::RevisarPublicacion | v::Accion::Reintentar)
+        && !matches!(
+            app.servicios.compartir.etapa,
+            Etapa::Entrada
+                | Etapa::Identidad
+                | Etapa::Destino
+                | Etapa::RevisionInvitado
+                | Etapa::ResultadoInvitado
+                | Etapa::InstalandoInvitado
+        )
+    {
         if let Some(id) = app.servicios.compartir.seleccionada.clone() {
             return analizar(app, id);
         }
@@ -287,6 +308,10 @@ fn vista(app: &mut App, a: v::Accion) -> Task<Mensaje> {
         }
         return Task::none();
     }
+    if let Some(task) = super::invitado::accion(app, a.clone()) {
+        return task;
+    }
+    let s = &mut app.servicios.compartir;
     match a {
         v::Accion::AbrirCompartir => {
             if !s.modal() {
@@ -301,10 +326,6 @@ fn vista(app: &mut App, a: v::Accion) -> Task<Mensaje> {
                 crate::servidores_reales::Accion::Nuevo,
             )
         }
-        v::Accion::AceptarInvitacion => {
-            s.etapa = Etapa::Entrada;
-        }
-        v::Accion::Codigo(c) => s.codigo_entrada = c,
         v::Accion::Cerrar | v::Accion::Cancelar => {
             if s.etapa == Etapa::Propios {
                 s.etapa = Etapa::Revision;

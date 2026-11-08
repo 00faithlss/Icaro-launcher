@@ -180,8 +180,10 @@ El instalador y las releases son entregas separadas. El contrato y las decisione
 
 **Prioridad de desarrollo al 07-11-2026:** completar la integración de Compartir
 instancias en `v0.4.x`. El núcleo, las invitaciones y las vistas están implementados
-y probados localmente; hay un publicador experimental en Servidores bajo bandera.
-Faltan aceptación/instalación del invitado, Sincronizar/Jugar y cierre/bandeja.
+y probados localmente; hay publicador e invitado experimentales en Servidores bajo
+bandera. El invitado conecta huella, destino/revisión y aplicación, con perfil
+inyectado en su prueba. Faltan validación con Minecraft real, progreso/recuperación
+tras reinicio, Sincronizar/Jugar posterior y cierre/bandeja.
 Consulta el [progreso por etapas](docs/superpowers/progreso/2026-11-07-compartir-instancias.md)
 y la [guía técnica](docs/compartir-instancias.md). No está habilitado en el recorrido
 normal ni hay despliegue público. Los puntos siguientes son el resto del roadmap.

@@ -18,8 +18,14 @@ pub enum Etapa {
     Panel,
     Cierre,
     Entrada,
+    Identidad,
+    Destino,
+    RevisionInvitado,
+    InstalandoInvitado,
+    ResultadoInvitado,
 }
 pub struct Estado {
+    pub invitado: super::invitado::Invitado,
     pub habilitado: bool,
     pub etapa: Etapa,
     pub solicitud: u64,
@@ -42,6 +48,7 @@ pub struct Estado {
 impl Default for Estado {
     fn default() -> Self {
         Self {
+            invitado: Default::default(),
             habilitado: std::env::var("ICARO_COMPARTIR_DESARROLLO").as_deref() == Ok("1"),
             etapa: Etapa::Cerrada,
             solicitud: 0,
@@ -76,6 +83,7 @@ impl Estado {
         self.revision = None;
         self.error = None;
         self.permiso_propios = false;
+        self.invitado = Default::default();
         self.cerrar_al_terminar = false;
         self.etapa = Etapa::Analizando;
         self.solicitud
@@ -91,6 +99,7 @@ impl Estado {
         }
         self.solicitud = self.solicitud.wrapping_add(1);
         self.etapa = Etapa::Cerrada;
+        self.invitado = Default::default();
         self.trabajo = None;
         self.revision = None;
         self.error = None;

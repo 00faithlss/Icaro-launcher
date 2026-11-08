@@ -9,9 +9,12 @@ producción configurado. Hay un publicador experimental en Servidores bajo
 `ICARO_COMPARTIR_DESARROLLO=1`; el recorrido normal sigue deshabilitado y Jugar
 todavía no está conectado.
 
-El controlador inicial ya tiene tareas, consentimiento y privados persistentes.
-Faltan su validación con red desde UI, confianza persistente, instalación exacta,
-exclusión con una partida, resolución visual del orden de packs y cierre/bandeja.
+El controlador tiene tareas, consentimiento y privados persistentes, y un recorrido
+con Worker local. El invitado experimental conecta código, confianza persistente,
+destino nuevo, revisión y coordinador de instalación exacta. La prueba de este último
+inyecta el perfil de Minecraft, pero transfiere/aplica los archivos reales. Faltan
+validar el perfil descargado, progresos y recuperación tras reinicio, exclusión con
+una partida, resolución visual del orden de packs y cierre/bandeja.
 Las escenas del launcher usan fixtures: no acreditan esos recorridos. Consultar
 [guía técnica](compartir-instancias.md) y
 [progreso con evidencias](superpowers/progreso/2026-11-07-compartir-instancias.md).

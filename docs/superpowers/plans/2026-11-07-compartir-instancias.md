@@ -28,9 +28,9 @@ Las interfaces de las tareas 6 y 8 son el objetivo pendiente de integración.
 | 3 | Implementada y probada localmente; faltan disco lleno y resolución visual del orden de packs. |
 | 4 | Identidad/transporte implementados y probados con endpoints locales; sin validación entre redes. |
 | 5 | Servicio/cliente implementados; 17 pruebas D1 y recorrido Rust local; sin despliegue. |
-| 6 | Parcial: vínculo, destino nuevo y coordinadores; faltan instalación, exclusión de partida y eventos completos. |
+| 6 | Vínculo, destino nuevo y coordinadores conectados al invitado experimental; faltan validar perfil real, exclusión de partida y eventos completos. |
 | 7 | Quince vistas y capturas implementadas; acciones reales, foco/teclado y escala pendientes. |
-| 8 | Publicador experimental bajo bandera, con 15 pruebas normales y un recorrido explícito contra Worker local; invitado/Jugar y cierre/bandeja pendientes. |
+| 8 | Publicador e invitado experimentales bajo bandera; confianza persistente, destino/revisión e instalación conectados. Prueba Worker con perfil inyectado; Jugar y cierre/bandeja pendientes. |
 | 9 | Verificación local/documentación parciales; entrega, mediciones y validación externa pendientes. |
 
 ## Restricciones globales
@@ -156,8 +156,11 @@ cubren cancelación, errores de guardado, respuestas tardías, consentimiento, s
 de publicación/borrador, configuración inválida sin escrituras y aislamiento del modo
 demo. Una prueba explícita con Worker/D1 local cubre publicación y código del panel,
 pack externo, aceptación, ajustes y reapertura, usando futuros/reductores reales.
-Falta recorrer todas las acciones desde la ventana y completar invitado, Jugar y
-cierre/bandeja; no cerrar esta tarea todavía.
+Continuación tras `01a55ed`: el invitado ya conecta código, consulta autenticada,
+confianza persistente, nombre/revisión y coordinador de instalación/aplicación.
+La prueba inyecta el perfil; no acredita descargar Minecraft desde esta ruta.
+Falta recorrer todas las acciones desde la ventana, completar progreso y reintento
+tras reinicio, Jugar y cierre/bandeja; no cerrar esta tarea todavía.
 
 **Archivos:** crear `crates/ui/examples/launcher_aux/compartir_real.rs` y submódulos de estado/tareas/vistas; modificar `launcher.rs`, `launcher_aux/servicios.rs`, `servidores_reales.rs`, `sincronizacion_real.rs`, `juego_real.rs`, `pantallas.rs` y `pruebas_diseno.rs` según sus puntos de entrada existentes.
 

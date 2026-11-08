@@ -3,6 +3,7 @@
 pub mod accesos;
 pub mod anfitrion;
 pub mod aplicacion;
+pub mod confianza;
 pub mod descargas;
 pub mod firmas;
 pub mod identidad;

@@ -610,6 +610,17 @@ fn siguiente(app: &mut App) -> Task<Mensaje> {
         iced::stream::channel(32, async move |mut output| {
             let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, u64, u64)>(32);
             let operation = async {
+                let compartida_store = store.clone();
+                let compartida_instancia = solicitud.instancia.clone();
+                tokio::task::spawn_blocking(move || {
+                    icaro_core::compartir::vinculos::comprobar_lista(
+                        &compartida_store,
+                        &compartida_instancia,
+                    )
+                    .map_err(|e| e.to_string())
+                })
+                .await
+                .map_err(|_| "No se pudo comprobar la instancia compartida.".to_string())??;
                 icaro_core::modpacks::instalar(&store, &solicitud.instancia, cancel.clone(), |p| {
                     let _ = tx.try_send((p.etapa.to_string(), p.completados, p.total));
                 })

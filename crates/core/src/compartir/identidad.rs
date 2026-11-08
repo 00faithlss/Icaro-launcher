@@ -59,33 +59,53 @@ impl Identidad {
             .collect()
     }
     pub fn verificar(publica: &str, mensaje: &[u8], firma: &str) -> Result<(), Error> {
-        let clave = iroh::PublicKey::from_bytes(&decodificar_hex::<32>(publica)?)
-            .map_err(|_| Error::Datos("clave pública"))?;
+        let clave = publica_validada(publica)?;
         let firma = iroh::Signature::from_bytes(&decodificar_hex::<64>(firma)?);
         clave
             .verify(mensaje, &firma)
             .map_err(|_| Error::Datos("firma o identidad incorrecta"))
     }
     pub fn huella(&self) -> String {
-        let hash = Sha256::digest(self.clave.public().as_bytes());
-        hash[..12]
-            .chunks(2)
-            .map(|parte| parte.iter().map(|b| format!("{b:02X}")).collect::<String>())
-            .collect::<Vec<_>>()
-            .join(" ")
+        huella_de(self.clave.public().as_bytes())
     }
     pub fn sello(&self) -> [[bool; 8]; 8] {
-        let hash = Sha256::digest(self.clave.public().as_bytes());
-        let mut sello = [[false; 8]; 8];
-        for (y, fila) in sello.iter_mut().enumerate() {
-            for x in 0..4 {
-                let valor = (hash[y] & (1 << x)) != 0;
-                fila[x] = valor;
-                fila[7 - x] = valor;
-            }
-        }
-        sello
+        sello_de(self.clave.public().as_bytes())
     }
+}
+
+/// Clave pública Ed25519 completa: 64 caracteres hexadecimales en minúscula que
+/// además deben ser un punto válido de la curva.
+pub(crate) fn publica_validada(publica: &str) -> Result<iroh::PublicKey, Error> {
+    iroh::PublicKey::from_bytes(&decodificar_hex::<32>(publica)?)
+        .map_err(|_| Error::Datos("clave pública"))
+}
+/// Huella de otra identidad, con el mismo algoritmo que [`Identidad::huella`].
+pub fn huella_publica(publica: &str) -> Result<String, Error> {
+    Ok(huella_de(publica_validada(publica)?.as_bytes()))
+}
+/// Sello de otra identidad, con el mismo algoritmo que [`Identidad::sello`].
+pub fn sello_publico(publica: &str) -> Result<[[bool; 8]; 8], Error> {
+    Ok(sello_de(publica_validada(publica)?.as_bytes()))
+}
+fn huella_de(publica: &[u8]) -> String {
+    let hash = Sha256::digest(publica);
+    hash[..12]
+        .chunks(2)
+        .map(|parte| parte.iter().map(|b| format!("{b:02X}")).collect::<String>())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+fn sello_de(publica: &[u8]) -> [[bool; 8]; 8] {
+    let hash = Sha256::digest(publica);
+    let mut sello = [[false; 8]; 8];
+    for (y, fila) in sello.iter_mut().enumerate() {
+        for x in 0..4 {
+            let valor = (hash[y] & (1 << x)) != 0;
+            fila[x] = valor;
+            fila[7 - x] = valor;
+        }
+    }
+    sello
 }
 pub(crate) fn decodificar_hex<const N: usize>(valor: &str) -> Result<[u8; N], Error> {
     if !hexadecimal(valor, N * 2) {

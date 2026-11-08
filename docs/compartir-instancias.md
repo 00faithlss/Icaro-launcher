@@ -45,9 +45,36 @@ publicador; no automatiza clics ni el recorrido completo de `App`.
 
 Es un bloque experimental, no una función entregada: falta recorrer todas sus
 operaciones desde la ventana, actualizar automáticamente contadores
-y disponibilidad, y completar el recorrido del invitado/Jugar/cierre del launcher.
-El botón de aceptar indica esa limitación. Se admite un anfitrión activo en este
+y disponibilidad, y completar Sincronizar/Jugar/cierre del launcher.
+Se admite un anfitrión activo en este
 controlador; el panel no es todavía una biblioteca persistente de publicaciones.
+
+## Invitado experimental
+
+La entrada valida el código contra el servicio sin reservar cupo. Pulsar Continuar
+registra la aceptación y consulta únicamente el manifiesto firmado, sin descargar
+mods ni crear destinos. Esto puede consumir un cupo aunque después se cancele la
+pantalla de huella; reconectar con la misma identidad no consume otro.
+
+La pantalla original muestra huella y sello de la clave completa. La confianza se
+guarda atómicamente en `compartir/confianza.json`, acotada a 1000 publicaciones y
+256 KiB, con bloqueo entre procesos. Un archivo corrupto es un error; otra clave
+requiere confirmación explícita. No se guardan claves privadas en ese archivo.
+
+Después se elige el nombre y se revisan los archivos. Solo Sincronizar crea el
+destino nuevo, instala el perfil exacto con el servicio existente y descarga/aplica
+la revisión verificada. Las instancias vinculadas no reciben Fabric API sugerida.
+Si el perfil o los metadatos fallan, se retiene el ID para reintentar desde el panel;
+cerrar/reiniciar y recuperar ese intento desde una biblioteca todavía está pendiente.
+Una publicación cambiada exige revisar otra vez. Cambiar de origen o perfil propone
+otro destino y conserva el anterior. No se adopta una instancia personal existente.
+
+El lanzamiento normal rechaza un vínculo sin base aplicada coherente, fuera del hilo
+de la interfaz. Esto no completa la consulta remota previa a cada Jugar ni la exclusión
+entre partida y sincronización. El avance detallado por fase también sigue pendiente.
+La prueba de este coordinador inyecta la instalación del perfil: los archivos,
+transporte, hashes, packs y transacción son reales; no acredita descargar Minecraft
+ni jugar desde esta ruta nueva.
 
 ## Recorrido comprobado localmente
 
@@ -128,8 +155,9 @@ Estas escenas no realizan solicitudes ni crean identidades en el almacén seguro
 ## Pendiente antes de habilitarlo
 
 - Completar y validar el controlador experimental; añadir aceptación, confianza
-  persistente y biblioteca de publicaciones. Las tareas, la revisión del anfitrión,
-  el consentimiento y la persistencia de privados ya tienen implementación inicial.
+  e instalación en pruebas nativas reales y biblioteca de publicaciones. La aceptación,
+  confianza persistente, destino/revisión y coordinador de instalación ya están conectados
+  bajo bandera; falta validar perfil descargado, reintento tras reinicio y progreso.
 - Conectar la comprobación al pulsar Jugar, instalación exacta y bloqueo durante
   la partida; gestión de cierre, bandeja restaurable y detención con transferencias.
 - Exponer conflictos de orden de packs como una decisión revisable en la interfaz.

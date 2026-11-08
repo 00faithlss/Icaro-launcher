@@ -77,7 +77,7 @@ pub fn entrada_invitacion<'a>(p: Paleta, m: &EntradaInvitacion) -> Element<'a, A
         EstadoEntrada::Vacio=>("12 caracteres, como 7QKM-4XPT-R2C9.".into(),p.text_muted),
         EstadoEntrada::Validando=>("Comprobando con el anfitrión…".into(),p.text_muted),
         EstadoEntrada::Invalido=>("Este código no existe. Revisa que esté completo: son 12 caracteres, como 7QKM-4XPT-R2C9.".into(),p.error),
-        EstadoEntrada::Vencido{fecha,anfitrion}=>(format!("Esta invitación venció el {fecha}. Pide a {anfitrion} que genere otra."),p.error),
+        EstadoEntrada::Vencido{fecha,anfitrion}=>(if fecha.is_empty() {format!("Esta invitación ya no está vigente. Pide a {anfitrion} que genere otra.")} else {format!("Esta invitación venció el {fecha}. Pide a {anfitrion} que genere otra.")},p.error),
         EstadoEntrada::Completo{anfitrion}=>(format!("Esta invitación ya no admite a más personas: se completó su cupo. Pide a {anfitrion} que genere otra."),p.error),
         EstadoEntrada::Valido{anfitrion,disponibles}=>(format!("Invitación vigente de {anfitrion} · quedan {disponibles} cupos."),p.success),
         EstadoEntrada::Inaccesible(motivo)=>(motivo.clone(),p.warning),

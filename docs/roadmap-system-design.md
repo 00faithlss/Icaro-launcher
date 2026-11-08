@@ -26,7 +26,7 @@ Referencias añadidas: `icaro-compartir-instancia.zip` y
 
 | Área | Estado | Validación y trabajo restante |
 | --- | --- | --- |
-| Quince componentes de compartir/publicación/invitación/revisión | Visual implementado; publicador experimental | Vistas puras y controlador de publicación en Servidores bajo bandera, con capturas y pruebas. Aceptación/Jugar, cierre/bandeja y validación UI con red pendientes. |
+| Quince componentes de compartir/publicación/invitación/revisión | Visual implementado; publicador e invitado experimentales | Controladores bajo bandera y pruebas con Worker local. Invitado conecta código, huella, destino/revisión y aplicación; perfil inyectado en la prueba. Jugar, cierre/bandeja y validación nativa completa pendientes. |
 | Publicación, privados, posponer y consentimiento | Núcleo y controlador experimental | Guardado mediante tareas, permiso explícito y respuestas tardías probados. Falta validar el recorrido real de red desde la interfaz. |
 | Centrado y medidas uniformes | Aplicado a los componentes nuevos y botones comunes | Icono/texto centrados, padding simétrico, celdas iguales y pie visible. Comprobado en Tinta/Piedra y ventana pequeña; regla en `AGENTS.md`. |
 | Cierre y segundo plano | Vista y primitivas de transporte | Drenaje disponible en núcleo; faltan coordinación del cierre y bandeja restaurable. |

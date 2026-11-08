@@ -21,9 +21,9 @@ Referencias: [acuerdos](../specs/2026-11-07-sincronizacion-entre-launchers-desig
 | 3. Comparación y aplicación | Comparación de tres vías y transacción conjunta de archivos, packs, options y base. Respaldos, recuperación y cambios archivo/carpeta probados. | Resolver el conflicto de orden de packs desde la interfaz y ampliar inyección de fallos, incluido disco lleno. |
 | 4. Identidad y transporte | Firma Ed25519, keyring sin fallback plano, endpoint iroh fijado a la clave completa, ACL persistente, streaming, reanudación y revocación. | Probar directo/relé entre equipos y redes reales; completar la coordinación con el ciclo de vida del launcher. |
 | 5. Invitaciones | Worker/D1 y cliente Rust; caducidad, cupo, aceptación idempotente, revocaciones, renovación y reapertura comprobados localmente. | Configurar y desplegar con cuenta/autorización; validar costes y retención en el entorno real. |
-| 6. Coordinación | Origen estable, instancia nueva con loader fijado, autorización del anfitrión y preparación remota sin aplicación automática. | Instalación del perfil, confianza persistente, exclusión entre partida/aplicación, reintentos y eventos de progreso del recorrido completo. |
+| 6. Coordinación | Invitado experimental con origen estable, confianza persistente, destino nuevo, perfil exacto, revisión y aplicación explícita. | Validar perfil real, reintento tras reinicio, exclusión partida/aplicación y eventos de progreso completos. |
 | 7. Componentes iced | Quince vistas con acciones tipadas, recursos originales y escenas de captura. Centrado, padding simétrico y celdas uniformes corregidos. | Conectar modelos a datos reales, recorrer todas las acciones y completar foco/teclado/escala. Las capturas usan fixtures. |
-| 8. Launcher y segundo plano | Controlador experimental del publicador registrado en Servidores, deshabilitado por defecto; publicación/código y futuros de edición/reapertura probados con D1 local. | Aceptación/instalación del invitado, Sincronizar/Jugar, biblioteca persistente de publicaciones, cierre/bandeja y recorrido completo de ventana. |
+| 8. Launcher y segundo plano | Publicador e invitado experimentales, deshabilitados por defecto; código/huella/destino/revisión conectados y coordinador probado con D1, iroh y perfil inyectado. | Sincronizar/Jugar posterior, biblioteca y recuperación tras reinicio, progreso detallado, cierre/bandeja y validación nativa del perfil. |
 | 9. Entrega y documentación | Pruebas locales, capturas, compilación del workspace y documentación de estado. | Mediciones, revisión final del recorrido completo y validaciones nativas/entre equipos. No es una entrega terminada. |
 
 ## Evidencia anterior a la limpieza
@@ -108,6 +108,36 @@ expresa del usuario, sin versión nueva ni despliegue.
 
 ## Qué sigue, en orden
 
+### Continuación posterior al commit `01a55ed`
+
+El bloque del publicador se subió a `origin/v0.4.x` en `01a55ed`, con autorización
+expresa. El trabajo posterior del invitado se registra y sube también a `v0.4.x`
+por la autorización posterior del usuario, sin integración en canales ni release.
+Claude Code implementó confianza/huellas bajo alcance limitado; se revisó y añadió
+bloqueo de archivo entre procesos. El controlador y coordinador del invitado están
+separados en módulos de tareas, transiciones, instalación, vistas y escenas.
+
+Validación posterior: **342 pruebas del núcleo**, **164 UI** (70 biblioteca y 94
+launcher), sin fallos; 27 ignoradas en núcleo y 4 en UI. El recorrido explícito con
+Worker/D1 e iroh pasó con perfil inyectado: resolver sin destino, confirmar confianza,
+rechazar instalación sin confianza, conservar destino tras fallo del perfil,
+reintentar sin duplicarlo y aplicar mods/pack dejando intacto un mundo personal.
+También comprueba que el lanzamiento de un vínculo sin base aplicada se rechaza.
+
+La revisión independiente detectó navegación Atrás, revisión nueva sin salida y
+pérdida del ID/perfil del destino al fallar o pegar otro código. Se corrigieron y
+añadieron regresiones; Atrás, conservación de ID, falta de confianza y bloqueo de
+otro proceso tuvieron fallo observado antes del arreglo. La revisión final no
+encontró Critical/Important pendientes. No acredita instalar un perfil real desde
+esta ruta, jugar, dos equipos o relés. Las capturas siguen usando fixtures.
+
+Compilación del launcher sin avisos y cuatro capturas nuevas pasadas: huella Tinta
+1280×800, huella Piedra 940×720, destino Tinta 940×720 y revisión Piedra 1280×800.
+Se revisaron centrado, alturas de controles, desplazamiento interno y pie visible.
+Escenas `compartir-controlador-invitado-*`; PNG y logs en la carpeta temporal de
+evidencias. El mayor módulo del controlador tiene 469 líneas. Formato de los módulos
+nuevos y `git diff --check` pasan. No se recompiló ni consultó CI remoto para una release.
+
 Antes de registrar cada commit se aislaron los cambios restantes mediante un
 resguardo temporal. La validación del índice pasó: 328 pruebas del núcleo, 17 del
 Worker, 158 de UI, compilación del launcher y `cargo build --locked -j 2 --workspace`.
@@ -118,9 +148,9 @@ validaciones externas enumeradas abajo continúan pendientes.
 1. Completar el recorrido del publicador desde la ventana, diagnóstico,
    actualización de estados/contadores y biblioteca de
    publicaciones. Sus módulos, tareas, consentimiento y guardado de privados ya existen.
-2. Conectar invitación, confianza del anfitrión y destino nuevo; instalar las
-   versiones exactas sin añadir mods ajenos al manifiesto. Conservar un destino
-   incompleto recuperable si falla la instalación.
+2. Validar la instalación exacta conectada al invitado con el perfil real, eventos
+   de progreso y recuperación del destino incompleto tras cerrar/reiniciar. El
+   reintento desde el panel ya conserva ID, archivos y vínculo.
 3. Conectar Sincronizar y la comprobación previa a Jugar. Revisar y confirmar antes
    de descargar/aplicar; resolver conflictos y bloquear la carrera con una partida.
 4. Integrar accesos, reconexión, minimizar y cierre. La bandeja debe poder restaurar

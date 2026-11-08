@@ -88,18 +88,23 @@ pub fn vista(app: &App) -> Option<Element<'_, Mensaje>> {
             p,
             &v::EntradaInvitacion {
                 codigo: s.codigo_entrada.clone(),
-                estado: v::EstadoEntrada::Inaccesible(
-                    "La aceptación todavía no está habilitada en esta versión de desarrollo."
-                        .into(),
-                ),
+                estado: s.invitado.entrada.clone(),
             },
         ),
+        Etapa::Identidad => super::invitado_vistas::identidad(p, s)?,
+        Etapa::Destino => super::invitado_vistas::destino(p, s)?,
+        Etapa::RevisionInvitado => super::invitado_vistas::revision(p, s)?,
+        Etapa::InstalandoInvitado | Etapa::ResultadoInvitado => {
+            super::invitado_vistas::progreso(p, s)?
+        }
     };
     let ancho: f32 = match s.etapa {
         Etapa::Selector | Etapa::Analizando => 900.,
         Etapa::Propios => 720.,
         Etapa::Cierre => 640.,
         Etapa::Entrada => 820.,
+        Etapa::Identidad => 680.,
+        Etapa::Destino => 720.,
         _ => 960.,
     };
     Some(

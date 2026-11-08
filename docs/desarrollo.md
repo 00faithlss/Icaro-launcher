@@ -32,13 +32,18 @@ capturas se conservaron en `%TEMP%/icaro-compartir-desarrollo-20261107/`.
 
 El publicador experimental se activa únicamente con `ICARO_COMPARTIR_DESARROLLO=1`;
 su configuración y alcance están en la guía técnica. No habilitarlo como función
-normal hasta completar invitado, Jugar y cierre/bandeja.
+normal hasta validar el instalador del invitado con perfil real, Jugar y cierre/bandeja.
+El invitado ya tiene controlador experimental de código, huella, destino, revisión y
+aplicación; la prueba de integración inyecta el perfil de Minecraft.
 
 El [registro de progreso](superpowers/progreso/2026-11-07-compartir-instancias.md)
 indica evidencia y pendientes. La [guía técnica](compartir-instancias.md) contiene
-los seis binarios de pruebas de compartir, la interoperabilidad con Worker local y las escenas
+los binarios de pruebas de compartir, la interoperabilidad con Worker local y las escenas
 `compartir-*`; el [README del servicio](../services/invitaciones/README.md) explica
 D1/Miniflare/Wrangler. No levantar producción para las pruebas locales.
+Las escenas `compartir-controlador-invitado-identidad`,
+`compartir-controlador-invitado-destino` y `compartir-controlador-invitado-revision`
+recorren los modelos reales con claves solo en memoria y acciones de demo.
 
 Para capturar, compilar el ejemplo launcher y establecer `ICARO_DEMO=1`,
 `ICARO_VISTA_DISENO=compartir-publicacion`, `ICARO_TEMA_DISENO=tinta` o `piedra`

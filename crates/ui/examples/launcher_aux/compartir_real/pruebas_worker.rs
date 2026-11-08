@@ -20,6 +20,8 @@ use std::{
     path::PathBuf,
     sync::Mutex,
 };
+#[path = "pruebas_invitado_worker.rs"]
+mod invitado;
 
 /// Clave solo en memoria: nunca toca el keyring del equipo.
 struct Memoria(Mutex<Option<Zeroizing<Vec<u8>>>>);
@@ -307,6 +309,7 @@ async fn publicador_real_publica_seleccion_y_el_invitado_resuelve_el_codigo() {
             .manifiesto,
         revision.manifiesto
     );
+    invitado::comprobar(&url, &codigo_nuevo, &carpeta.0).await;
     nuevo.detener().await.unwrap();
     drop(nuevo);
     drop(s);

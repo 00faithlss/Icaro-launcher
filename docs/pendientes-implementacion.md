@@ -9,8 +9,8 @@ locales. **El recorrido normal de Servidores/Jugar todavía no los conecta.**
 La sincronización HTTP del servidor dedicado es un recorrido distinto que se conserva.
 Ver [progreso y evidencias](superpowers/progreso/2026-11-07-compartir-instancias.md).
 
-- [ ] Validar/completar el publicador experimental ya conectado bajo `ICARO_COMPARTIR_DESARROLLO=1`: publicación, privados, consentimiento y operaciones de red desde UI. Sus 14 pruebas de controlador no completan el recorrido real.
-- [ ] Conectar confianza, invitación y destino nuevo con instalación exacta; recuperar instalaciones incompletas sin presentar éxito.
+- [ ] Validar/completar el publicador experimental bajo `ICARO_COMPARTIR_DESARROLLO=1`: ya hay recorrido del controlador con Worker/D1 local; faltan acciones completas desde ventana, contadores y biblioteca.
+- [ ] Validar el invitado experimental ya conectado: confianza persistente, destino nuevo, revisión e instalación exacta. La prueba del coordinador inyecta el perfil; faltan descarga real de Minecraft, avance por fase y recuperar intentos tras reinicio. El panel conserva el ID al fallar y bloquea Jugar si no se aplicó la base.
 - [ ] Conectar Sincronizar/Jugar, resolución de archivos y orden de packs, y exclusión real frente a una partida.
 - [ ] Integrar accesos, reconexión, cierre y bandeja restaurable con drenaje de transferencias.
 - [ ] Completar precomprobación de espacio, limpieza de staging/contenido y caché/concurrencia; medir los recorridos nuevos.

@@ -1013,3 +1013,11 @@
         let mut zip = zip::ZipArchive::new(File::open(client).unwrap()).unwrap();
         assert!(zip.by_name("net/minecraft/client/main/Main.class").is_ok());
     }
+
+    #[test]
+    fn instancia_vinculada_no_anade_fabric_api_fuera_de_la_revision() {
+        assert!(super::sugerir_fabric_api("fabric", false, false, false));
+        assert!(!super::sugerir_fabric_api("fabric", false, false, true));
+        assert!(!super::sugerir_fabric_api("fabric", true, false, false));
+        assert!(!super::sugerir_fabric_api("fabric", false, true, false));
+    }

@@ -128,11 +128,40 @@ pub fn crear_destino(
     let instancia = store
         .crear_con_loader(nombre, &p.minecraft, &p.loader, 0)
         .map_err(|_| Error::Datos("no se pudo crear una instancia nueva con ese nombre"))?;
-    if let Some(version) = &p.loader_version {
-        crate::versiones_instancia::guardar_loader(store, &instancia, version)
-            .map_err(|_| Error::Disco)?;
+    preparar_destino(store, &instancia, manifiesto, limites)?;
+    Ok(instancia)
+}
+
+/// Completa metadatos del destino nuevo retenido por el llamante tras un fallo.
+/// Nunca adopta un juego con contenido personal y sin vínculo.
+pub fn preparar_destino(
+    store: &Almacen,
+    instancia: &Instancia,
+    manifiesto: &Manifiesto,
+    limites: &Limites,
+) -> Result<(), Error> {
+    manifiesto.validar(limites)?;
+    let p = &manifiesto.perfil;
+    if instancia.minecraft != p.minecraft || instancia.loader != p.loader {
+        return Err(Error::Datos("perfil distinto del destino"));
     }
     let juego = store.juego(&instancia.id).map_err(|_| Error::Disco)?;
+    match leer(&juego)? {
+        Some(v) if v.origen != manifiesto.origen || v.perfil != *p => {
+            return Err(Error::Datos("destino de otra publicación"))
+        }
+        Some(_) => (),
+        None if fs::read_dir(&juego)
+            .map_err(|_| Error::Disco)?
+            .next()
+            .is_some() =>
+        {
+            return Err(Error::Datos(
+                "el destino sin vínculo contiene archivos personales",
+            ))
+        }
+        None => (),
+    }
     guardar(
         &juego.join(VINCULO),
         &Vinculo {
@@ -140,5 +169,29 @@ pub fn crear_destino(
             perfil: p.clone(),
         },
     )?;
-    Ok(instancia)
+    if let Some(version) = &p.loader_version {
+        crate::versiones_instancia::guardar_loader(store, instancia, version)
+            .map_err(|_| Error::Disco)?;
+    }
+    Ok(())
+}
+
+/// Impide lanzar un destino compartido cuyo contenido aún no se aplicó.
+/// No sustituye la consulta de nuevas revisiones antes de Jugar.
+pub fn comprobar_lista(store: &Almacen, instancia: &Instancia) -> Result<(), Error> {
+    let juego = store.juego(&instancia.id).map_err(|_| Error::Disco)?;
+    if let Some(vinculo) = leer(&juego)? {
+        let base = super::aplicacion::cargar_base(&super::aplicacion::ContextoDestino {
+            juego,
+            limites: Limites::default(),
+        })?;
+        if base
+            .manifiesto
+            .as_ref()
+            .is_none_or(|m| m.origen != vinculo.origen || m.perfil != vinculo.perfil)
+        {
+            return Err(Error::Datos("instancia compartida incompleta; termina la instalación desde la invitación antes de jugar"));
+        }
+    }
+    Ok(())
 }

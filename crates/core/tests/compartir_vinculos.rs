@@ -53,6 +53,8 @@ fn invitacion_crea_destino_nuevo_fija_loader_y_no_marca_revision_aplicada() {
         Some("0.16.8")
     );
     let juego = store.juego(&nueva.id).unwrap();
+    assert!(vinculos::comprobar_lista(&store, &nueva).is_err());
+    assert!(vinculos::comprobar_lista(&store, &existente).is_ok());
     let vinculo = vinculos::leer(&juego).unwrap().unwrap();
     assert_eq!(vinculo.origen, manifiesto.origen);
     assert_eq!(vinculo.perfil, manifiesto.perfil);
@@ -61,4 +63,42 @@ fn invitacion_crea_destino_nuevo_fija_loader_y_no_marca_revision_aplicada() {
     assert!(vinculos::leer(&store.juego(&existente.id).unwrap())
         .unwrap()
         .is_none());
+}
+
+#[test]
+fn destino_incompleto_conserva_identidad_y_no_adopta_archivos_personales() {
+    let root = Carpeta::nueva();
+    let store = Almacen::nuevo(root.0.join("instances"));
+    let (origen, perfil) = comun::origen_y_perfil();
+    let m = Manifiesto {
+        esquema: "icaro-compartir/1".into(),
+        origen,
+        perfil,
+        revision: 1,
+        archivos: vec![],
+        packs: vec![],
+    };
+    let i = store
+        .crear_con_loader("Incompleta", &m.perfil.minecraft, &m.perfil.loader, 0)
+        .unwrap();
+    let juego = store.juego(&i.id).unwrap();
+    let bloqueo = juego.join(".icaro-compartir-vinculo.json");
+    fs::create_dir(&bloqueo).unwrap();
+    assert!(vinculos::preparar_destino(&store, &i, &m, &Limites::default()).is_err());
+    assert_eq!(store.cargar().unwrap().instancias[0].id, i.id);
+    fs::remove_dir(bloqueo).unwrap();
+    vinculos::preparar_destino(&store, &i, &m, &Limites::default()).unwrap();
+    assert_eq!(vinculos::leer(&juego).unwrap().unwrap().origen, m.origen);
+    assert_eq!(store.cargar().unwrap().instancias.len(), 1);
+    let personal = store
+        .crear_con_loader("Personal", &m.perfil.minecraft, &m.perfil.loader, 0)
+        .unwrap();
+    let juego = store.juego(&personal.id).unwrap();
+    fs::write(juego.join("archivo-personal"), b"conservar").unwrap();
+    assert!(vinculos::preparar_destino(&store, &personal, &m, &Limites::default()).is_err());
+    assert_eq!(
+        fs::read(juego.join("archivo-personal")).unwrap(),
+        b"conservar"
+    );
+    assert!(vinculos::leer(&juego).unwrap().is_none());
 }
