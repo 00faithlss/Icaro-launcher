@@ -11,12 +11,16 @@ use iced::Task;
 
 #[derive(Clone)]
 pub enum Accion {
+    Avance(u64, super::avance::Avance),
     Resuelta(
         u64,
         Result<super::invitado_tareas::Resuelta, super::invitado_tareas::ErrorEntrada>,
     ),
     Visitada(u64, Result<super::invitado_tareas::Visita, String>),
-    Confiada(u64, Result<(), String>),
+    Confiada(
+        u64,
+        Result<Option<icaro_core::instancias::Instancia>, String>,
+    ),
     Instalada(u64, super::invitado_instalacion::Resultado),
     Vista(v::Accion),
     Analizada(u64, Result<tareas::Trabajo, String>),
@@ -179,6 +183,9 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
         return Task::none();
     }
     match a {
+        Accion::Avance(id, avance) => {
+            super::avance::recibido(&mut app.servicios.compartir, id, avance)
+        }
         Accion::Instalada(id, r) => super::invitado::instalada(app, id, r),
         Accion::Resuelta(id, r) => super::invitado::resuelta(&mut app.servicios.compartir, id, r),
         Accion::Visitada(id, r) => super::invitado::visitada(&mut app.servicios.compartir, id, r),

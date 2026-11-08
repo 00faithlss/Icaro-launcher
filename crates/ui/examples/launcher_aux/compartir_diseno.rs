@@ -99,7 +99,7 @@ pub fn vista<'a>(app: &'a App, escena: &str) -> Option<Element<'a, Mensaje>> {
         "compartir-cierre" => cierre_transferencias(p,&CierreTransferencias {cerrar_icaro:true,instancia:"Supervivencia".into(),transferencias:vec![Transferencia {nombre:"texturas.zip".into(),fase:"Descargando".into(),porcentaje:64.}],accesos:2,opcion:OpcionCierre::Esperar}),
         "compartir-error" => error_compartir(p,&ErrorCompartir {tipo:TipoError::ArchivoCambiado,titulo:"El contenido cambió durante la revisión".into(),explicacion:"Un archivo se modificó después de comprobarlo. Revisa de nuevo antes de publicar.".into(),conservacion:"Tu revisión publicada y tus archivos personales se conservan.".into(),detalle:Some("config/mod.toml".into())}),
         "compartir-propios" => confirmar_propios(p,&ConfirmarPropios {instancia:"Supervivencia".into(),revision:3,archivos:vec![archivo("texturas.zip","resourcepacks"),archivo("inicio.js","kubejs")],autorizado:false}),
-        "compartir-destino" => destino_nuevo(p,&DestinoNuevo {nombre:"Supervivencia compartida".into(),error_nombre:None,anfitrion:"Anfitrión conocido".into(),instancia:instancia(),revision:3,mods:"24 mods".into(),carpetas:"config · kubejs · resourcepacks".into(),descarga:"48,2 MB".into()}),
+        "compartir-destino" => destino_nuevo(p,&DestinoNuevo {recuperando:false,nombre:"Supervivencia compartida".into(),error_nombre:None,anfitrion:"Anfitrión conocido".into(),instancia:instancia(),revision:3,mods:"24 mods".into(),carpetas:"config · kubejs · resourcepacks".into(),descarga:"48,2 MB".into()}),
         _ => entrada_invitacion(p,&EntradaInvitacion {codigo:"7QKM-4XPT-R2C9".into(),estado:EstadoEntrada::Valido {anfitrion:"Supervivencia".into(),disponibles:8}}),
     };
     Some(

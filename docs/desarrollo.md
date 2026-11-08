@@ -35,6 +35,9 @@ su configuración y alcance están en la guía técnica. No habilitarlo como fun
 normal hasta validar el instalador del invitado con perfil real, Jugar y cierre/bandeja.
 El invitado ya tiene controlador experimental de código, huella, destino, revisión y
 aplicación; la prueba de integración inyecta el perfil de Minecraft.
+El intento incompleto persiste en la instancia y se recupera al reintroducir la
+invitación tras reiniciar. Los contadores de progreso representan la etapa actual;
+las descargas avanzan por archivo verificado, sin estimar un total global.
 
 El [registro de progreso](superpowers/progreso/2026-11-07-compartir-instancias.md)
 indica evidencia y pendientes. La [guía técnica](compartir-instancias.md) contiene
@@ -44,6 +47,8 @@ D1/Miniflare/Wrangler. No levantar producción para las pruebas locales.
 Las escenas `compartir-controlador-invitado-identidad`,
 `compartir-controlador-invitado-destino` y `compartir-controlador-invitado-revision`
 recorren los modelos reales con claves solo en memoria y acciones de demo.
+`compartir-controlador-invitado-recuperacion` y
+`compartir-controlador-invitado-progreso` añaden los estados de este bloque.
 
 Para capturar, compilar el ejemplo launcher y establecer `ICARO_DEMO=1`,
 `ICARO_VISTA_DISENO=compartir-publicacion`, `ICARO_TEMA_DISENO=tinta` o `piedra`

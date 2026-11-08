@@ -10,7 +10,7 @@ La sincronización HTTP del servidor dedicado es un recorrido distinto que se co
 Ver [progreso y evidencias](superpowers/progreso/2026-11-07-compartir-instancias.md).
 
 - [ ] Validar/completar el publicador experimental bajo `ICARO_COMPARTIR_DESARROLLO=1`: ya hay recorrido del controlador con Worker/D1 local; faltan acciones completas desde ventana, contadores y biblioteca.
-- [ ] Validar el invitado experimental ya conectado: confianza persistente, destino nuevo, revisión e instalación exacta. La prueba del coordinador inyecta el perfil; faltan descarga real de Minecraft, avance por fase y recuperar intentos tras reinicio. El panel conserva el ID al fallar y bloquea Jugar si no se aplicó la base.
+- [ ] Validar el invitado experimental con descarga real de Minecraft y ampliar cortes/disco lleno. Ya conecta confianza, destino/revisión, progreso por etapa y recuperación tras reinicio al reintroducir la invitación. La prueba del coordinador todavía inyecta el perfil; bloquea Jugar si no se aplicó la base.
 - [ ] Conectar Sincronizar/Jugar, resolución de archivos y orden de packs, y exclusión real frente a una partida.
 - [ ] Integrar accesos, reconexión, cierre y bandeja restaurable con drenaje de transferencias.
 - [ ] Completar precomprobación de espacio, limpieza de staging/contenido y caché/concurrencia; medir los recorridos nuevos.

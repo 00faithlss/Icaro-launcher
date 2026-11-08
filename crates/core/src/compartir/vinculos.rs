@@ -151,16 +151,23 @@ pub fn preparar_destino(
             return Err(Error::Datos("destino de otra publicación"))
         }
         Some(_) => (),
-        None if fs::read_dir(&juego)
-            .map_err(|_| Error::Disco)?
-            .next()
-            .is_some() =>
-        {
-            return Err(Error::Datos(
-                "el destino sin vínculo contiene archivos personales",
-            ))
+        None => {
+            let registrado = super::intentos::registrado_para(store, instancia, manifiesto)?;
+            for entrada in fs::read_dir(&juego).map_err(|_| Error::Disco)? {
+                let entrada = entrada.map_err(|_| Error::Disco)?;
+                let nombre = entrada.file_name();
+                if !registrado
+                    || !super::intentos::archivo_de_preparacion(&nombre)
+                    || !crate::almacenamiento::regular(&entrada.path())
+                        .map_err(|_| Error::Disco)?
+                        .is_file()
+                {
+                    return Err(Error::Datos(
+                        "el destino sin vínculo contiene archivos personales",
+                    ));
+                }
+            }
         }
-        None => (),
     }
     guardar(
         &juego.join(VINCULO),

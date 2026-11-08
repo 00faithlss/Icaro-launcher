@@ -81,8 +81,18 @@ pub fn preparar(app: &mut crate::App, escena: &str) {
         confianza: c::confianza::EstadoConfianza::PrimeraVez,
     });
     s.invitado.nombre = "Supervivencia compartida".into();
-    s.etapa = if escena.contains("destino") {
+    s.invitado.recuperando = escena.contains("recuperacion");
+    s.etapa = if escena.contains("destino") || escena.contains("recuperacion") {
         Etapa::Destino
+    } else if escena.contains("progreso") {
+        s.invitado.avance = super::avance::Avance::nuevo(
+            icaro_ui::compartir::Fase::Descarga,
+            2,
+            5,
+            "resourcepacks/texturas.zip",
+            "Archivos descargados y verificados",
+        );
+        Etapa::InstalandoInvitado
     } else if escena.contains("revision") {
         Etapa::RevisionInvitado
     } else {

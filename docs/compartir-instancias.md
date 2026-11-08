@@ -1,10 +1,10 @@
 # Compartir instancias: implementación en desarrollo
 
-Actualizado el **07-11-2026**. El [registro de progreso](superpowers/progreso/2026-11-07-compartir-instancias.md)
+Actualizado el **08-11-2026**. El [registro de progreso](superpowers/progreso/2026-11-07-compartir-instancias.md)
 enumera etapas, resultados de pruebas y el orden del trabajo siguiente.
 
-Trabajo de `v0.4.x`, sin publicación del launcher. Existe un controlador experimental
-del publicador, deshabilitado por defecto. La aceptación del invitado, instalación,
+Trabajo de `v0.4.x`, sin publicación del launcher. Existen controladores experimentales
+del publicador y del invitado, deshabilitados por defecto. La aceptación e instalación,
 Sincronizar/Jugar y bandeja todavía no completan el recorrido normal. Las escenas
 de diseño son fixtures y no habilitan una publicación.
 
@@ -64,17 +64,44 @@ requiere confirmación explícita. No se guardan claves privadas en ese archivo.
 Después se elige el nombre y se revisan los archivos. Solo Sincronizar crea el
 destino nuevo, instala el perfil exacto con el servicio existente y descarga/aplica
 la revisión verificada. Las instancias vinculadas no reciben Fabric API sugerida.
-Si el perfil o los metadatos fallan, se retiene el ID para reintentar desde el panel;
-cerrar/reiniciar y recuperar ese intento desde una biblioteca todavía está pendiente.
+Si el perfil o los metadatos fallan, se retiene el ID para reintentar. Tras cerrar o
+reiniciar, volver a introducir la invitación y confirmar la huella recupera el destino
+incompleto propio. La pantalla lo identifica como «Continuar instalación» antes de
+revisar/aplicar; permite conservarlo o renombrarlo sin cambiar su identidad.
 Una publicación cambiada exige revisar otra vez. Cambiar de origen o perfil propone
 otro destino y conserva el anterior. No se adopta una instancia personal existente.
 
 El lanzamiento normal rechaza un vínculo sin base aplicada coherente, fuera del hilo
 de la interfaz. Esto no completa la consulta remota previa a cada Jugar ni la exclusión
-entre partida y sincronización. El avance detallado por fase también sigue pendiente.
+entre partida y sincronización.
 La prueba de este coordinador inyecta la instalación del perfil: los archivos,
 transporte, hashes, packs y transacción son reales; no acredita descargar Minecraft
 ni jugar desde esta ruta nueva.
+
+## Progreso y recuperación del instalador
+
+`avance.rs` recibe los contadores del perfil de Minecraft, archivos completamente
+descargados/verificados y movimientos durables de aplicación. El porcentaje corresponde
+a la etapa actual; sin total conocido no se estima un porcentaje global. En descargas
+se cuenta por archivo, sin simular velocidad o progreso por bytes. El canal `watch`
+conserva solo el último avance y la salida a iced está acotada. Las respuestas se
+filtran por solicitud y se descartan al cerrar o cancelar el intento.
+
+`intentos.rs` guarda `.icaro-compartir-instalacion.json` antes de instalar el perfil:
+esquema, ID local, origen, perfil y revisión revisada, sin códigos, URLs ni secretos.
+La búsqueda usa el almacén existente y rechaza informes de más de 1000 instancias;
+no es todavía un inventario incremental. Cada registro tiene un límite de 16 KiB.
+Un registro corrupto, ajeno o varios candidatos se diagnostican; no se crea otra copia
+silenciosamente ni se adopta una instancia personal por nombre.
+
+La cancelación posterior a crear el destino guarda primero el intento recuperable.
+Los temporales internos de una escritura interrumpida se conservan y solo se admiten
+al preparar un destino con registro propio válido. La limpieza del registro exige
+vínculo correcto y una base aplicada exactamente igual al manifiesto. Si la base ya
+se aplicó y quedó el registro, no se ofrece la instancia completa como incompleta.
+Sigue existiendo una ventana de cierre abrupto entre crear y registrar: una instancia
+huérfana sin registro se conserva y no se adopta automáticamente. Una biblioteca
+general de publicaciones/instalaciones continúa pendiente.
 
 ## Recorrido comprobado localmente
 
@@ -157,7 +184,8 @@ Estas escenas no realizan solicitudes ni crean identidades en el almacén seguro
 - Completar y validar el controlador experimental; añadir aceptación, confianza
   e instalación en pruebas nativas reales y biblioteca de publicaciones. La aceptación,
   confianza persistente, destino/revisión y coordinador de instalación ya están conectados
-  bajo bandera; falta validar perfil descargado, reintento tras reinicio y progreso.
+  bajo bandera; progreso por etapa y recuperación al reintroducir la invitación ya
+  están conectados. Falta validar el perfil descargado y ampliar cortes/disco lleno.
 - Conectar la comprobación al pulsar Jugar, instalación exacta y bloqueo durante
   la partida; gestión de cierre, bandeja restaurable y detención con transferencias.
 - Exponer conflictos de orden de packs como una decisión revisable en la interfaz.

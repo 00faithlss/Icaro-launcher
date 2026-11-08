@@ -165,3 +165,16 @@ pub async fn confiar(raiz: PathBuf, visita: Visita, cambio: bool) -> Result<(), 
     .await
     .map_err(|_| "No se pudo guardar la confianza.".to_string())?
 }
+pub async fn confiar_y_recuperar(
+    raiz: PathBuf,
+    store: icaro_core::instancias::Almacen,
+    visita: Visita,
+    cambio: bool,
+) -> Result<Option<icaro_core::instancias::Instancia>, String> {
+    confiar(raiz, visita.clone(), cambio).await?;
+    tokio::task::spawn_blocking(move || {
+        c::intentos::buscar(&store, &visita.manifiesto).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|_| "No se pudo buscar una instalación incompleta.".to_string())?
+}

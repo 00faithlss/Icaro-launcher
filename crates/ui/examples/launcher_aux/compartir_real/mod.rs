@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! Controlador experimental del publicador; no amplía el update del launcher.
 mod acciones;
+mod avance;
 mod estado;
 mod invitaciones;
 mod invitado;
@@ -11,6 +12,8 @@ mod invitado_vistas;
 mod modelos;
 #[cfg(test)]
 mod pruebas;
+#[cfg(test)]
+mod pruebas_avance;
 #[cfg(test)]
 mod pruebas_invitado;
 #[cfg(test)]

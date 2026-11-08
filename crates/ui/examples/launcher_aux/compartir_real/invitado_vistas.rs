@@ -44,6 +44,7 @@ pub fn destino<'a>(p: Paleta, s: &Estado) -> Option<Element<'a, v::Accion>> {
     Some(v::destino_nuevo(
         p,
         &v::DestinoNuevo {
+            recuperando: s.invitado.recuperando,
             nombre: s.invitado.nombre.clone(),
             error_nombre: s.invitado.error.clone(),
             anfitrion: "Equipo anfitrión".into(),
@@ -69,13 +70,30 @@ pub fn progreso<'a>(p: Paleta, s: &Estado) -> Option<Element<'a, v::Accion>> {
     if let Some(error) = &s.invitado.error {
         return Some(v::error_compartir(p,&v::ErrorCompartir {
             tipo:if s.invitado.revisar_nueva {v::TipoError::RevisionNueva}else{v::TipoError::Hash},titulo:"No se completó la instalación compartida".into(),
-            explicacion:error.clone(),conservacion:"El destino y los archivos verificados se conservan para reintentar. La revisión no se marca aplicada si falla.".into(),detalle:s.invitado.ver_detalle.then(||format!("Minecraft {} · {} · revisión {}",m.perfil.minecraft,m.perfil.loader,m.revision)),
+            explicacion:error.clone(),conservacion:"El destino y los archivos verificados se conservan para reintentar. El contenido solo se marca aplicado después de verificar y guardar la transacción.".into(),detalle:s.invitado.ver_detalle.then(||format!("Minecraft {} · {} · revisión {}",m.perfil.minecraft,m.perfil.loader,m.revision)),
         }));
     }
-    Some(v::progreso_sincronizacion(p,&v::ProgresoSincronizacion {
-        instancia:s.invitado.nombre.clone(),anfitrion:"Equipo anfitrión".into(),revision:m.revision,
-        estado:if s.invitado.completada {v::EstadoProgreso::Completado {resumen:"Perfil instalado y contenido verificado; no se ha iniciado el juego.".into()}} else {v::EstadoProgreso::Activo(v::Fase::Preparacion)},
-        porcentaje:if s.invitado.completada {100.}else{0.},
-        detalle:"Instalando el perfil y verificando el contenido compartido. Puedes cancelar y esperar a que finalice la operación.".into(),archivo:String::new(),
-    }))
+    Some(v::progreso_sincronizacion(
+        p,
+        &v::ProgresoSincronizacion {
+            instancia: s.invitado.nombre.clone(),
+            anfitrion: "Equipo anfitrión".into(),
+            revision: m.revision,
+            estado: if s.invitado.completada {
+                v::EstadoProgreso::Completado {
+                    resumen: "Perfil instalado y contenido verificado; no se ha iniciado el juego."
+                        .into(),
+                }
+            } else {
+                v::EstadoProgreso::Activo(s.invitado.avance.fase)
+            },
+            porcentaje: if s.invitado.completada {
+                100.
+            } else {
+                s.invitado.avance.porcentaje()
+            },
+            detalle: s.invitado.avance.descripcion(),
+            archivo: s.invitado.avance.archivo.clone(),
+        },
+    ))
 }

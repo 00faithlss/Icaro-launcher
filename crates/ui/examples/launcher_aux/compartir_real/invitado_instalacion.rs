@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! Primer destino aislado: instalar perfil exacto, verificar revisión y aplicar.
+use super::avance::{Avance, Emitir};
 use super::invitado_tareas::{self, Visita};
 use icaro_core::{
     compartir::{self as c, aplicacion::ContextoDestino},
@@ -58,8 +59,9 @@ pub async fn instalar(
     catalogo: Option<Catalog>,
     host: Option<Arc<c::anfitrion::PublicacionActiva>>,
     cancel: CancellationToken,
+    emitir: Emitir,
 ) -> Resultado {
-    instalar_con(
+    instalar_con_avance(
         raiz,
         store,
         visita,
@@ -68,16 +70,26 @@ pub async fn instalar(
         catalogo,
         host,
         cancel,
-        |store, instancia, cancel| async move {
+        emitir,
+        |store, instancia, cancel, emitir| async move {
             // El vínculo evita sugerir Fabric API u otros mods fuera del manifiesto.
-            icaro_core::minecraft::instalar(&store, &instancia, cancel, |_| {})
-                .await
-                .map(|_| ())
-                .map_err(|e| e.to_string())
+            icaro_core::minecraft::instalar(&store, &instancia, cancel, move |p| {
+                emitir(Avance::nuevo(
+                    v::Fase::Preparacion,
+                    p.completados,
+                    p.total,
+                    "",
+                    &p.etapa,
+                ));
+            })
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
         },
     )
     .await
 }
+#[cfg(test)]
 pub async fn instalar_con<F, Fut>(
     raiz: PathBuf,
     store: Almacen,
@@ -93,11 +105,45 @@ where
     F: FnOnce(Almacen, Instancia, CancellationToken) -> Fut,
     Fut: std::future::Future<Output = Result<(), String>>,
 {
+    instalar_con_avance(
+        raiz,
+        store,
+        visita,
+        nombre,
+        anterior,
+        catalogo,
+        host,
+        cancel,
+        Arc::new(|_| {}),
+        |a, b, c, _| perfil(a, b, c),
+    )
+    .await
+}
+pub async fn instalar_con_avance<F, Fut>(
+    raiz: PathBuf,
+    store: Almacen,
+    visita: Visita,
+    nombre: String,
+    anterior: Option<Instancia>,
+    catalogo: Option<Catalog>,
+    host: Option<Arc<c::anfitrion::PublicacionActiva>>,
+    cancel: CancellationToken,
+    emitir: Emitir,
+    perfil: F,
+) -> Resultado
+where
+    F: FnOnce(Almacen, Instancia, CancellationToken, Emitir) -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+{
+    emitir(Avance::default());
     let crear_store = store.clone();
     let destino_anterior = anterior.clone();
     let manifiesto = visita.manifiesto.clone();
     let raiz_confianza = raiz.clone();
+    let nombre_revisado = nombre.clone();
+    let cancel_creacion = cancel.clone();
     let creada = tokio::task::spawn_blocking(move || {
+        if cancel_creacion.is_cancelled() {return Err("Instalación cancelada antes de crear el destino.".into());}
         if !matches!(
             c::confianza::consultar(&raiz_confianza, &manifiesto.origen)
                 .map_err(|e| e.to_string())?,
@@ -114,6 +160,9 @@ where
             }
             Ok(i)
         } else {
+            if c::intentos::buscar(&crear_store,&manifiesto).map_err(|e|e.to_string())?.is_some() {
+                return Err("Hay una instalación incompleta de esta publicación. Vuelve a confirmar el destino para continuarla.".into());
+            }
             crear_store
                 .crear_con_loader(
                     &nombre,
@@ -127,7 +176,7 @@ where
     .await
     .map_err(|_| "No se pudo crear el destino.".to_string())
     .and_then(|r| r);
-    let instancia = match creada {
+    let mut instancia = match creada {
         Ok(i) => i,
         Err(e) => {
             return Resultado {
@@ -139,25 +188,70 @@ where
         }
     };
     let mut revisar_nueva = false;
+    emitir(Avance::nuevo(
+        v::Fase::Preparacion,
+        0,
+        0,
+        &instancia.nombre,
+        "Destino preparado",
+    ));
     let resultado = async {
+        let registrar_store = store.clone();
+        let registrar_instancia = instancia.clone();
+        let registrar_manifiesto = visita.manifiesto.clone();
+        tokio::task::spawn_blocking(move || {
+            c::intentos::registrar(
+                &registrar_store,
+                &registrar_instancia,
+                &registrar_manifiesto,
+            )
+            .map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|_| "No se pudo registrar el intento de instalación.".to_string())??;
         if cancel.is_cancelled() {
             return Err("Instalación cancelada; el destino se conserva para reintentar.".into());
         }
         let preparar_store = store.clone();
         let preparar_instancia = instancia.clone();
         let manifiesto = visita.manifiesto.clone();
-        tokio::task::spawn_blocking(move || {
+        instancia = tokio::task::spawn_blocking(move || {
+            let mut actual = preparar_store
+                .cargar()
+                .map_err(|e| e.to_string())?
+                .instancias
+                .into_iter()
+                .find(|i| i.id == preparar_instancia.id)
+                .ok_or_else(|| "El destino ya no está disponible.".to_string())?;
             c::vinculos::preparar_destino(
                 &preparar_store,
-                &preparar_instancia,
+                &actual,
                 &manifiesto,
                 &c::Limites::default(),
             )
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+            if actual.nombre != nombre_revisado.trim() {
+                actual.nombre = nombre_revisado.trim().into();
+                preparar_store.guardar(&actual).map_err(|e| e.to_string())?;
+            }
+            Ok::<_, String>(actual)
         })
         .await
         .map_err(|_| "No se pudo completar el vínculo del destino.".to_string())??;
-        perfil(store.clone(), instancia.clone(), cancel.clone()).await?;
+        perfil(
+            store.clone(),
+            instancia.clone(),
+            cancel.clone(),
+            emitir.clone(),
+        )
+        .await?;
+        emitir(Avance::nuevo(
+            v::Fase::Preparacion,
+            0,
+            0,
+            "",
+            "Comprobando la publicación del anfitrión",
+        ));
         let conexion = invitado_tareas::conectar(&visita.invitacion, host, &cancel).await?;
         let resultado = async {
             let actual = conexion.consultar().await.map_err(|e| e.to_string())?;
@@ -190,15 +284,70 @@ where
                 );
             }
             let staging = raiz.join("compartir/descargas").join(&instancia.id);
-            let preparada =
-                c::descargas::preparar(&ctx, plan, &conexion, catalogo.as_ref(), &staging, &cancel)
-                    .await
-                    .map_err(|e| e.to_string())?;
+            let avance_descarga = emitir.clone();
+            let preparada = c::descargas::preparar_con_progreso(
+                &ctx,
+                plan,
+                &conexion,
+                catalogo.as_ref(),
+                &staging,
+                &cancel,
+                move |evento| match evento {
+                    c::descargas::EventoDescarga::Archivos {
+                        ruta,
+                        hechos,
+                        total,
+                    } => avance_descarga(Avance::nuevo(
+                        v::Fase::Descarga,
+                        hechos as u64,
+                        total as u64,
+                        &ruta,
+                        "Archivos descargados y verificados",
+                    )),
+                    c::descargas::EventoDescarga::Verificacion { total } => {
+                        avance_descarga(Avance::nuevo(
+                            v::Fase::Verificacion,
+                            0,
+                            total as u64,
+                            "",
+                            "Preparando la transacción verificada",
+                        ))
+                    }
+                },
+            )
+            .await
+            .map_err(|e| e.to_string())?;
             let token = cancel.clone();
+            let avance_aplicacion = emitir.clone();
+            let completar_store = store.clone();
+            let completar_instancia = instancia.clone();
+            let completar_manifiesto = visita.manifiesto.clone();
+            emitir(Avance::nuevo(
+                v::Fase::Aplicacion,
+                0,
+                0,
+                "",
+                "Aplicando los cambios revisados",
+            ));
             tokio::task::spawn_blocking(move || {
-                c::aplicacion::aplicar(preparada, &token, |_| {})
-                    .map(|_| ())
-                    .map_err(|e| e.to_string())
+                c::aplicacion::aplicar(preparada, &token, move |evento| {
+                    if let c::aplicacion::EventoAplicacion::Movimiento { hechos, total } = evento {
+                        avance_aplicacion(Avance::nuevo(
+                            v::Fase::Aplicacion,
+                            hechos as u64,
+                            total as u64,
+                            "",
+                            "Movimientos guardados",
+                        ));
+                    }
+                })
+                .map_err(|e| e.to_string())?;
+                c::intentos::completar(
+                    &completar_store,
+                    &completar_instancia,
+                    &completar_manifiesto,
+                )
+                .map_err(|e| e.to_string())
             })
             .await
             .map_err(|_| "No se pudo aplicar la revisión.".to_string())?

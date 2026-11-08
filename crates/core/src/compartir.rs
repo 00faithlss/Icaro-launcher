@@ -7,6 +7,7 @@ pub mod confianza;
 pub mod descargas;
 pub mod firmas;
 pub mod identidad;
+pub mod intentos;
 pub mod inventario;
 pub mod invitaciones;
 mod manifiesto;

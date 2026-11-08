@@ -64,13 +64,46 @@ pub(super) async fn comprobar(url: &str, codigo: &Codigo, root: &std::path::Path
         confianza::consultar(&raiz, &visita.manifiesto.origen).unwrap(),
         EstadoConfianza::Conocido { .. }
     ));
-    // Un fallo del perfil conserva un único destino incompleto, sin base aplicada.
-    let fallida = invitado_instalacion::instalar_con(
+    // Cancelar justo después de crear conserva el registro para volver a abrir Ícaro.
+    let cancelar = tokio_util::sync::CancellationToken::new();
+    let al_crear = cancelar.clone();
+    let cancelada = invitado_instalacion::instalar_con_avance(
         raiz.clone(),
         store.clone(),
         visita.clone(),
         "Compartida".into(),
         None,
+        None,
+        None,
+        cancelar,
+        std::sync::Arc::new(move |e| {
+            if e.archivo == "Compartida" {
+                al_crear.cancel();
+            }
+        }),
+        |_, _, _, _| async {
+            panic!("no instalar un perfil después de cancelar");
+            #[allow(unreachable_code)]
+            Ok(())
+        },
+    )
+    .await;
+    assert!(cancelada.resultado.is_err());
+    let cancelada = cancelada.instancia.unwrap();
+    assert_eq!(
+        c::intentos::buscar(&Almacen::nuevo(raiz.join("instances")), &visita.manifiesto)
+            .unwrap()
+            .unwrap()
+            .id,
+        cancelada.id
+    );
+    // Un fallo del perfil conserva ese mismo destino incompleto, sin base aplicada.
+    let fallida = invitado_instalacion::instalar_con(
+        raiz.clone(),
+        store.clone(),
+        visita.clone(),
+        "Compartida".into(),
+        Some(cancelada),
         None,
         None,
         token.clone(),
@@ -89,19 +122,75 @@ pub(super) async fn comprobar(url: &str, codigo: &Codigo, root: &std::path::Path
         .unwrap()
         .manifiesto
         .is_none());
-    let instalada = invitado_instalacion::instalar_con(
+    // Otro Almacen representa volver a abrir Ícaro: no conservamos el destino en memoria.
+    let store = Almacen::nuevo(raiz.join("instances"));
+    let recuperada =
+        invitado_tareas::confiar_y_recuperar(raiz.clone(), store.clone(), visita.clone(), false)
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(recuperada.id, destino.id);
+    let eventos = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let guardar_eventos = eventos.clone();
+    let instalada = invitado_instalacion::instalar_con_avance(
         raiz.clone(),
         store.clone(),
         visita.clone(),
-        "Compartida".into(),
-        Some(destino.clone()),
+        "Compartida recuperada".into(),
+        Some(recuperada),
         None,
         None,
         token,
-        |_, _, _| async { Ok(()) },
+        std::sync::Arc::new(move |e| guardar_eventos.lock().unwrap().push(e)),
+        |_, _, _, emitir| async move {
+            emitir(crate::compartir_real::avance::Avance::nuevo(
+                v::Fase::Preparacion,
+                1,
+                2,
+                "",
+                "Perfil de prueba",
+            ));
+            Ok(())
+        },
     )
     .await;
     instalada.resultado.unwrap();
+    let eventos = eventos.lock().unwrap();
+    for fase in [
+        v::Fase::Preparacion,
+        v::Fase::Descarga,
+        v::Fase::Verificacion,
+        v::Fase::Aplicacion,
+    ] {
+        assert!(
+            eventos.iter().any(|e| e.fase == fase),
+            "falta la etapa {fase:?}"
+        );
+    }
+    assert!(eventos
+        .iter()
+        .any(|e| e.fase == v::Fase::Descarga && e.total > 0 && e.hechos == e.total));
+    drop(eventos);
+    assert!(c::intentos::buscar(&store, &visita.manifiesto)
+        .unwrap()
+        .is_none());
+    let juego = store.juego(&destino.id).unwrap();
+    assert!(!juego.join(".icaro-compartir-instalacion.json").exists());
+    assert_eq!(
+        store
+            .cargar()
+            .unwrap()
+            .instancias
+            .into_iter()
+            .find(|i| i.id == destino.id)
+            .unwrap()
+            .nombre,
+        "Compartida recuperada"
+    );
+    let contexto = c::aplicacion::ContextoDestino {
+        juego: juego.clone(),
+        limites: c::Limites::default(),
+    };
     c::vinculos::comprobar_lista(&store, &destino).unwrap();
     assert_eq!(
         instalada.instancia.unwrap().id,

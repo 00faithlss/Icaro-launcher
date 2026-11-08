@@ -250,6 +250,7 @@ pub struct IdentidadAnfitrion {
 }
 #[derive(Debug, Clone)]
 pub struct DestinoNuevo {
+    pub recuperando: bool,
     pub nombre: String,
     pub error_nombre: Option<String>,
     pub anfitrion: String,

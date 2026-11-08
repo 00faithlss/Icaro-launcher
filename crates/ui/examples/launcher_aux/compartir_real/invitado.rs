@@ -7,6 +7,7 @@ use icaro_ui::compartir as v;
 use iced::Task;
 
 pub struct Invitado {
+    pub avance: super::avance::Avance,
     pub entrada: v::EstadoEntrada,
     pub resuelta: Option<tareas::Resuelta>,
     pub visita: Option<tareas::Visita>,
@@ -20,10 +21,12 @@ pub struct Invitado {
     pub revisar_nueva: bool,
     pub ver_detalle: bool,
     pub cambio_perfil: bool,
+    pub recuperando: bool,
 }
 impl Default for Invitado {
     fn default() -> Self {
         Self {
+            avance: Default::default(),
             entrada: v::EstadoEntrada::Vacio,
             resuelta: None,
             visita: None,
@@ -37,6 +40,7 @@ impl Default for Invitado {
             revisar_nueva: false,
             ver_detalle: false,
             cambio_perfil: false,
+            recuperando: false,
         }
     }
 }
@@ -148,7 +152,12 @@ pub fn accion(app: &mut App, a: v::Accion) -> Option<Task<Mensaje>> {
             s.red_ocupada = true;
             let (id, cambio) = (s.solicitud, s.invitado.confirmar_nueva);
             Task::perform(
-                tareas::confiar(crate::estado::directorio(false), visita, cambio),
+                tareas::confiar_y_recuperar(
+                    crate::estado::directorio(false),
+                    app.servicios.instancias.almacen.clone(),
+                    visita,
+                    cambio,
+                ),
                 move |r| Mensaje::Compartir(Accion::Confiada(id, r)),
             )
         }
@@ -250,6 +259,7 @@ pub fn visitada(s: &mut Estado, id: u64, r: Result<tareas::Visita, String>) {
                 });
             if s.invitado.cambio_perfil {
                 s.invitado.destino = None;
+                s.invitado.recuperando = false;
                 s.invitado.destino_vinculo = None;
                 s.invitado.nombre = format!("{} (nueva)", s.invitado.nombre);
             }
@@ -277,13 +287,28 @@ pub fn visitada(s: &mut Estado, id: u64, r: Result<tareas::Visita, String>) {
     }
     cerrar_pendiente(s);
 }
-pub fn confiada(s: &mut Estado, id: u64, r: Result<(), String>) {
+pub fn confiada(
+    s: &mut Estado,
+    id: u64,
+    r: Result<Option<icaro_core::instancias::Instancia>, String>,
+) {
     if !s.vigente(id) {
         return;
     }
     s.red_ocupada = false;
     match r {
-        Ok(()) => {
+        Ok(recuperada) => {
+            if let Some(instancia) = recuperada {
+                s.invitado.cambio_perfil = false;
+                s.invitado.nombre = instancia.nombre.clone();
+                s.invitado.destino = Some(instancia);
+                s.invitado.destino_vinculo =
+                    s.invitado.visita.as_ref().map(|v| c::vinculos::Vinculo {
+                        origen: v.manifiesto.origen.clone(),
+                        perfil: v.manifiesto.perfil.clone(),
+                    });
+                s.invitado.recuperando = true;
+            }
             s.invitado.error = s.invitado.cambio_perfil.then(||"El origen o el perfil cambió. La instancia anterior se conserva; elige el nombre de otro destino.".into());
             s.etapa = Etapa::Destino;
         }
@@ -316,6 +341,7 @@ fn instalar(app: &mut App) -> Task<Mensaje> {
     s.red_ocupada = true;
     s.invitado.error = None;
     s.invitado.completada = false;
+    s.invitado.avance = Default::default();
     s.etapa = Etapa::InstalandoInvitado;
     s.cancel = tokio_util::sync::CancellationToken::new();
     let (id, nombre, anterior, h, cancel) = (
@@ -325,19 +351,15 @@ fn instalar(app: &mut App) -> Task<Mensaje> {
         s.anfitrion.clone(),
         s.cancel.clone(),
     );
-    Task::perform(
+    let raiz = crate::estado::directorio(false);
+    let store = app.servicios.instancias.almacen.clone();
+    let catalogo = app.servicios.catalog.as_ref().ok().cloned();
+    super::avance::tarea(id, move |emitir| async move {
         super::invitado_instalacion::instalar(
-            crate::estado::directorio(false),
-            app.servicios.instancias.almacen.clone(),
-            visita,
-            nombre,
-            anterior,
-            app.servicios.catalog.as_ref().ok().cloned(),
-            h,
-            cancel,
-        ),
-        move |r| Mensaje::Compartir(Accion::Instalada(id, r)),
-    )
+            raiz, store, visita, nombre, anterior, catalogo, h, cancel, emitir,
+        )
+        .await
+    })
 }
 pub fn instalada(app: &mut App, id: u64, r: super::invitado_instalacion::Resultado) {
     if !app.servicios.compartir.vigente(id)

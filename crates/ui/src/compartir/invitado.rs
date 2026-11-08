@@ -258,11 +258,11 @@ pub fn destino_nuevo<'a>(p: Paleta, m: &DestinoNuevo) -> Element<'a, Accion> {
     .push(dato(p, "Mods", &m.mods))
     .push(dato(p, "Carpetas", &m.carpetas))
     .push(dato(p, "Descarga", &m.descarga));
-    c=c.push(g).push(componentes::aviso(p,Estado::Info,&format!("Esta instancia queda vinculada a {}. Las próximas sincronizaciones la actualizan, y siempre verás los cambios antes de aplicarlos.",m.anfitrion)));
+    c=c.push(g).push(componentes::aviso(p,Estado::Info,&if m.recuperando {"Se encontró tu instalación incompleta. Continuar conserva su identidad y sus archivos; no crea otra copia. Revisa los cambios antes de aplicarlos.".into()} else {format!("Esta instancia queda vinculada a {}. Las próximas sincronizaciones la actualizan, y siempre verás los cambios antes de aplicarlos.",m.anfitrion)}));
     dialogo(
         p,
         720.,
-        "Tu nueva instancia",
+        if m.recuperando {"Continuar instalación"}else{"Tu nueva instancia"},
         "Paso 3 de 4 · Instancia de destino",
         c,
         row![

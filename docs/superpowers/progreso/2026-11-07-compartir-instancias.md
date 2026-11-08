@@ -1,4 +1,4 @@
-# Progreso de Compartir instancias — 07-11-2026
+# Progreso de Compartir instancias — 08-11-2026
 
 Rama de trabajo comprobada: `v0.4.x`. Versión del workspace: `0.3.4`, sin bump.
 El plan original está en `d78e628`. La implementación se registra en `d48181f`
@@ -6,6 +6,42 @@ El plan original está en `d78e628`. La implementación se registra en `d48181f`
 de subir todo el bloque a `v0.4.x`. Este registro acompaña esos commits y su
 documentación; no supone una release ni una función habilitada por defecto.
 No se revalidaron releases ni CI remotos.
+
+El publicador y el invitado se subieron después en `01a55ed` y `3ed741b`.
+La continuación del 08-11-2026 añade progreso y recuperación del intento; se registra
+y sube a `v0.4.x` por autorización del usuario, sin cambio de versión ni despliegue.
+
+## Continuación del 08-11-2026: progreso y recuperación
+
+Se utilizó Claude Code con `--model claude-opus-5-5 --effort medium`, verificado en
+las respuestas de implementación y revisión. Su alcance fue el registro persistente
+y sus pruebas; la integración, supervisión, correcciones y ejecución de pruebas se
+realizaron en esta sesión.
+
+`intentos.rs` identifica únicamente el destino incompleto propio por ID, origen y
+perfil. Al reintroducir la invitación tras reiniciar se confirma ese destino antes
+de revisar/aplicar. Se puede renombrar conservando el ID. No guarda códigos ni secretos.
+`avance.rs` usa `watch` y una salida acotada: contadores del perfil, archivos verificados
+y movimientos guardados; porcentaje de la etapa actual, sin un total global estimado.
+
+Verificación: **353 pruebas del núcleo**, **167 UI** (70 biblioteca y 97 launcher),
+sin fallos; 27 ignoradas en núcleo y 4 en UI. Recorrido explícito con Worker/D1 e
+iroh pasado: cancelar justo después de crear, guardar el intento, fallar el perfil,
+abrir otro almacén, recuperar/renombrar el mismo ID, emitir cuatro fases y aplicar
+mods/pack conservando un mundo personal. El perfil sigue inyectado en esta prueba.
+
+Se observaron fallos antes de añadir interfaces, admitir el registro propio antes
+del vínculo, conservar temporales internos y corregir la cancelación tras crear.
+La revisión de Claude detectó ese último fallo; la regresión pasó después de guardar
+el intento antes de atender la cancelación. El renombrado se hace después de validar
+el registro y con metadatos recién leídos. Se mantienen como límites el rechazo de
+registros corruptos, la limpieza posterior de marcadores ya completos y la ventana
+de cierre abrupto entre crear y registrar; nunca se adoptan huérfanas por nombre.
+
+Compilación del launcher sin avisos, formato de módulos afectados y `git diff --check`
+pasados. Cuatro capturas reales con fixtures: recuperación Tinta 1280×800/Piedra
+940×720 y progreso Tinta 940×720/Piedra 1280×800. Iconos, textos y controles centrados;
+contenido desplazable y pie visible. El mayor módulo del controlador tiene 476 líneas.
 
 Referencias: [acuerdos](../specs/2026-11-07-sincronizacion-entre-launchers-design.md),
 [plan](../plans/2026-11-07-compartir-instancias.md),
@@ -21,9 +57,9 @@ Referencias: [acuerdos](../specs/2026-11-07-sincronizacion-entre-launchers-desig
 | 3. Comparación y aplicación | Comparación de tres vías y transacción conjunta de archivos, packs, options y base. Respaldos, recuperación y cambios archivo/carpeta probados. | Resolver el conflicto de orden de packs desde la interfaz y ampliar inyección de fallos, incluido disco lleno. |
 | 4. Identidad y transporte | Firma Ed25519, keyring sin fallback plano, endpoint iroh fijado a la clave completa, ACL persistente, streaming, reanudación y revocación. | Probar directo/relé entre equipos y redes reales; completar la coordinación con el ciclo de vida del launcher. |
 | 5. Invitaciones | Worker/D1 y cliente Rust; caducidad, cupo, aceptación idempotente, revocaciones, renovación y reapertura comprobados localmente. | Configurar y desplegar con cuenta/autorización; validar costes y retención en el entorno real. |
-| 6. Coordinación | Invitado experimental con origen estable, confianza persistente, destino nuevo, perfil exacto, revisión y aplicación explícita. | Validar perfil real, reintento tras reinicio, exclusión partida/aplicación y eventos de progreso completos. |
+| 6. Coordinación | Invitado experimental con confianza, destino/revisión, aplicación explícita, progreso por etapa y recuperación del intento tras reinicio. | Validar perfil real, ampliar cortes/disco lleno y completar exclusión partida/aplicación. |
 | 7. Componentes iced | Quince vistas con acciones tipadas, recursos originales y escenas de captura. Centrado, padding simétrico y celdas uniformes corregidos. | Conectar modelos a datos reales, recorrer todas las acciones y completar foco/teclado/escala. Las capturas usan fixtures. |
-| 8. Launcher y segundo plano | Publicador e invitado experimentales, deshabilitados por defecto; código/huella/destino/revisión conectados y coordinador probado con D1, iroh y perfil inyectado. | Sincronizar/Jugar posterior, biblioteca y recuperación tras reinicio, progreso detallado, cierre/bandeja y validación nativa del perfil. |
+| 8. Launcher y segundo plano | Publicador/invitado experimentales, progreso acotado y recuperación al reintroducir la invitación tras reinicio. Coordinador con D1, iroh y perfil inyectado. | Sincronizar/Jugar posterior, biblioteca general, cierre/bandeja y validación nativa del perfil. |
 | 9. Entrega y documentación | Pruebas locales, capturas, compilación del workspace y documentación de estado. | Mediciones, revisión final del recorrido completo y validaciones nativas/entre equipos. No es una entrega terminada. |
 
 ## Evidencia anterior a la limpieza
@@ -148,9 +184,9 @@ validaciones externas enumeradas abajo continúan pendientes.
 1. Completar el recorrido del publicador desde la ventana, diagnóstico,
    actualización de estados/contadores y biblioteca de
    publicaciones. Sus módulos, tareas, consentimiento y guardado de privados ya existen.
-2. Validar la instalación exacta conectada al invitado con el perfil real, eventos
-   de progreso y recuperación del destino incompleto tras cerrar/reiniciar. El
-   reintento desde el panel ya conserva ID, archivos y vínculo.
+2. Validar la instalación exacta conectada al invitado con el perfil real y ampliar
+   cortes/disco lleno. Progreso por etapa y recuperación del destino al reintroducir
+   la invitación tras reiniciar ya están conectados y probados localmente.
 3. Conectar Sincronizar y la comprobación previa a Jugar. Revisar y confirmar antes
    de descargar/aplicar; resolver conflictos y bloquear la carrera con una partida.
 4. Integrar accesos, reconexión, minimizar y cierre. La bandeja debe poder restaurar

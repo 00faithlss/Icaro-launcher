@@ -13,8 +13,10 @@ El controlador tiene tareas, consentimiento y privados persistentes, y un recorr
 con Worker local. El invitado experimental conecta código, confianza persistente,
 destino nuevo, revisión y coordinador de instalación exacta. La prueba de este último
 inyecta el perfil de Minecraft, pero transfiere/aplica los archivos reales. Faltan
-validar el perfil descargado, progresos y recuperación tras reinicio, exclusión con
+validar el perfil descargado, ampliar cortes/disco lleno y exclusión con
 una partida, resolución visual del orden de packs y cierre/bandeja.
+El progreso por etapa y la recuperación tras reinicio al reintroducir la invitación
+ya están conectados; la biblioteca general sigue pendiente.
 Las escenas del launcher usan fixtures: no acreditan esos recorridos. Consultar
 [guía técnica](compartir-instancias.md) y
 [progreso con evidencias](superpowers/progreso/2026-11-07-compartir-instancias.md).

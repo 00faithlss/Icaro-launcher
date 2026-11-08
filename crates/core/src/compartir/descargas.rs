@@ -17,6 +17,17 @@ use std::{
 use tokio_util::sync::CancellationToken;
 
 struct Descargados(BTreeMap<String, (Artefacto, PathBuf)>);
+#[derive(Debug, Clone)]
+pub enum EventoDescarga {
+    Archivos {
+        ruta: String,
+        hechos: usize,
+        total: usize,
+    },
+    Verificacion {
+        total: usize,
+    },
+}
 impl FuenteArchivos for Descargados {
     fn abrir(&self, archivo: &Artefacto) -> Result<Box<dyn Read + Send>, Error> {
         let (esperado, path) = self
@@ -45,6 +56,19 @@ pub async fn preparar(
     catalogo: Option<&Catalog>,
     staging: &Path,
     cancel: &CancellationToken,
+) -> Result<PlanPreparado, Error> {
+    preparar_con_progreso(contexto, plan, cliente, catalogo, staging, cancel, |_| {}).await
+}
+
+/// Los contadores de descarga avanzan solo tras verificar cada archivo completo.
+pub async fn preparar_con_progreso(
+    contexto: &ContextoDestino,
+    plan: PlanCompartido,
+    cliente: &Cliente,
+    catalogo: Option<&Catalog>,
+    staging: &Path,
+    cancel: &CancellationToken,
+    progreso: impl Fn(EventoDescarga) + Send + Sync,
 ) -> Result<PlanPreparado, Error> {
     comprobar_cancelacion(cancel)?;
     plan.revision.validar(&contexto.limites)?;
@@ -77,8 +101,14 @@ pub async fn preparar(
         versiones.extend(respuesta);
     }
     let mut descargados = Descargados(BTreeMap::new());
-    for archivo in archivos {
+    let total = archivos.len();
+    for (indice, archivo) in archivos.into_iter().enumerate() {
         comprobar_cancelacion(cancel)?;
+        progreso(EventoDescarga::Archivos {
+            ruta: archivo.ruta.as_str().into(),
+            hechos: indice,
+            total,
+        });
         let path = match &archivo.procedencia {
             Procedencia::Propio => {
                 cliente
@@ -125,11 +155,17 @@ pub async fn preparar(
                 destino
             }
         };
+        progreso(EventoDescarga::Archivos {
+            ruta: archivo.ruta.as_str().into(),
+            hechos: indice + 1,
+            total,
+        });
         descargados
             .0
             .insert(archivo.ruta.as_str().into(), (archivo, path));
     }
     comprobar_cancelacion(cancel)?;
+    progreso(EventoDescarga::Verificacion { total });
     let contexto = contexto.clone();
     let cancel = cancel.clone();
     tokio::task::spawn_blocking(move || {
