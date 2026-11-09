@@ -1381,14 +1381,25 @@ fn selector_version_completo<'a>(
         );
     }
     rows = rows.push(Space::with_height((cantidad - end) as f32 * 36.0));
-    let lista = iced::widget::scrollable(rows)
-        .id(iced::widget::scrollable::Id::new(if cambio {
+    // Smooth scroll como el resto del launcher; la posición sigue llegando
+    // para dibujar solo las filas visibles. Otro filtro o búsqueda vuelve arriba.
+    let clave = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (tipo, busqueda).hash(&mut h);
+        h.finish()
+    };
+    let lista = icaro_ui::scroll::desplazable_con_avisos(
+        rows,
+        252.,
+        if cambio {
             "version-cambio"
         } else {
             "version-asistente"
-        }))
-        .height(252)
-        .on_scroll(move |v| m(Accion::VersionScroll(cambio, v.absolute_offset().y)));
+        },
+        clave,
+        move |v| m(Accion::VersionScroll(cambio, v.absolute_offset().y)),
+    );
     let filtros = row![
         componentes::segmentado_compacto(
             p,
@@ -1468,6 +1479,11 @@ mod pruebas_scroll_version {
         let _:&mut dyn Clipboard=&mut clipboard;
         widget.as_widget_mut().on_event(&mut tree,
             Event::Mouse(mouse::Event::WheelScrolled {delta:mouse::ScrollDelta::Lines{x:0.,y:-3.}}),
+            Layout::new(&node),mouse::Cursor::Available(bounds.center()),&renderer,&mut clipboard,
+            &mut Shell::new(&mut messages),&Rectangle::new(Point::ORIGIN,size));
+        // El desplazamiento es suave: la lista se mueve en el cuadro siguiente.
+        widget.as_widget_mut().on_event(&mut tree,
+            Event::Window(iced::window::Event::RedrawRequested(std::time::Instant::now())),
             Layout::new(&node),mouse::Cursor::Available(bounds.center()),&renderer,&mut clipboard,
             &mut Shell::new(&mut messages),&Rectangle::new(Point::ORIGIN,size));
         assert!(messages.iter().any(|m|matches!(m,Mensaje::Pant(Accion::VersionScroll(false,y)) if *y>0.)),"La rueda debe llegar a la lista interior");
@@ -1644,10 +1660,11 @@ pub fn asistente<'a>(app: &'a App, s: &'a Asistente) -> Element<'a, Mensaje> {
     let cuerpo = column![cabecera_pasos(p, s.paso), cuerpo].spacing(espacio::S4);
     let ocupado = !app.servicios.demo && app.servicios.instancias.creando;
     let loader_disponible=app.servicios.demo||s.paso!=1||s.loader==0||app.servicios.instancias.loaders.get(&version.0).is_some_and(|l|!l.versiones[s.loader.min(4)].is_empty());
+    // Con borde, para que su caja quede alineada al contenido de la página.
     let mut acciones: Vec<Element<Mensaje>> = vec![container(componentes::boton(
         p,
         "Cancelar",
-        Variante::Fantasma,
+        Variante::Secundario,
         (!ocupado).then(|| m(Accion::AsistenteCancelar)),
     ))
     .width(Length::Fill)
@@ -1684,16 +1701,70 @@ pub fn asistente<'a>(app: &'a App, s: &'a Asistente) -> Element<'a, Mensaje> {
             false,
         )
     });
-    formulario(
+    pagina_asistente(p, s.paso, cuerpo.into(), row(acciones).spacing(espacio::S2).into(), ocupado)
+}
+
+/// Crear instancia como página de Instancias: migas, título, cuerpo y pie,
+/// centrados con el mismo relleno a ambos lados. Sin velo ni X: la salida es
+/// la miga «Instancias» o Cancelar.
+fn pagina_asistente<'a>(
+    p: Paleta,
+    paso: usize,
+    cuerpo: Element<'a, Mensaje>,
+    pie: Element<'a, Mensaje>,
+    ocupado: bool,
+) -> Element<'a, Mensaje> {
+    const LADO: f32 = espacio::S8;
+    let migas = icaro_ui::migas::migas(
         p,
-        "Crear instancia",
-        // El scroll nativo entrega la rueda al selector interior antes de mover el formulario.
-        iced::widget::scrollable(cuerpo).height(Length::Fill).into(),
-        row(acciones).spacing(espacio::S2).into(),
-        880.0,
-        610.0_f32.min(app.ventana.height - 48.),
-        m(Accion::AsistenteCancelar),
-    )
+        &[
+            (
+                "Instancias".to_string(),
+                (!ocupado).then(|| m(Accion::AsistenteCancelar)),
+            ),
+            ("Crear instancia".to_string(), None),
+        ],
+    );
+    let cabeza = column![
+        migas,
+        text("Crear instancia")
+            .font(fuentes::TITULO)
+            .size(texto::TITLE.0)
+            .color(p.text),
+    ]
+    .spacing(espacio::S4);
+    // El paso de versiones cabe entero: su lista tiene su propio desplazamiento
+    // suave y recibe la rueda. Los demás pasos se desplazan con la página.
+    let cuerpo: Element<'a, Mensaje> = if paso == 0 {
+        container(cuerpo)
+            .padding(Padding::from([espacio::S6, LADO]))
+            .height(Length::Fill)
+            .into()
+    } else {
+        icaro_ui::scroll::desplazable(
+            container(cuerpo).padding(Padding::from([espacio::S6, LADO])),
+        )
+    };
+    let columna = column![
+        container(cabeza).padding(Padding::from([0., LADO])),
+        cuerpo,
+        container(Space::new(Length::Fill, 1)).style(icaro_ui::estilo::bloque(p.border)),
+        container(pie).padding(Padding::from([espacio::S4, LADO])),
+    ]
+    .width(Length::Fill)
+    .max_width(880)
+    .height(Length::Fill);
+    container(columna)
+        .center_x(Length::Fill)
+        .height(Length::Fill)
+        .padding(Padding {
+            top: espacio::S6,
+            right: espacio::S4,
+            bottom: 0.,
+            left: espacio::S4,
+        })
+        .style(icaro_ui::estilo::bloque(p.bg))
+        .into()
 }
 
 pub fn importar<'a>(app: &'a App, s: &'a Importar) -> Element<'a, Mensaje> {

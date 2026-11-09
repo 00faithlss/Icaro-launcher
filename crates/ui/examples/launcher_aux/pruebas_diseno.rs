@@ -49,9 +49,9 @@ pub fn iniciar(piedra: bool) -> (App, Task<Mensaje>) {
             crate::mods_reales::preparar_diseno(&mut a, &scene)
         }
         s if s.starts_with("juego-") => crate::juego_real::preparar_diseno(&mut a, &scene),
-        "asistente" | "asistente-version" | "asistente-loader" => {
+        "asistente" | "asistente-version" | "asistente-loader" | "asistente-angosto" => {
             a.asistente = Some(pantallas::Asistente {
-                paso: if scene == "asistente-version" { 0 } else { 1 },
+                paso: std::env::var("ICARO_PASO").ok().and_then(|v| v.parse().ok()).unwrap_or(if scene == "asistente-version" { 0 } else { 1 }),
                 tipo_version: 0,
                 busqueda: String::new(),
                 version: 0,

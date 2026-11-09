@@ -5,14 +5,10 @@
 //! debajo, centradas con el mismo ancho. Sustituye los diálogos con velo.
 
 use super::Accion;
-use crate::{
-    estilo, fuentes,
-    iconos::{icono, Icono, Tam},
-    tema::Paleta,
-};
+use crate::{estilo, tema::Paleta};
 use iced::{
-    widget::{button, column, container, rich_text, row, span, text},
-    Alignment, Element, Length, Padding,
+    widget::{column, container},
+    Element, Length, Padding,
 };
 
 /// Un paso de las migas; sin acción es la página actual.
@@ -38,35 +34,11 @@ impl Miga {
 
 /// `ic-migas`: 13/19, enlaces atenuados que se subrayan al pasar el puntero.
 pub fn migas<'a>(p: Paleta, pasos: &[Miga]) -> Element<'a, Accion> {
-    let mut fila = row![].spacing(8).align_y(Alignment::Center);
-    for (i, m) in pasos.iter().enumerate() {
-        if i > 0 {
-            fila = fila.push(icono(Icono::ChevronDerecha, Tam::Sm, p.text_muted));
-        }
-        fila = fila.push(match &m.accion {
-            Some(a) => {
-                let texto = m.texto.clone();
-                button(text(texto.clone()).font(fuentes::CUERPO).size(13))
-                    .padding(0)
-                    .on_press(a.clone())
-                    .style(move |_, s| {
-                        let sobre = matches!(s, button::Status::Hovered | button::Status::Pressed);
-                        iced::widget::button::Style {
-                            text_color: if sobre { p.text } else { p.text_muted },
-                            ..Default::default()
-                        }
-                    })
-                    .into()
-            }
-            None => Element::from(
-                rich_text![span(m.texto.clone())
-                    .font(fuentes::CUERPO_NEGRITA)
-                    .color(p.text)]
-                .size(13),
-            ),
-        });
-    }
-    fila.into()
+    let pasos: Vec<_> = pasos
+        .iter()
+        .map(|m| (m.texto.clone(), m.accion.clone()))
+        .collect();
+    crate::migas::migas(p, &pasos)
 }
 
 /// Página de una fase: migas y fase centradas con el ancho del componente.

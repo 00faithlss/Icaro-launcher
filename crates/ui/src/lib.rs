@@ -27,6 +27,7 @@ pub mod laminas;
 mod imagenes;
 pub mod movimiento;
 pub mod menu_anclado;
+pub mod migas;
 pub mod progreso;
 pub mod servidores;
 pub mod shell;

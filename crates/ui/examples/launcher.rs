@@ -539,7 +539,7 @@ fn hay_dialogo(app: &App) -> bool {
     if app.ventana.width<1100. && app.servicios.servidores.panel_abierto(){return true;}
     if app.servicios.mods.confirmacion.is_some() || app.servicios.mods.confirmacion_recurso.is_some()
         || app.servicios.mods.packs.confirmacion.is_some() { return true; }
-    app.exportar_lista.dialogo.is_some() || app.picar_objetivo.is_some() || app.iconos.dialogo.is_some() || app.dialogo || app.asistente.is_some() || app.importar.is_some() || app.exportar.as_ref().is_some_and(|s|!s.guardando) || app.cambiar.is_some()
+    app.exportar_lista.dialogo.is_some() || app.picar_objetivo.is_some() || app.iconos.dialogo.is_some() || app.dialogo || app.importar.is_some() || app.exportar.as_ref().is_some_and(|s|!s.guardando) || app.cambiar.is_some()
 }
 
 /// Desfase de la losa del diálogo según su progreso.
@@ -1459,6 +1459,16 @@ fn desplazable_pub<'a>(e: Element<'a, Mensaje>) -> Element<'a, Mensaje> {
 
 fn suave<'a>(app: &'a App, cuerpo: impl Into<Element<'a, Mensaje>>) -> Element<'a, Mensaje> {
     con_entrada(app, desplazable(cuerpo))
+}
+
+/// Instancias y Crear instancia comparten lugar: la página del asistente entra
+/// deslizándose y aparece, y cada paso avanza o vuelve con el mismo movimiento.
+fn pantalla_instancias_con_asistente(app: &App) -> Element<'_, Mensaje> {
+    let (clave, contenido) = match &app.asistente {
+        Some(s) => (10 + s.paso as u64, pantallas::asistente(app, s)),
+        None => (0, pantalla_instancias(app)),
+    };
+    icaro_ui::transicion::fase(app.paleta().bg, clave, contenido)
 }
 
 fn pantalla_instancias(app: &App) -> Element<'_, Mensaje> {
@@ -3316,7 +3326,7 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
         pantallas::vista_pantalla(app, pant)
     } else {
         match app.seccion {
-        Seccion::Instancias => pantalla_instancias(app),
+        Seccion::Instancias => pantalla_instancias_con_asistente(app),
         Seccion::Servidores => iced::widget::stack![
             pantalla_servidores(app),
             container(componentes::insignia(
@@ -3471,9 +3481,6 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
     ventana=icaro_ui::superficies::capa_flotante(ventana,servidores_reales::panel(app));
     if let Some(vista)=cierre_compartir::vista(app) {
         ventana=con_velo_losa(p,ventana,vista,Mensaje::Compartir(compartir_real::Accion::Vista(icaro_ui::compartir::Accion::Cerrar)),desfase_losa(app));
-    }
-    if let Some(s) = &app.asistente {
-        ventana = con_velo_losa(p, ventana, pantallas::asistente(app, s), Mensaje::Pant(pantallas::Accion::AsistenteCancelar), desfase_losa(app));
     }
     if app.servicios.modpacks.abierto {
         ventana=con_velo_losa(p,ventana,modpacks_reales::vista(app),Mensaje::Modpacks(modpacks_reales::Accion::Cerrar),desfase_losa(app));

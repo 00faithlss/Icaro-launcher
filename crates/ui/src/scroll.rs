@@ -53,6 +53,30 @@ fn suave<'a, M: 'a>(contenido: impl Into<Element<'a, M>>, clave: Option<u64>) ->
     Element::new(suave_widget(contenido, clave))
 }
 
+/// Como [`desplazable`] con alto fijo, avisando la posición en cada cuadro:
+/// sirve a listas virtualizadas que dibujan solo las filas visibles.
+/// `clave` vuelve arriba con el mismo movimiento al cambiar (otro filtro o búsqueda).
+pub fn desplazable_con_avisos<'a, M: 'a>(
+    contenido: impl Into<Element<'a, M>>,
+    alto: f32,
+    id: &'static str,
+    clave: u64,
+    al_desplazar: impl Fn(scrollable::Viewport) -> M + 'a,
+) -> Element<'a, M> {
+    let lista = scrollable::Scrollable::with_direction(
+        contenido,
+        Direction::Vertical(Scrollbar::new().width(0).scroller_width(0).margin(0)),
+    )
+    .id(scrollable::Id::new(id))
+    .height(alto)
+    .on_scroll(al_desplazar);
+    Element::new(Suave {
+        contenido: lista.into(),
+        clave: Some(clave),
+        id: None,
+    })
+}
+
 fn suave_widget<'a, M: 'a>(
     contenido: impl Into<Element<'a, M>>,
     clave: Option<u64>,
