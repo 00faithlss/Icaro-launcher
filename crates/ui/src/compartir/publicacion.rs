@@ -377,23 +377,27 @@ fn interior_casilla<'a>(p: Paleta, e: Tri) -> Element<'a, Accion> {
         Tri::Algunos => bloque(p.on_accent, 10, 2),
     }
 }
+/// Fondo y borde de la casilla; con el puntero encima cambian de tono.
+fn colores_casilla(p: Paleta, e: Tri, sobre: bool) -> (Color, Color) {
+    match (e != Tri::No, sobre) {
+        (true, false) => (p.accent, p.accent),
+        (true, true) => (p.accent_hover, p.accent_hover),
+        (false, false) => (p.surface_sunken, p.border_strong),
+        (false, true) => (p.surface_hover, p.text),
+    }
+}
 /// Casilla `ic-casilla` dibujada: pozo apagado, bloque de acento; indeterminada, raya.
-fn casilla<'a>(p: Paleta, e: Tri) -> Element<'a, Accion> {
-    let llena = e != Tri::No;
+fn casilla<'a>(p: Paleta, e: Tri, sobre: bool) -> Element<'a, Accion> {
+    let (fondo, borde) = colores_casilla(p, e, sobre);
     container(interior_casilla(p, e))
         .width(20)
         .height(20)
         .center(20)
-        .style(caja(
-            Some(if llena { p.accent } else { p.surface_sunken }),
-            if llena { p.accent } else { p.border_strong },
-            2.,
-        ))
+        .style(caja(Some(fondo), borde, 2.))
         .into()
 }
 /// Casilla con su propia pulsación (tarjetas y cabeceras de sección).
 fn casilla_boton<'a>(p: Paleta, e: Tri, accion: Accion) -> Element<'a, Accion> {
-    let llena = e != Tri::No;
     button(container(interior_casilla(p, e)).center(Length::Fill))
         .width(20)
         .height(20)
@@ -401,20 +405,11 @@ fn casilla_boton<'a>(p: Paleta, e: Tri, accion: Accion) -> Element<'a, Accion> {
         .on_press(accion)
         .style(move |_, s| {
             let sobre = matches!(s, button::Status::Hovered | button::Status::Pressed);
+            let (fondo, borde) = colores_casilla(p, e, sobre);
             button::Style {
-                background: Some(Background::Color(if llena {
-                    p.accent
-                } else {
-                    p.surface_sunken
-                })),
+                background: Some(Background::Color(fondo)),
                 border: Border {
-                    color: if llena {
-                        p.accent
-                    } else if sobre {
-                        p.text
-                    } else {
-                        p.border_strong
-                    },
+                    color: borde,
                     width: 2.,
                     radius: 0.0.into(),
                 },
@@ -422,6 +417,24 @@ fn casilla_boton<'a>(p: Paleta, e: Tri, accion: Accion) -> Element<'a, Accion> {
             }
         })
         .into()
+}
+/// Fila pulsable con casilla dibujada: al pasar el puntero por la fila, la
+/// casilla también cambia de tono. `arriba`/`izquierda` la sitúan como en la base.
+fn con_casilla_sobre<'a>(
+    p: Paleta,
+    base: Element<'a, Accion>,
+    e: Tri,
+    arriba: f32,
+    izquierda: f32,
+) -> Element<'a, Accion> {
+    iced::widget::hover(
+        base,
+        container(casilla(p, e, true)).padding(Padding {
+            top: arriba,
+            left: izquierda,
+            ..Padding::ZERO
+        }),
+    )
 }
 
 /// Superficie pulsable sin marco que se ilumina al pasar el puntero.
@@ -819,7 +832,9 @@ fn tipos<'a>(p: Paleta, r: &Resumen<'_>) -> Element<'a, Accion> {
                 .height(Length::Fill),
         );
     }
+    // El relleno de 1 px reserva el borde: el hover de una tarjeta no lo tapa.
     container(fila.height(ALTO_TIPO))
+        .padding(1)
         .width(Length::Fill)
         .style(caja(None, p.border, 1.))
         .into()
@@ -1017,8 +1032,9 @@ fn fila<'a>(p: Paleta, m: &RevisionPublicacion, c: &CambioPublicacion) -> Elemen
         top: 2.,
         ..Padding::ZERO
     });
+    let estado = if marcado { Tri::Todos } else { Tri::No };
     let contenido = row![
-        container(casilla(p, if marcado { Tri::Todos } else { Tri::No })).padding(Padding {
+        container(casilla(p, estado, false)).padding(Padding {
             top: 1.,
             ..Padding::ZERO
         }),
@@ -1029,14 +1045,16 @@ fn fila<'a>(p: Paleta, m: &RevisionPublicacion, c: &CambioPublicacion) -> Elemen
     ]
     .spacing(14)
     .align_y(Alignment::Start);
+    let fila = button(contenido)
+        .padding([14., 4.])
+        .width(Length::Fill)
+        .on_press_maybe(
+            (!m.guardando).then(|| Accion::MarcarPublicacion(c.archivo.id.clone(), !marcado)),
+        )
+        .style(superficie(p, None));
+    // La casilla queda a 14 + 1 px del borde superior y 4 px del izquierdo.
     column![
-        button(contenido)
-            .padding([14., 4.])
-            .width(Length::Fill)
-            .on_press_maybe(
-                (!m.guardando).then(|| Accion::MarcarPublicacion(c.archivo.id.clone(), !marcado))
-            )
-            .style(superficie(p, None)),
+        con_casilla_sobre(p, fila.into(), estado, 15., 4.),
         regla(p, false)
     ]
     .into()
@@ -1128,23 +1146,23 @@ fn seccion<'a>(
         });
         if tipo == TipoContenido::Config {
             let siguen = m.vista.siguen_mod;
-            cuerpo = cuerpo.push(
-                button(
-                    row![
-                        casilla(p, if siguen { Tri::Todos } else { Tri::No }),
-                        body_sm(
-                            "Las configuraciones siguen a su mod: si publicas un mod, se publican sus ajustes",
-                            p.text
-                        )
-                    ]
-                    .spacing(12)
-                    .align_y(Alignment::Center),
-                )
-                .padding([14., 16.])
-                .width(Length::Fill)
-                .on_press(Accion::SiguenSuMod(!siguen))
-                .style(superficie(p, Some(p.surface_sunken))),
-            );
+            let estado = if siguen { Tri::Todos } else { Tri::No };
+            let boton = button(
+                row![
+                    casilla(p, estado, false),
+                    body_sm(
+                        "Las configuraciones siguen a su mod: si publicas un mod, se publican sus ajustes",
+                        p.text
+                    )
+                ]
+                .spacing(12)
+                .align_y(Alignment::Center),
+            )
+            .padding([14., 16.])
+            .width(Length::Fill)
+            .on_press(Accion::SiguenSuMod(!siguen))
+            .style(superficie(p, Some(p.surface_sunken)));
+            cuerpo = cuerpo.push(con_casilla_sobre(p, boton.into(), estado, 14., 16.));
         }
         if tipo == TipoContenido::Resourcepack {
             cuerpo = cuerpo.push(body_sm(
@@ -1198,6 +1216,8 @@ fn seccion<'a>(
     Some(
         container(c)
             .id(container::Id::new(id_seccion(tipo)))
+            // Reserva el borde de 1 px: el hover de la cabecera no lo tapa.
+            .padding(1)
             .width(Length::Fill)
             .style(caja(
                 None,
