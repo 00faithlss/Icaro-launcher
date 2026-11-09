@@ -1,0 +1,29 @@
+{
+  "version": "0.4.0",
+  "notas": [
+    {
+      "tipo": "nuevo",
+      "texto": "Compartir instancias (experimental): publica una instancia para tus amigos con un código de invitación. Eliges qué se publica por tipo de contenido, con atajos como «Lo necesario para jugar juntos», y tus amigos revisan los cambios antes de aplicarlos al pulsar Jugar o Sincronizar. Se activa en Servidores."
+    },
+    {
+      "tipo": "nuevo",
+      "texto": "La cuenta y el estudio de skin tienen un diseño nuevo, con visor 3D, tiempo jugado total, instancia más jugada, elección de capa, historial y descarga de skins."
+    },
+    {
+      "tipo": "nuevo",
+      "texto": "La tienda de mods permite mostrar 20, 30, 50 o 100 resultados por página."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "Actualizar o instalar varios mods a la vez guarda los que funcionan aunque uno falle, y el aviso nombra el mod que falló."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "Al cambiar de página en la tienda, la lista vuelve arriba con desplazamiento suave y la rueda ya no se desfasa."
+    },
+    {
+      "tipo": "correccion",
+      "texto": "Crear una instancia ya no puede cerrar el launcher al preparar Minecraft."
+    }
+  ]
+}
