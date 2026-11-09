@@ -624,7 +624,8 @@ fn siguiente(app: &mut App) -> Task<Mensaje> {
             let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, u64, u64)>(32);
             let contexto_cancel = cancel.clone();
             let contexto_id = solicitud.instancia.id.clone();
-            let operation = icaro_core::diagnostico_contexto::observar("juego", "preparar", Some(&contexto_id), &contexto_cancel, async {
+            // Mantiene el estado de instalación fuera del stream que iced construye en la ventana.
+            let mut operation = Box::pin(icaro_core::diagnostico_contexto::observar("juego", "preparar", Some(&contexto_id), &contexto_cancel, async {
                 icaro_core::diagnostico_contexto::etapa("reserva_instancia");
                 let actividad=actividad::adquirir(store.clone(),solicitud.instancia.clone(),solicitud.actividad.clone()).await?;
                 let compartida_store = store.clone();
@@ -673,8 +674,7 @@ fn siguiente(app: &mut App) -> Task<Mensaje> {
                     minecraft: game,
                     java: runtime,
                 })
-            });
-            tokio::pin!(operation);
+            }));
             loop {
                 tokio::select! {
                     Some((text,done,total))=rx.recv()=>{if output.send(m(Accion::Progreso(id.clone(),generation,text,done,total))).await.is_err(){cancel.cancel();let _=(&mut operation).await;break}},

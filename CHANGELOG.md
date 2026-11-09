@@ -2,6 +2,8 @@
 
 ## [Sin publicar]
 
+- La preparación automática de Minecraft tras crear una instancia usa un estado de instalación alojado en el heap. Evita el desbordamiento de pila observado en el launcher de desarrollo de Windows.
+
 - Compartir experimental reutiliza contenido verificado entre instancias, deduplica por SHA-512 y descarga en paralelo con cupos por origen. Los archivos conservan su verificación y se aplican mediante la transacción recuperable.
 
 - Compartir experimental: conflictos de selección/orden de packs revisables, biblioteca de publicaciones persistidas y reconexión sin revocar accesos; contadores cancelables, precomprobación de disco y limpieza conservadora del staging. Cierre con drenaje y bandeja Windows restaurable usando el icono propio; conserva la ventana minimizada si la bandeja falla. Servicio gratuito de invitaciones desplegado con prueba HTTP remota. Sigue bajo bandera; no acredita una partida ni sincronización entre dos equipos.
