@@ -536,6 +536,26 @@ fn actualizar(app: &mut App, m: Mensaje) -> Task<Mensaje> {
     Task::batch([tarea, estadisticas_reales::pedir(app)])
 }
 
+/// Entrada del Umbral para esta pulsación de Jugar y si es de noche (21–7 h).
+/// En capturas de diseño, `ICARO_UMBRAL_ESTILO` (0–3) e `ICARO_UMBRAL_NOCHE=1` los fijan.
+fn aspecto_umbral(pulsado: std::time::Instant) -> icaro_ui::efectos::AspectoUmbral {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    pulsado.hash(&mut h);
+    let semilla = std::env::var("ICARO_UMBRAL_ESTILO")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| h.finish());
+    let hora = hora_local::local(std::time::SystemTime::now()).hora;
+    icaro_ui::efectos::AspectoUmbral {
+        estilo: icaro_ui::efectos::EstiloUmbral::de_semilla(semilla),
+        nocturno: std::env::var("ICARO_UMBRAL_NOCHE").map_or_else(
+            |_| icaro_ui::efectos::es_de_noche(hora),
+            |v| v == "1",
+        ),
+    }
+}
+
 fn hay_dialogo(app: &App) -> bool {
     if app.servicios.sincronizacion.modal(){return true;}
     if app.ventana.width<1100. && app.servicios.servidores.panel_abierto(){return true;}
@@ -3553,11 +3573,12 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
     let umbral: Element<'_, Mensaje> = if let Some(t) = app.umbral {
         let nombre = app.seleccionada.and_then(|i| con_instancias(|l| l.get(i).map(|d| d.nombre.clone()))).unwrap_or_default();
         let pref = icaro_ui::movimiento::Preferencia { reducir: app.reducir };
+        let aspecto = aspecto_umbral(t);
         if app.servicios.demo {
-            icaro_ui::efectos::umbral(p, ms_desde(t, app.ahora), pref, &nombre, Mensaje::UmbralVolver)
+            icaro_ui::efectos::umbral(p, ms_desde(t, app.ahora), pref, aspecto, &nombre, Mensaje::UmbralVolver)
         } else {
             icaro_ui::efectos::umbral_registro_transicion(
-                p, ms_desde(t,app.ahora), pref,
+                p, ms_desde(t,app.ahora), pref, aspecto,
                 &juego_real::lineas(app).iter().rev().take(8).collect::<Vec<_>>().into_iter().rev()
                     .map(|l|format!("[{}] {}",l.hora,l.mensaje)).collect::<Vec<_>>(),
                 juego_real::retirada_umbral(app), Mensaje::UmbralVolver,

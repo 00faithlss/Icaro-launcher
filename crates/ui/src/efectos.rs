@@ -35,6 +35,60 @@ fn con_alfa(c: Color, a: f32) -> Color {
 
 // --- Umbral ---------------------------------------------------------------
 
+/// Forma en que la luz del Umbral llena la ventana.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EstiloUmbral {
+    /// La luz sale del arco de la lámina (la original).
+    #[default]
+    Arco,
+    /// Un círculo que se abre desde el centro.
+    Iris,
+    /// Un barrido de izquierda a derecha.
+    Barrido,
+    /// Persianas verticales que se abren a la vez.
+    Persianas,
+}
+impl EstiloUmbral {
+    pub const TODOS: [Self; 4] = [Self::Arco, Self::Iris, Self::Barrido, Self::Persianas];
+    /// Estilo para una semilla: cambia en cada pulsación de Jugar.
+    pub fn de_semilla(semilla: u64) -> Self {
+        Self::TODOS[(semilla % Self::TODOS.len() as u64) as usize]
+    }
+}
+
+/// Cómo se ve el Umbral: su entrada y si es de noche (sin luz blanca).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AspectoUmbral {
+    pub estilo: EstiloUmbral,
+    pub nocturno: bool,
+}
+impl AspectoUmbral {
+    /// De noche la luz es tinta oscura con texto claro, para no deslumbrar.
+    fn paleta(self, p: Paleta) -> Paleta {
+        if !self.nocturno {
+            return p;
+        }
+        Paleta {
+            fulgor: Color::from_rgb8(0x16, 0x16, 0x14),
+            on_fulgor: Color::from_rgb8(0xec, 0xec, 0xe8),
+            ..p
+        }
+    }
+    /// Intensidad del halo blanco: de noche apenas un brillo.
+    fn halo(self) -> f32 {
+        if self.nocturno {
+            0.12
+        } else {
+            1.0
+        }
+    }
+}
+
+/// Es de noche entre las 21:00 y las 7:00, hora local.
+pub fn es_de_noche(hora: u32) -> bool {
+    hora >= 21 || hora < 7
+}
+
 fn lamina_umbral() -> &'static Handle {
     static CELDA: OnceLock<Handle> = OnceLock::new();
     CELDA.get_or_init(|| {
@@ -47,6 +101,62 @@ struct CapaUmbral {
     paleta: Paleta,
     /// Fundido de entrada o retirada por fallo de toda la capa.
     retirada: f32,
+    aspecto: AspectoUmbral,
+}
+
+/// Rellena con `color` la región de la luz para un avance `k` según el estilo.
+/// Con `rayas`, solo líneas de 2 px cada 6 px dentro de esa región.
+fn region_luz(
+    frame: &mut Frame,
+    estilo: EstiloUmbral,
+    tam: Size,
+    arco: Rectangle,
+    k: f32,
+    color: Color,
+    rayas: bool,
+) {
+    let ventana = Rectangle::new(Point::ORIGIN, tam);
+    let rect = |frame: &mut Frame, r: Rectangle| {
+        if rayas {
+            let mut y = r.y;
+            while y < r.y + r.height {
+                frame.fill_rectangle(Point::new(r.x, y), Size::new(r.width, 2.0), color);
+                y += 6.0;
+            }
+        } else {
+            frame.fill_rectangle(r.position(), r.size(), color);
+        }
+    };
+    match estilo {
+        EstiloUmbral::Arco => rect(frame, movimiento::mezclar(arco, ventana, k)),
+        EstiloUmbral::Barrido => rect(frame, Rectangle::new(Point::ORIGIN, Size::new(tam.width * k, tam.height))),
+        EstiloUmbral::Persianas => {
+            const N: usize = 8;
+            let ancho = tam.width / N as f32;
+            for i in 0..N {
+                rect(
+                    frame,
+                    Rectangle::new(Point::new(i as f32 * ancho, 0.0), Size::new(ancho * k, tam.height)),
+                );
+            }
+        }
+        EstiloUmbral::Iris => {
+            let c = ventana.center();
+            let radio = k * (tam.width.hypot(tam.height) / 2.0);
+            if rayas {
+                // Franjas del círculo: cada línea ocupa el ancho de su cuerda.
+                let mut y = (c.y - radio).max(0.0);
+                while y < (c.y + radio).min(tam.height) {
+                    let dy = y - c.y;
+                    let media = (radio * radio - dy * dy).max(0.0).sqrt();
+                    frame.fill_rectangle(Point::new(c.x - media, y), Size::new(2.0 * media, 2.0), color);
+                    y += 6.0;
+                }
+            } else {
+                frame.fill(&Path::circle(c, radio), color);
+            }
+        }
+    }
 }
 
 impl<M> canvas::Program<M> for CapaUmbral {
@@ -60,10 +170,11 @@ impl<M> canvas::Program<M> for CapaUmbral {
         limites: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
-        let p = self.paleta;
+        let p = self.aspecto.paleta(self.paleta);
         let f = self.fase;
         let tam = limites.size();
         let mut frame = Frame::new(renderer, tam);
+        let estilo = self.aspecto.estilo;
 
         // La lámina va debajo, como widget de imagen: el lienzo pinta las
         // imágenes por encima de sus formas, y la luz debe quedar sobre ella.
@@ -79,36 +190,34 @@ impl<M> canvas::Program<M> for CapaUmbral {
         }
 
         let arco = movimiento::arco_en(tam);
-        let ventana = Rectangle::new(Point::ORIGIN, tam);
 
-        // Halo del arco: círculos concéntricos que aproximan el degradado
-        // radial de 360 px.
-        if f.halo > 0.0 {
-            let centro = arco.center();
+        // Halo: círculos concéntricos que aproximan el degradado radial de
+        // 360 px, en el arco o en el centro según el estilo. De noche, tenue.
+        if f.halo > 0.0 && matches!(estilo, EstiloUmbral::Arco | EstiloUmbral::Iris) {
+            let centro = if estilo == EstiloUmbral::Arco {
+                arco.center()
+            } else {
+                Rectangle::new(Point::ORIGIN, tam).center()
+            };
+            let intensidad = self.aspecto.halo();
             let radio = 180.0 * f.escala_halo;
             const ANILLOS: usize = 14;
             let a = 1.0 - 0.3_f32.powf(1.0 / ANILLOS as f32);
             for i in 0..ANILLOS {
                 let r = radio * (1.0 - i as f32 / ANILLOS as f32);
-                frame.fill(&Path::circle(centro, r), con_alfa(Color::WHITE, a * f.halo * self.retirada));
+                frame.fill(&Path::circle(centro, r), con_alfa(Color::WHITE, a * f.halo * intensidad * self.retirada));
             }
         }
 
-        // Líneas horizontales de 2 px, paso de 6 px, desde el arco al borde.
+        // Líneas horizontales de 2 px, paso de 6 px, que llenan la ventana.
         if f.lineas > 0.0 {
-            let r = movimiento::mezclar(arco, ventana, f.lineas);
-            let mut y = r.y;
-            while y < r.y + r.height {
-                frame.fill_rectangle(Point::new(r.x, y), Size::new(r.width, 2.0), con_alfa(p.fulgor, self.retirada));
-                y += 6.0;
-            }
+            region_luz(&mut frame, estilo, tam, arco, f.lineas, con_alfa(p.fulgor, self.retirada), true);
         }
 
         // Luz sólida, un poco detrás de las líneas.
-        let luz = movimiento::mezclar(arco, ventana, f.luz);
         let alfa = f.luz_alfa * self.retirada;
         if alfa > 0.0 {
-            frame.fill_rectangle(luz.position(), luz.size(), con_alfa(p.fulgor, alfa));
+            region_luz(&mut frame, estilo, tam, arco, f.luz, con_alfa(p.fulgor, alfa), false);
         }
 
         vec![frame.into_geometry()]
@@ -171,6 +280,7 @@ pub fn umbral<'a, M: Clone + 'a>(
     p: Paleta,
     ms: f32,
     pref: Preferencia,
+    aspecto: AspectoUmbral,
     instancia: &str,
     al_volver: M,
 ) -> Element<'a, M> {
@@ -183,7 +293,7 @@ pub fn umbral<'a, M: Clone + 'a>(
         format!("[{}] Cargando el cargador de mods", hora()),
         format!("[{}] Minecraft arrancando", hora()),
     ];
-    umbral_registro(p, ms, pref, &lineas, al_volver)
+    umbral_registro(p, ms, pref, aspecto, &lineas, al_volver)
 }
 
 /// Mismo Umbral, alimentado por el registro real en vez de datos de demostración.
@@ -191,10 +301,11 @@ pub fn umbral_registro<'a, M: Clone + 'a>(
     p: Paleta,
     ms: f32,
     pref: Preferencia,
+    aspecto: AspectoUmbral,
     lineas: &[String],
     al_volver: M,
 ) -> Element<'a, M> {
-    umbral_registro_transicion(p, ms, pref, lineas, None, al_volver)
+    umbral_registro_transicion(p, ms, pref, aspecto, lineas, None, al_volver)
 }
 
 /// Entrada original, retirada por fallo de 200 ms y Rastrillo al volver.
@@ -203,6 +314,7 @@ pub fn umbral_registro_transicion<'a, M: Clone + 'a>(
     p: Paleta,
     ms: f32,
     pref: Preferencia,
+    aspecto: AspectoUmbral,
     lineas: &[String],
     retirada: Option<(f32, bool)>,
     al_volver: M,
@@ -213,6 +325,7 @@ pub fn umbral_registro_transicion<'a, M: Clone + 'a>(
         fase,
         paleta: p,
         retirada: opacidad,
+        aspecto,
     })
     .width(Length::Fill)
     .height(Length::Fill);
@@ -222,7 +335,7 @@ pub fn umbral_registro_transicion<'a, M: Clone + 'a>(
     let mut pila = stack![fondo, capa];
     if fase.salida {
         pila = pila.push(salida(
-            p,
+            aspecto.paleta(p),
             if ms > 1700. {
                 lineas.len()
             } else {
