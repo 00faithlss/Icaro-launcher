@@ -1,0 +1,11 @@
+{
+  "name": "icaro-invitaciones",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {"enabled": false},
+  "triggers": {"crons": ["*/5 * * * *"]},
+  "d1_databases": [{"binding":"DB","database_name":"icaro-invitaciones","database_id":"4755b52f-43da-46c6-8de7-07c0719cd025","migrations_dir":"migrations"}],
+  "vars": {"RATE_PER_MINUTE":"60","DAILY_REQUEST_BUDGET":"5000"}
+}

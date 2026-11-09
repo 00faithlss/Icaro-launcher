@@ -1,6 +1,6 @@
 import {HttpError,requireThat,isHex,digest,normalizeCode,newCode,authenticate,validateMeeting,rateLimit} from './security.js';
 
-const routes=new Set(['create','resolve','claim','update','revoke-code','revoke-access','stop','authorizations']);
+const routes=new Set(['create','resolve','claim','update','revoke-code','revoke-access','stop','authorizations','reconnect']);
 function settings(data) {
     const capacity=data.capacity??10;
     requireThat(Number.isSafeInteger(capacity) && capacity>=1 && capacity<=4294967295);
@@ -54,6 +54,17 @@ async function execute(route,db,identity,data,now) {
             requireThat(current?.host===identity,403,'wrong_host');
         }
         throw new HttpError(503,'code_collision');
+    }
+    if(route==='reconnect') {
+        // Solo una aceptación vigente y sin revocar devuelve el encuentro.
+        // La consulta conserva las autorizaciones y el cupo.
+        requireThat(isHex(data.host,64)&&isHex(data.publication,32));
+        const p=await db.prepare('SELECT host,meeting,active FROM publications WHERE publication=?').bind(data.publication).first();
+        requireThat(p,404,'not_found'); requireThat(p.host===data.host,403,'wrong_host');
+        requireThat(p.active,410,'sharing_stopped');
+        const auth=await db.prepare('SELECT revoked FROM authorizations WHERE publication=? AND guest=?').bind(data.publication,identity).first();
+        requireThat(auth&&!auth.revoked,403,'access_revoked');
+        return {host:p.host,publication:data.publication,meeting:JSON.parse(p.meeting)};
     }
     if(['authorizations','revoke-access','stop'].includes(route)) {
         await publication(db,data.publication,identity);

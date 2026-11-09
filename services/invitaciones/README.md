@@ -1,13 +1,38 @@
 # Invitaciones de Ícaro (HTTP v1)
 
-Estado del 07-11-2026: 17 pruebas locales del servicio pasadas y una prueba de
+Estado del 08-11-2026: 24 pruebas locales del servicio pasadas y una prueba de
 interoperabilidad Rust/D1/iroh con aplicación y revocación. El [progreso general](../../docs/superpowers/progreso/2026-11-07-compartir-instancias.md)
 separa estas comprobaciones de la integración pendiente del launcher.
 
-Worker y D1 preparados y probados **solo localmente**. No existe un endpoint de
-producción configurado. No se ha creado cuenta, base remota ni despliegue, y no
-se habilita ningún plan de pago. Este servicio intercambia metadatos de encuentro
+Worker y D1 desplegados el **08-11-2026**, con la sesión y autorización del usuario,
+en `https://icaro-invitaciones.maurigajardov.workers.dev`. Cloudflare confirmó el
+plan Free; no se habilitó facturación ni se contrató otro plan. La configuración
+remota está separada en `wrangler.production.jsonc`; la local conserva su base aislada.
+Este servicio intercambia metadatos de encuentro
 y autorizaciones; los archivos viajan directamente entre launchers.
+
+La prueba remota con identidades efímeras pasó creación, resolución, aceptación,
+reconexión, revocación de código conservando acceso y revocación de acceso; terminó
+deteniendo la publicación de prueba. No acredita transferencia entre dos equipos.
+
+## Mantener el despliegue
+
+```powershell
+$env:WRANGLER_SEND_METRICS = 'false'
+npm.cmd test
+npm.cmd exec wrangler deploy -- --config wrangler.production.jsonc --dry-run
+npm.cmd exec wrangler d1 migrations apply -- DB --remote --config wrangler.production.jsonc
+npm.cmd exec wrangler deploy -- --config wrangler.production.jsonc
+```
+
+Los dos últimos comandos modifican el servicio remoto: ejecutarlos solo con
+autorización. No configurar `limits.cpu_ms`: Cloudflare lo rechaza en Free.
+Se mantienen los límites de la cuenta gratuita y el presupuesto del servicio de
+5.000 solicitudes/día y 60/minuto por IP. Este presupuesto propio limita el trabajo
+autenticado; no es una garantía frente a tráfico abusivo ni una reserva de cuota D1.
+La observabilidad remota está desactivada para no almacenar cuerpos/códigos.
+Consultar los [límites oficiales](https://developers.cloudflare.com/workers/platform/limits/)
+antes de cambiarlos. No subir tokens OAuth ni archivos de configuración personales.
 
 ## Desarrollo local
 
@@ -84,6 +109,7 @@ registró esa publicación; conocer un código no permite administrarla.
 | `/v1/create` | `{publication,duration_hours,capacity?,meeting}` | `{code,expires_at,capacity,accepted:0}` |
 | `/v1/resolve` | `{code}` | `Resolved` |
 | `/v1/claim` | `{code}` | `Resolved` con `authorized:true` |
+| `/v1/reconnect` | `{host,publication}` | `{host,publication,meeting}` |
 | `/v1/update` | `{code,duration_hours,capacity?,meeting?}` | `Resolved` |
 | `/v1/revoke-code` | `{code}` | `{ok:true}` |
 | `/v1/revoke-access` | `{publication,guest}` | `{ok:true}` |
@@ -95,6 +121,14 @@ registró esa publicación; conocer un código no permite administrarla.
 ```json
 {"host":"64hex","publication":"32hex","meeting":{"payload":"...","signature":"128hex"},"expires_at":1794086400,"capacity":10,"accepted":1,"authorized":true}
 ```
+
+`reconnect` exige firma de una identidad ya autorizada y no revocada para ese
+origen. No crea autorizaciones ni consume cupo: consulta publicación y autorización
+con dos lecturas D1 adicionales a las comprobaciones comunes de firma/cuota/nonce.
+No necesita código y sobrevive a su caducidad, revocación o renovación. Devuelve
+404 si no existe la publicación, 403 si no coincide el anfitrión o falta acceso,
+y 410 si está detenida. Reabrir exige aceptar una invitación nueva. El cliente
+verifica la firma del encuentro y la clave completa del endpoint antes de conectar.
 
 `duration_hours`: exclusivamente 24, 48 o 168, desde la **creación** del código.
 `capacity`: entero 1..4294967295; omitido significa 10 (también en update).
