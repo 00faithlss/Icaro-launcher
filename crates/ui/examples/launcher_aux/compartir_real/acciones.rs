@@ -293,11 +293,9 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             }
             s.etapa = Etapa::Revision;
             if let Some(v) = &mut s.revision {
+                v.guardando = false;
                 match r {
-                    Ok(()) => {
-                        v.estado = v::EstadoRevisionPublicacion::Disponible;
-                        v.confirmar_cancelacion = confirmar;
-                    }
+                    Ok(()) => v.confirmar_cancelacion = confirmar,
                     Err(e) => {
                         v.estado = v::EstadoRevisionPublicacion::Error(e);
                         s.cerrar_al_terminar = false;
@@ -346,6 +344,9 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
 
 fn vista(app: &mut App, a: v::Accion) -> Task<Mensaje> {
     if let Some(task) = super::biblioteca::accion(app, &a) {
+        return task;
+    }
+    if let Some(task) = revision_local(&mut app.servicios.compartir, &a) {
         return task;
     }
     if !app.servicios.compartir.red_ocupada {
@@ -403,7 +404,12 @@ fn vista(app: &mut App, a: v::Accion) -> Task<Mensaje> {
         v::Accion::Cerrar | v::Accion::Cancelar => {
             if s.etapa == Etapa::Propios {
                 s.etapa = Etapa::Revision;
-            } else if s.etapa == Etapa::Revision {
+            } else if s.etapa == Etapa::Revision
+                && s.revision.as_ref().is_some_and(|r| {
+                    r.vista.sucio && !r.confirmar_cancelacion && puede_elegir(r)
+                })
+            {
+                // Con la selección cambiada se confirma en el mismo pie.
                 return guardar(s, true);
             } else {
                 s.cerrar();
@@ -417,42 +423,50 @@ fn vista(app: &mut App, a: v::Accion) -> Task<Mensaje> {
             }
         }
         v::Accion::EleccionPublicacion(ruta, e) if s.etapa == Etapa::Revision => {
-            if let Some(t) = &mut s.trabajo {
-                if let Err(e) = t.elegir(&ruta, modelos::desde_vista(e)) {
-                    s.error = Some(e);
-                }
-                s.revision = Some(modelos::revision(t));
-            }
-            return guardar(s, false);
+            return elegir(s, vec![(ruta, e)], None);
         }
-        v::Accion::SeleccionarTodosLosMods if s.etapa == Etapa::Revision => {
-            let (Some(t), Some(r)) = (&s.trabajo, &s.revision) else {
+        v::Accion::MarcarPublicacion(id, marcado) if s.etapa == Etapa::Revision => {
+            let Some(r) = s.revision.as_ref().filter(|r| puede_elegir(r)) else {
                 return Task::none();
             };
-            if r.confirmar_cancelacion
-                || !matches!(r.estado, v::EstadoRevisionPublicacion::Disponible)
-            {
+            let Some(c) = r.cambios.iter().find(|c| c.archivo.id == id) else {
                 return Task::none();
+            };
+            let mut elecciones = vec![(id.clone(), c.eleccion_para(marcado))];
+            // Las configuraciones siguen a su mod: publicar o dejar privado el mod hace lo mismo con sus ajustes.
+            if r.vista.siguen_mod && c.tipo == v::TipoContenido::Mod {
+                elecciones.extend(
+                    r.cambios
+                        .iter()
+                        .filter(|x| x.de_mod.as_ref().is_some_and(|(m, _)| *m == id))
+                        .map(|x| (x.archivo.id.clone(), x.eleccion_para(marcado))),
+                );
             }
-            let mut elecciones = r
+            return elegir(s, elecciones, None);
+        }
+        v::Accion::MarcarTipo(tipo, marcado) if s.etapa == Etapa::Revision => {
+            let Some(r) = s.revision.as_ref().filter(|r| puede_elegir(r)) else {
+                return Task::none();
+            };
+            let sin = matches!(r.estado, v::EstadoRevisionPublicacion::SinCambios);
+            let elecciones = r
                 .cambios
                 .iter()
-                .filter_map(|c| {
-                    c.eleccion_para_seleccionar_mod()
-                        .map(|e| (c.archivo.id.as_str(), modelos::desde_vista(e)))
+                .filter(|c| {
+                    c.tipo == tipo
+                        && !c.integrado
+                        && (!sin || c.grupo == v::GrupoPublicacion::Privado)
                 })
-                .peekable();
-            if elecciones.peek().is_none() {
+                .map(|c| (c.archivo.id.clone(), c.eleccion_para(marcado)))
+                .collect();
+            return elegir(s, elecciones, None);
+        }
+        v::Accion::AtajoPublicacion(atajo) if s.etapa == Etapa::Revision => {
+            let Some(r) = s.revision.as_ref().filter(|r| puede_elegir(r)) else {
                 return Task::none();
-            }
-            let mut t = t.clone();
-            if let Err(e) = t.elegir_varios(elecciones) {
-                s.error = Some(e);
-                return Task::none();
-            }
-            s.revision = Some(modelos::revision(&t));
-            s.trabajo = Some(t);
-            return guardar(s, false);
+            };
+            let (elecciones, fuera) = v::elecciones_de_atajo(r, atajo);
+            return elegir(s, elecciones, Some((atajo, fuera)));
         }
         v::Accion::RevisarPropios if s.etapa == Etapa::Revision => {
             s.permiso_propios = false;
@@ -462,8 +476,8 @@ fn vista(app: &mut App, a: v::Accion) -> Task<Mensaje> {
         v::Accion::AutorizarPropios if s.etapa == Etapa::Propios && s.permiso_propios => {
             if let Some(t) = &mut s.trabajo {
                 t.borrador.autorizar_propios();
-                s.revision = Some(modelos::revision(t));
             }
+            reconstruir(s);
             s.etapa = Etapa::Revision;
         }
         v::Accion::ExcluirPropios if s.etapa == Etapa::Propios => {
@@ -471,8 +485,8 @@ fn vista(app: &mut App, a: v::Accion) -> Task<Mensaje> {
                 for f in t.borrador.autorizacion_pendiente() {
                     let _ = t.elegir(f.ruta.as_str(), Eleccion::Privado);
                 }
-                s.revision = Some(modelos::revision(t));
             }
+            reconstruir(s);
             s.etapa = Etapa::Revision;
             return guardar(s, false);
         }
@@ -557,6 +571,97 @@ fn vista(app: &mut App, a: v::Accion) -> Task<Mensaje> {
     }
     Task::none()
 }
+fn puede_elegir(r: &v::RevisionPublicacion) -> bool {
+    !r.confirmar_cancelacion
+        && !r.guardando
+        && matches!(
+            r.estado,
+            v::EstadoRevisionPublicacion::Disponible | v::EstadoRevisionPublicacion::SinCambios
+        )
+}
+
+/// Recalcula la revisión desde el borrador sin perder filtros, búsqueda ni secciones abiertas.
+fn reconstruir(s: &mut Estado) {
+    let Some(t) = &s.trabajo else {
+        return;
+    };
+    let mut nueva = modelos::revision(t);
+    if let Some(anterior) = &s.revision {
+        nueva.vista = anterior.vista.clone();
+    }
+    s.revision = Some(nueva);
+}
+
+/// Estado de la interfaz que no toca el borrador: se atiende también mientras se guarda.
+fn revision_local(s: &mut Estado, a: &v::Accion) -> Option<Task<Mensaje>> {
+    if !matches!(s.etapa, Etapa::Revision | Etapa::Guardando) {
+        return None;
+    }
+    let vista = &mut s.revision.as_mut()?.vista;
+    match a {
+        v::Accion::FiltroPublicacion(f) => vista.filtro = *f,
+        v::Accion::BuscarPublicacion(q) => vista.busqueda = q.chars().take(120).collect(),
+        v::Accion::AlternarTipo(t) => {
+            if !vista.abiertos.remove(t) {
+                vista.abiertos.insert(*t);
+            }
+        }
+        v::Accion::IrATipo(t) => {
+            vista.abiertos.insert(*t);
+            return Some(v::llevar_a_tipo(*t));
+        }
+        v::Accion::VerTodosPublicacion(t, g) => {
+            vista.ver_todos.insert((*t, *g));
+        }
+        v::Accion::SiguenSuMod(b) => vista.siguen_mod = *b,
+        _ => return None,
+    }
+    Some(Task::none())
+}
+
+/// Aplica varias elecciones a la vez sobre una copia: o entran todas o ninguna.
+fn elegir(
+    s: &mut Estado,
+    elecciones: Vec<(String, v::Eleccion)>,
+    atajo: Option<(v::AtajoPublicacion, Vec<String>)>,
+) -> Task<Mensaje> {
+    let Some(t) = &s.trabajo else {
+        return Task::none();
+    };
+    let mut copia = t.clone();
+    let resultado = elecciones.iter().try_for_each(|(id, e)| {
+        if id == "@orden-resourcepacks" {
+            copia.elegir(id, modelos::desde_vista(*e))
+        } else {
+            Ok(())
+        }
+    });
+    let resultado = resultado.and_then(|()| {
+        copia.elegir_varios(
+            elecciones
+                .iter()
+                .filter(|(id, _)| id != "@orden-resourcepacks")
+                .map(|(id, e)| (id.as_str(), modelos::desde_vista(*e))),
+        )
+    });
+    match resultado {
+        Ok(()) => s.trabajo = Some(copia),
+        Err(e) => {
+            s.error = Some(e);
+            return Task::none();
+        }
+    }
+    reconstruir(s);
+    if let Some(r) = &mut s.revision {
+        r.vista.sucio = true;
+        r.vista.atajo = atajo.as_ref().map(|(a, _)| *a);
+        if let Some((a, fuera)) = &atajo {
+            r.vista.aplicado = v::mensaje_atajo(r, *a, fuera);
+        }
+    }
+    guardar(s, false)
+}
+
 fn guardar(s: &mut Estado, confirmar: bool) -> Task<Mensaje> {
     let Some(t) = s.trabajo.clone() else {
         s.cerrar();
@@ -568,7 +673,7 @@ fn guardar(s: &mut Estado, confirmar: bool) -> Task<Mensaje> {
     s.etapa = Etapa::Guardando;
     let id = s.solicitud;
     if let Some(r) = &mut s.revision {
-        r.estado = v::EstadoRevisionPublicacion::Preparando { porcentaje: 0. };
+        r.guardando = true;
     }
     Task::perform(tareas::guardar_seleccion(t), move |r| {
         m(Accion::Guardada(id, confirmar, r))

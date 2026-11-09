@@ -16,5 +16,7 @@ pub use anfitrion::*;
 pub use contenido::*;
 pub use invitado::*;
 pub use modelos::*;
-pub use publicacion::revision_publicacion;
+pub use publicacion::{
+    elecciones_de_atajo, frase_publicacion, llevar_a_tipo, mensaje_atajo, revision_publicacion,
+};
 pub use seguimiento::*;

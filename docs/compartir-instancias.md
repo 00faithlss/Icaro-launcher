@@ -234,6 +234,11 @@ inválida rechaza publicar antes de escribir la selección o la revisión.
 Escenas: `compartir-publicacion`, `compartir-privados`, `compartir-retirada`,
 `compartir-packs`, `compartir-conflicto`, `compartir-invitacion`, `compartir-cupo`,
 `compartir-cierre`, `compartir-error`, `compartir-propios` y `compartir-destino`.
+RevisionPublicacion por tipo (versión 32 del diseño) tiene además un estado por
+escena: `compartir-publicacion-analizando`, `-sin-cambios`, `-atajo`,
+`-bloqueada`, `-autorizacion`, `-preparando`, `-publicada`, `-error`,
+`-confirmar` y `-buscar`; `compartir-publicacion-filas` y
+`-configuraciones` llevan a la vista esa sección.
 El sufijo `-angosto` activa la ventana pequeña. Usar `ICARO_DEMO=1`,
 `ICARO_TEMA_DISENO=tinta|piedra`, `ICARO_VISTA_DISENO` y `ICARO_CAPTURA_DISENO`.
 Estas escenas no realizan solicitudes ni crean identidades en el almacén seguro.

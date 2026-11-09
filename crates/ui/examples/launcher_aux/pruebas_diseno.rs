@@ -116,10 +116,21 @@ pub fn iniciar(piedra: bool) -> (App, Task<Mensaje>) {
             a.servicios.mods.diseno.seleccion.insert(id, std::collections::BTreeSet::from(["sodium.jar".into()]));
         }
     }
+    // Las escenas de la revisión llevan a la vista su sección, como al tocar la tarjeta del tipo.
+    let seccion = match scene.trim_end_matches("-angosto") {
+        "compartir-publicacion-filas" => Some(icaro_ui::compartir::TipoContenido::Mod),
+        "compartir-publicacion-configuraciones" => Some(icaro_ui::compartir::TipoContenido::Config),
+        "compartir-packs" => Some(icaro_ui::compartir::TipoContenido::Resourcepack),
+        _ => None,
+    };
+    let desplazar = seccion.map_or_else(Task::none, |t| {
+        Task::perform(async {tokio::time::sleep(std::time::Duration::from_millis(300)).await;}, |_| ())
+            .then(move |_| icaro_ui::compartir::llevar_a_tipo(t))
+    });
     let transicion = if cambiar_versiones {Task::perform(async {tokio::time::sleep(std::time::Duration::from_millis(200)).await;}, |_|Mensaje::Servicio(crate::servicios::Accion::FichaPestana(crate::ficha::Pestana::Versiones)))} else {Task::none()};
     (
         a,
-        Task::batch([transicion,
+        Task::batch([transicion, desplazar,
         if scene == "mods-menu-maximizar" {
             Task::perform(async {tokio::time::sleep(std::time::Duration::from_millis(200)).await;}, |_| ())
                 .then(|_| iced::window::get_latest().and_then(|id| iced::window::resize(id, Size::new(1920., 1000.))))

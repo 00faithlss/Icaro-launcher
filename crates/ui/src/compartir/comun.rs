@@ -281,13 +281,6 @@ pub(super) fn avance<'a>(p: Paleta, mensaje: &str, porcentaje: f32) -> Element<'
     .spacing(10)
     .into()
 }
-pub(super) fn insignia_origen<'a>(p: Paleta, origen: &str, propio: bool) -> Element<'a, Accion> {
-    if propio {
-        crate::componentes::insignia(p, crate::componentes::Estado::Aviso, "Archivo propio")
-    } else {
-        crate::componentes::insignia_contorno(p, origen)
-    }
-}
 pub(super) fn icono_estado<'a>(p: Paleta, i: Icono) -> Element<'a, Accion> {
     icono(i, Tam::Base, p.text).into()
 }

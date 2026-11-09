@@ -24,6 +24,8 @@ use std::{
 mod biblioteca;
 #[path = "pruebas_invitado_worker.rs"]
 mod invitado;
+#[path = "pruebas_revision_worker.rs"]
+mod revision;
 
 /// Clave solo en memoria: nunca toca el keyring del equipo.
 struct Memoria(Mutex<Option<Zeroizing<Vec<u8>>>>);

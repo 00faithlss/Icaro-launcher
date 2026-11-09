@@ -75,6 +75,8 @@ fn error_guardando_privados_no_cierra_ni_descarta_la_revision() {
         cambios: vec![],
         estado: v::EstadoRevisionPublicacion::Disponible,
         confirmar_cancelacion: false,
+        guardando: true,
+        vista: Default::default(),
     });
     let _ = super::actualizar(
         &mut a,
@@ -337,16 +339,18 @@ fn trabajo() -> super::tareas::Trabajo {
         identidad,
         inventario,
         borrador,
+        seleccion_inicial: seleccion.clone(),
         seleccion,
         anterior: None,
         activos: vec![],
         aviso: None,
         orden_pospuesto: false,
+        metadatos: Default::default(),
     }
 }
 
 #[test]
-fn seleccionar_todos_los_mods_respeta_el_alcance_y_el_permiso_de_propios() {
+fn marcar_todos_los_mods_respeta_el_alcance_y_el_permiso_de_propios() {
     use icaro_core::compartir::{
         inventario::ArchivoInventario,
         publicacion::{Borrador, Eleccion},
@@ -371,6 +375,7 @@ fn seleccionar_todos_los_mods_respeta_el_alcance_y_el_permiso_de_propios() {
     t.inventario.archivos.sort_by(|a, b| a.ruta.cmp(&b.ruta));
     t.inventario.bytes = 18;
     t.seleccion.mantener_privado(ruta("mods/privado.jar"), true);
+    t.seleccion_inicial = t.seleccion.clone();
     let manifiesto = Manifiesto {
         esquema: "icaro-compartir/1".into(),
         origen: t.contexto.origen.clone(),
@@ -412,23 +417,43 @@ fn seleccionar_todos_los_mods_respeta_el_alcance_y_el_permiso_de_propios() {
     let mut a = app();
     let id = a.servicios.compartir.comenzar(t.instancia.id.clone());
     let _ = super::actualizar(&mut a, super::Accion::Analizada(id, Ok(t)));
+    {
+        let r = a.servicios.compartir.revision.as_ref().unwrap();
+        let tipos: Vec<_> = r
+            .cambios
+            .iter()
+            .map(|c| (c.archivo.id.as_str(), c.tipo, c.grupo))
+            .collect();
+        assert!(tipos.contains(&(
+            "mods/privado.jar",
+            v::TipoContenido::Mod,
+            v::GrupoPublicacion::Privado
+        )));
+        assert!(tipos.contains(&(
+            "resourcepacks/texturas.zip",
+            v::TipoContenido::Resourcepack,
+            v::GrupoPublicacion::Nuevo
+        )));
+    }
     let _ = super::actualizar(
         &mut a,
-        super::Accion::Vista(v::Accion::SeleccionarTodosLosMods),
+        super::Accion::Vista(v::Accion::MarcarTipo(v::TipoContenido::Mod, true)),
     );
     assert_eq!(a.servicios.compartir.etapa, Etapa::Guardando);
+    assert!(a.servicios.compartir.revision.as_ref().unwrap().guardando);
     let t = a.servicios.compartir.trabajo.as_ref().unwrap();
-    for nombre in [
-        "mods/actualizado.JAR",
-        "mods/privado.jar",
-        "mods/propio.jar",
-    ] {
-        assert_eq!(t.borrador.eleccion(&ruta(nombre)), Some(Eleccion::Incluir));
+    assert_eq!(
+        t.borrador.eleccion(&ruta("mods/actualizado.JAR")),
+        Some(Eleccion::Incluir)
+    );
+    for nombre in ["mods/privado.jar", "mods/propio.jar"] {
+        assert_eq!(t.borrador.eleccion(&ruta(nombre)), Some(Eleccion::Compartir));
     }
     assert!(!t.seleccion.es_privado(&ruta("mods/privado.jar")));
+    // Marcar todos los mods también retira lo que se eliminó de la instancia.
     assert_eq!(
         t.borrador.eleccion(&ruta("mods/retirado.jar")),
-        Some(Eleccion::Posponer)
+        Some(Eleccion::Retirar)
     );
     assert!(t.orden_pospuesto);
     for nombre in [
@@ -458,6 +483,102 @@ fn seleccionar_todos_los_mods_respeta_el_alcance_y_el_permiso_de_propios() {
             .collect::<Vec<_>>(),
         ["mods/actualizado.JAR", "mods/propio.jar"]
     );
+}
+
+#[test]
+fn atajo_necesario_deja_fuera_lo_de_cliente_y_las_configuraciones_siguen_a_su_mod() {
+    use icaro_core::compartir::{
+        inventario::ArchivoInventario, metadatos::MetadatosMod, publicacion::Borrador,
+        publicacion::Eleccion, RutaCompartida,
+    };
+    let ruta = |nombre: &str| RutaCompartida::parse(nombre).unwrap();
+    let mut t = trabajo();
+    for (nombre, huella) in [
+        ("mods/sodium.jar", "11"),
+        ("config/sodium-options.json", "22"),
+        ("config/propio.json", "33"),
+    ] {
+        t.inventario.archivos.push(ArchivoInventario {
+            ruta: ruta(nombre),
+            bytes: 2048,
+            sha512: huella.repeat(64),
+            sha256: huella.repeat(32),
+        });
+    }
+    t.inventario.archivos.sort_by(|a, b| a.ruta.cmp(&b.ruta));
+    t.borrador = Borrador::comparar(&t.inventario, None, &t.seleccion).unwrap();
+    for (archivo, id, nombre, cliente) in [
+        ("mods/sodium.jar", "sodium", "Sodium", true),
+        ("mods/propio.jar", "propio", "Mod propio", false),
+    ] {
+        t.metadatos.actuales.insert(
+            ruta(archivo),
+            MetadatosMod {
+                id: id.into(),
+                nombre: nombre.into(),
+                version: "1.0".into(),
+                solo_cliente: cliente,
+            },
+        );
+    }
+    let mut a = app();
+    let id = a.servicios.compartir.comenzar(t.instancia.id.clone());
+    let _ = super::actualizar(&mut a, super::Accion::Analizada(id, Ok(t)));
+    {
+        let r = a.servicios.compartir.revision.as_ref().unwrap();
+        let sodium = r.cambios.iter().find(|c| c.archivo.id == "mods/sodium.jar").unwrap();
+        assert_eq!((sodium.archivo.nombre.as_str(), sodium.solo_cliente), ("Sodium", true));
+        assert_eq!(sodium.archivo.tamano, "2,0 KB");
+        let config = r
+            .cambios
+            .iter()
+            .find(|c| c.archivo.id == "config/sodium-options.json")
+            .unwrap();
+        assert_eq!(
+            config.de_mod,
+            Some(("mods/sodium.jar".into(), "Sodium".into()))
+        );
+    }
+    // Sin cambios en la selección, cerrar no pide confirmación.
+    let _ = super::actualizar(
+        &mut a,
+        super::Accion::Vista(v::Accion::FiltroPublicacion(v::FiltroPublicacion::SePublica)),
+    );
+    let _ = super::actualizar(
+        &mut a,
+        super::Accion::Vista(v::Accion::AtajoPublicacion(v::AtajoPublicacion::Necesario)),
+    );
+    assert_eq!(a.servicios.compartir.etapa, Etapa::Guardando);
+    {
+        let r = a.servicios.compartir.revision.as_ref().unwrap();
+        assert_eq!(r.vista.filtro, v::FiltroPublicacion::SePublica, "la vista sobrevive al recálculo");
+        assert_eq!(r.vista.atajo, Some(v::AtajoPublicacion::Necesario));
+        assert_eq!(
+            r.vista.aplicado,
+            "Listo: 1 mod y 1 configuración. Ajusta abajo lo que quieras."
+        );
+    }
+    let t = a.servicios.compartir.trabajo.as_ref().unwrap();
+    assert_eq!(t.borrador.eleccion(&ruta("mods/propio.jar")), Some(Eleccion::Compartir));
+    assert_eq!(t.borrador.eleccion(&ruta("mods/sodium.jar")), Some(Eleccion::Privado));
+    assert_eq!(t.borrador.eleccion(&ruta("config/sodium-options.json")), Some(Eleccion::Privado));
+    assert_eq!(t.borrador.eleccion(&ruta("config/propio.json")), Some(Eleccion::Compartir));
+    let _ = super::actualizar(&mut a, super::Accion::Guardada(id, false, Ok(())));
+    // Marcar el mod arrastra su configuración y quita la marca del atajo.
+    let _ = super::actualizar(
+        &mut a,
+        super::Accion::Vista(v::Accion::MarcarPublicacion("mods/sodium.jar".into(), true)),
+    );
+    let t = a.servicios.compartir.trabajo.as_ref().unwrap();
+    assert_eq!(t.borrador.eleccion(&ruta("mods/sodium.jar")), Some(Eleccion::Compartir));
+    assert_eq!(t.borrador.eleccion(&ruta("config/sodium-options.json")), Some(Eleccion::Compartir));
+    assert_eq!(a.servicios.compartir.revision.as_ref().unwrap().vista.atajo, None);
+    let _ = super::actualizar(&mut a, super::Accion::Guardada(id, false, Ok(())));
+    // Con la selección cambiada, cancelar confirma en el pie en vez de cerrar.
+    let _ = super::actualizar(&mut a, super::Accion::Vista(v::Accion::Cancelar));
+    let _ = super::actualizar(&mut a, super::Accion::Guardada(id, true, Ok(())));
+    assert!(a.servicios.compartir.revision.as_ref().unwrap().confirmar_cancelacion);
+    assert_eq!(a.servicios.compartir.etapa, Etapa::Revision);
 }
 
 #[test]

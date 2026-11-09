@@ -84,6 +84,11 @@ pub struct AccionesLista<M> {
 /// tonos de tinta, sacada del nombre (FNV-1a y xorshift), con una regla fina
 /// por fuera.
 pub fn avatar_servidor<'a, M: 'a>(p: Paleta, nombre: &str) -> Element<'a, M> {
+    avatar_servidor_de(p, nombre, 50.)
+}
+
+/// Mismo icono con el lado dado, regla incluida: 50 (`ic-pixel`) o 34 (`ic-pixel--sm`).
+pub fn avatar_servidor_de<'a, M: 'a>(p: Paleta, nombre: &str, lado: f32) -> Element<'a, M> {
     let mut h: u32 = 2_166_136_261;
     for u in nombre.encode_utf16() {
         h = (h ^ u32::from(u)).wrapping_mul(16_777_619);
@@ -113,8 +118,8 @@ pub fn avatar_servidor<'a, M: 'a>(p: Paleta, nombre: &str) -> Element<'a, M> {
     let tonos = [p.surface_sunken, p.border, p.border_strong, p.text_muted, p.text];
     let colores: Vec<Color> = celdas.iter().map(|&t| tonos[t]).collect();
     iced::widget::canvas(Avatar { colores, anillo: p.border })
-        .width(50)
-        .height(50)
+        .width(lado)
+        .height(lado)
         .into()
 }
 

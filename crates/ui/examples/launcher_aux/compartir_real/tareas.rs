@@ -40,10 +40,14 @@ pub struct Trabajo {
     pub inventario: Inventario,
     pub borrador: Borrador,
     pub seleccion: Seleccion,
+    /// Selección privada al abrir la revisión: decide «Privados desde antes».
+    pub seleccion_inicial: Seleccion,
     pub anterior: Option<Revision>,
     pub activos: Vec<String>,
     pub aviso: Option<String>,
     pub orden_pospuesto: bool,
+    /// Nombre, versión y entorno leídos de los JAR, solo para mostrar.
+    pub metadatos: c::metadatos::MetadatosPublicacion,
 }
 impl Trabajo {
     pub fn elegir(&mut self, ruta: &str, eleccion: Eleccion) -> Result<(), String> {
@@ -178,17 +182,26 @@ async fn analizar_con_interno(
         .map_err(icaro_core::diagnostico_contexto::texto)?;
         let activos = icaro_core::mods::recursos_activos(&almacen, &instancia.id)
             .map_err(icaro_core::diagnostico_contexto::texto)?;
+        let metadatos = c::metadatos::analizar(
+            &contexto.juego,
+            &inventario,
+            anterior.as_ref(),
+            &cancel_disco,
+        )
+        .map_err(icaro_core::diagnostico_contexto::texto)?;
         Ok::<_, String>(Trabajo {
             instancia,
             contexto,
             identidad,
             inventario,
             borrador,
+            seleccion_inicial: seleccion.clone(),
             seleccion,
             anterior,
             activos,
             aviso: None,
             orden_pospuesto: false,
+            metadatos,
         })
     })
     .await

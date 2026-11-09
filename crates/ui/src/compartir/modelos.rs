@@ -42,7 +42,19 @@ pub enum Accion {
     NombreDestino(String),
     RevisarInstalacion,
     EleccionPublicacion(String, Eleccion),
-    SeleccionarTodosLosMods,
+    /// Casilla de una fila: marcada se publica, vacía no.
+    MarcarPublicacion(String, bool),
+    /// Casilla de tres estados de un tipo: todos o ninguno.
+    MarcarTipo(TipoContenido, bool),
+    AtajoPublicacion(AtajoPublicacion),
+    FiltroPublicacion(FiltroPublicacion),
+    BuscarPublicacion(String),
+    /// Abre o pliega la sección de un tipo.
+    AlternarTipo(TipoContenido),
+    /// Abre la sección del tipo y la lleva a la vista.
+    IrATipo(TipoContenido),
+    VerTodosPublicacion(TipoContenido, GrupoPublicacion),
+    SiguenSuMod(bool),
     PublicarRevision,
     ConfirmarCancelarPublicacion,
     SeguirRevisando,
@@ -283,12 +295,15 @@ impl Marca {
         }
     }
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Subgrupo por cambio dentro de cada tipo de contenido.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GrupoPublicacion {
     Nuevo,
     Actualizaciones,
     Retiradas,
-    Resourcepacks,
+    /// Activación, desactivación y orden de resourcepacks.
+    Cambios,
+    /// Privado desde una revisión anterior.
     Privado,
 }
 impl GrupoPublicacion {
@@ -296,26 +311,132 @@ impl GrupoPublicacion {
         Self::Nuevo,
         Self::Actualizaciones,
         Self::Retiradas,
-        Self::Resourcepacks,
+        Self::Cambios,
         Self::Privado,
     ];
     pub fn titulo(self) -> &'static str {
         match self {
-            Self::Nuevo => "Contenido nuevo",
-            Self::Actualizaciones => "Actualizaciones",
-            Self::Retiradas => "Retiradas",
-            Self::Resourcepacks => "Resourcepacks",
-            Self::Privado => "Contenido privado",
+            Self::Nuevo => "Nuevos",
+            Self::Actualizaciones => "Actualizados",
+            Self::Retiradas => "Retirados",
+            Self::Cambios => "Cambios",
+            Self::Privado => "Privados desde antes",
         }
     }
-    pub fn nota(self) -> &'static str {
-        match self {
-        Self::Nuevo => "Empieza privado. Si no decides, se queda en tu equipo y no bloquea la publicación.",
-        Self::Actualizaciones => "Ya estaba compartido y cambió. Posponer mantiene la versión publicada.",
-        Self::Retiradas => "Retirarlo propone quitarlo a tus amigos en su próxima sincronización. Si ellos lo cambiaron, lo resuelven como conflicto.",
-        Self::Resourcepacks => "Activación, desactivación y orden. Un cambio de orden se publica aunque no cambien archivos.",
-        Self::Privado => "Se queda en tu equipo en esta y en las próximas revisiones, hasta que lo incluyas.",
+}
+
+/// Tipo de contenido, asignado por carpeta.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TipoContenido {
+    Mod,
+    Config,
+    Resourcepack,
+    Shader,
+    Script,
+}
+impl TipoContenido {
+    pub const TODOS: [Self; 5] = [
+        Self::Mod,
+        Self::Config,
+        Self::Resourcepack,
+        Self::Shader,
+        Self::Script,
+    ];
+    /// `mods/`, `config/`, `resourcepacks/`, `shaderpacks/` y `kubejs/`.
+    pub fn de_ruta(ruta: &str) -> Self {
+        match ruta.split('/').next().unwrap_or_default() {
+            "mods" => Self::Mod,
+            "resourcepacks" | "@orden-resourcepacks" => Self::Resourcepack,
+            "shaderpacks" => Self::Shader,
+            "kubejs" => Self::Script,
+            _ => Self::Config,
+        }
     }
+    pub fn titulo(self) -> &'static str {
+        match self {
+            Self::Mod => "Mods",
+            Self::Config => "Configuraciones",
+            Self::Resourcepack => "Resourcepacks",
+            Self::Shader => "Shaders",
+            Self::Script => "Scripts de KubeJS",
+        }
+    }
+    pub fn descripcion(self) -> &'static str {
+        match self {
+            Self::Mod => "Lo que tus amigos necesitan para entrar a tu mundo.",
+            Self::Config => "Ajustes de cada mod. Siguen a su mod salvo que los cambies.",
+            Self::Resourcepack => "Texturas: activación, desactivación y orden.",
+            Self::Shader => "Solo cambian cómo se ve el juego en cada equipo.",
+            Self::Script => "Recetas y reglas del servidor.",
+        }
+    }
+    pub fn icono(self) -> crate::iconos::Icono {
+        use crate::iconos::Icono;
+        match self {
+            Self::Mod => Icono::Instancias,
+            Self::Config => Icono::Ajustes,
+            Self::Resourcepack => Icono::Imagen,
+            Self::Shader => Icono::Sol,
+            Self::Script => Icono::Codigo,
+        }
+    }
+    /// Singular y plural para la frase del pie.
+    pub fn unidades(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Mod => ("mod", "mods"),
+            Self::Config => ("configuración", "configuraciones"),
+            Self::Resourcepack => ("cambio de resourcepacks", "cambios de resourcepacks"),
+            Self::Shader => ("shader", "shaders"),
+            Self::Script => ("script", "scripts"),
+        }
+    }
+}
+
+/// Atajos de «Empieza por aquí».
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AtajoPublicacion {
+    /// Mods que no son solo de cliente, sus configuraciones y los scripts del servidor.
+    Necesario,
+    Todo,
+    NadaNuevo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FiltroPublicacion {
+    #[default]
+    Todo,
+    SePublica,
+    NoSePublica,
+    ConProblemas,
+}
+
+/// Estado de la interfaz de la revisión; sobrevive a cada recálculo del borrador.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VistaRevision {
+    pub busqueda: String,
+    pub filtro: FiltroPublicacion,
+    pub abiertos: std::collections::BTreeSet<TipoContenido>,
+    pub ver_todos: std::collections::BTreeSet<(TipoContenido, GrupoPublicacion)>,
+    /// «Las configuraciones siguen a su mod».
+    pub siguen_mod: bool,
+    pub atajo: Option<AtajoPublicacion>,
+    /// Línea de éxito tras aplicar un atajo.
+    pub aplicado: String,
+    /// La selección cambió en esta revisión: cerrar pide confirmación.
+    pub sucio: bool,
+}
+impl Default for VistaRevision {
+    fn default() -> Self {
+        Self {
+            busqueda: String::new(),
+            filtro: FiltroPublicacion::Todo,
+            abiertos: [TipoContenido::Mod].into(),
+            ver_todos: Default::default(),
+            siguen_mod: true,
+            atajo: None,
+            aplicado: String::new(),
+            sucio: false,
+        }
     }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -340,39 +461,65 @@ pub struct Problema {
     pub accion: Accion,
     pub rotulo: String,
 }
+/// Una fila de la revisión: una casilla, marcada se publica y vacía no.
 #[derive(Debug, Clone)]
 pub struct CambioPublicacion {
+    /// `archivo.nombre` es el nombre legible (metadatos del mod), no el del archivo.
     pub archivo: ArchivoCompartido,
+    pub tipo: TipoContenido,
     pub grupo: GrupoPublicacion,
     pub marca: Marca,
     pub eleccion: Eleccion,
+    /// Elección que corresponde a la casilla marcada.
+    pub si: Eleccion,
+    /// Elección que corresponde a la casilla vacía.
+    pub no: Eleccion,
+    /// `0.6.5`, `0.14.3 → 0.14.5`, Modificado, Activado.
+    pub version: String,
+    /// Versión que siguen recibiendo los invitados si se pospone.
+    pub version_publicada: String,
+    /// Identificador y nombre del mod al que sigue una configuración.
+    pub de_mod: Option<(String, String)>,
     pub propio: bool,
     pub autorizado: bool,
     pub solo_cliente: bool,
     pub integrado: bool,
     pub problema: Option<Problema>,
+    /// Detalle con la casilla marcada; en retiradas, el motivo.
     pub estado: String,
 }
 impl CambioPublicacion {
-    pub(super) fn grupo_visible(&self) -> GrupoPublicacion {
-        if self.grupo == GrupoPublicacion::Nuevo && self.eleccion == Eleccion::Privado {
-            GrupoPublicacion::Privado
+    pub fn marcado(&self) -> bool {
+        self.eleccion == self.si
+    }
+    pub fn eleccion_para(&self, marcado: bool) -> Eleccion {
+        if marcado {
+            self.si
         } else {
-            self.grupo
+            self.no
         }
     }
-
-    pub fn eleccion_para_seleccionar_mod(&self) -> Option<Eleccion> {
-        if self.integrado || self.eleccion.publica() || !self.archivo.id.starts_with("mods/") {
+    /// Cuenta como privado en la frase del pie.
+    pub fn queda_privado(&self) -> bool {
+        matches!(self.grupo, GrupoPublicacion::Nuevo | GrupoPublicacion::Privado) && !self.marcado()
+    }
+    /// Lo que se elegiría con un atajo; `None` deja la fila como está.
+    pub fn con_atajo(&self, atajo: AtajoPublicacion, mod_solo_cliente: Option<bool>) -> Option<bool> {
+        if !matches!(self.grupo, GrupoPublicacion::Nuevo | GrupoPublicacion::Privado) {
             return None;
         }
-        match self.grupo_visible() {
-            GrupoPublicacion::Nuevo => Some(Eleccion::Compartir),
-            GrupoPublicacion::Actualizaciones | GrupoPublicacion::Privado => {
-                Some(Eleccion::Incluir)
+        Some(match atajo {
+            AtajoPublicacion::Todo => true,
+            AtajoPublicacion::NadaNuevo => false,
+            AtajoPublicacion::Necesario => {
+                let si = match self.tipo {
+                    TipoContenido::Mod | TipoContenido::Script => !self.solo_cliente,
+                    TipoContenido::Config => !mod_solo_cliente.unwrap_or(false),
+                    TipoContenido::Resourcepack | TipoContenido::Shader => false,
+                };
+                si && self.problema.is_none()
             }
-            GrupoPublicacion::Retiradas | GrupoPublicacion::Resourcepacks => None,
-        }
+        })
     }
 }
 #[derive(Debug, Clone)]
@@ -392,6 +539,9 @@ pub struct RevisionPublicacion {
     pub cambios: Vec<CambioPublicacion>,
     pub estado: EstadoRevisionPublicacion,
     pub confirmar_cancelacion: bool,
+    /// Guardando la selección privada: las casillas esperan sin cambiar de estado.
+    pub guardando: bool,
+    pub vista: VistaRevision,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Resolucion {

@@ -38,6 +38,7 @@ pub use acciones::{actualizar, Accion, Operacion};
 pub use biblioteca::cargar as cargar_biblioteca;
 pub use estado::{Estado, Etapa};
 pub use invitado_diseno::preparar as preparar_invitado_diseno;
+pub use modelos::tamano;
 pub use sincronizar::antes_de_jugar;
 pub use vistas::{accesos, vista};
 pub use vistas::transferencias;

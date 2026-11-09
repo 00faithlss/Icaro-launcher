@@ -2,7 +2,11 @@
 //! Traducción de datos comprobados a los componentes originales.
 use super::tareas::Trabajo;
 use icaro_core::{
-    compartir::{publicacion::Eleccion as E, Artefacto, Procedencia},
+    compartir::{
+        metadatos::{self, MetadatosMod},
+        publicacion::Eleccion as E,
+        Artefacto, Procedencia, RutaCompartida,
+    },
     instancias::Instancia,
 };
 use icaro_ui::compartir as v;
@@ -18,6 +22,21 @@ pub fn instancia(i: &Instancia, en_uso: bool) -> v::InstanciaCompartida {
         en_uso,
     }
 }
+/// Tamaño legible con coma decimal: 19,7 KB, 2,2 MB. Nunca bytes crudos.
+pub fn tamano(bytes: u64) -> String {
+    const KB: f64 = 1024.;
+    let b = bytes as f64;
+    let texto = if bytes < 1024 {
+        format!("{bytes} B")
+    } else if b < KB * KB {
+        format!("{:.1} KB", b / KB)
+    } else if b < KB * KB * KB {
+        format!("{:.1} MB", b / (KB * KB))
+    } else {
+        format!("{:.1} GB", b / (KB * KB * KB))
+    };
+    texto.replace('.', ",")
+}
 pub fn archivo(a: &Artefacto, trabajo: &Trabajo) -> v::ArchivoCompartido {
     v::ArchivoCompartido {
         id: a.ruta.as_str().into(),
@@ -29,7 +48,7 @@ pub fn archivo(a: &Artefacto, trabajo: &Trabajo) -> v::ArchivoCompartido {
             .unwrap_or_default()
             .into(),
         detalle: a.ruta.as_str().into(),
-        tamano: format!("{} bytes", a.bytes),
+        tamano: tamano(a.bytes),
         procedencia: match a.procedencia {
             Procedencia::Propio => "Archivo propio",
             _ => "Modrinth",
@@ -64,6 +83,32 @@ pub fn desde_vista(e: v::Eleccion) -> E {
         _ => E::Privado,
     }
 }
+
+/// Columna Versión: `0.6.5`, `0.14.3 → 0.14.5` o Modificado.
+fn version(
+    tipo: v::TipoContenido,
+    grupo: v::GrupoPublicacion,
+    actual: Option<&MetadatosMod>,
+    anterior: Option<&MetadatosMod>,
+) -> (String, String) {
+    let publicada = anterior.map(|m| m.version.clone()).unwrap_or_default();
+    let texto = match grupo {
+        v::GrupoPublicacion::Actualizaciones => match (anterior, actual) {
+            (Some(a), Some(b)) if !a.version.is_empty() && !b.version.is_empty() && a.version != b.version => {
+                format!("{} → {}", a.version, b.version)
+            }
+            _ => "Modificado".into(),
+        },
+        v::GrupoPublicacion::Retiradas => anterior
+            .or(actual)
+            .map(|m| m.version.clone())
+            .unwrap_or_default(),
+        _ if tipo == v::TipoContenido::Mod => actual.map(|m| m.version.clone()).unwrap_or_default(),
+        _ => String::new(),
+    };
+    (texto, publicada)
+}
+
 pub fn revision(trabajo: &Trabajo) -> v::RevisionPublicacion {
     let base = trabajo.anterior.as_ref().map(|r| &r.manifiesto);
     let anteriores: BTreeMap<_, _> = base
@@ -80,86 +125,161 @@ pub fn revision(trabajo: &Trabajo) -> v::RevisionPublicacion {
             todos.insert(f.ruta.clone(), a.clone());
         }
     }
-    let publicados: BTreeMap<_, _> = trabajo
-        .borrador
-        .archivos_publicados()
-        .into_iter()
-        .map(|a| (a.ruta.clone(), a))
-        .collect();
     let pendientes: BTreeSet<_> = trabajo
         .borrador
         .autorizacion_pendiente()
         .into_iter()
         .map(|a| a.ruta)
         .collect();
+    let meta = &trabajo.metadatos;
+    // Configuraciones → mod que las usa, por modid de los JAR actuales.
+    let mods_por_id: BTreeMap<&str, (&RutaCompartida, &MetadatosMod)> = meta
+        .actuales
+        .iter()
+        .map(|(r, m)| (m.id.as_str(), (r, m)))
+        .collect();
     let mut cambios = Vec::new();
-    for (ruta, mut a) in todos {
+    for (ruta, a) in todos {
         let Some(e) = trabajo.borrador.eleccion(&ruta) else {
             continue;
         };
         let actual = trabajo.borrador.archivo_actual(&ruta);
         let anterior = anteriores.get(&ruta);
-        if actual
-            .is_some_and(|f| anterior.is_some_and(|a| a.sha512 == f.sha512 && a.bytes == f.bytes))
-            && e != E::Privado
-        {
+        let privado_antes = trabajo.seleccion_inicial.es_privado(&ruta);
+        let igual = actual
+            .is_some_and(|f| anterior.is_some_and(|a| a.sha512 == f.sha512 && a.bytes == f.bytes));
+        if igual && e != E::Privado && !privado_antes {
             continue;
         }
-        if let Some(publicado) = publicados.get(&ruta) {
-            a = publicado.clone();
-        }
-        let (grupo, marca) = if actual.is_none() {
-            (v::GrupoPublicacion::Retiradas, v::Marca::Retirada)
+        let (grupo, marca, si, no, motivo) = if actual.is_none() {
+            (
+                v::GrupoPublicacion::Retiradas,
+                v::Marca::Retirada,
+                v::Eleccion::Retirar,
+                v::Eleccion::Posponer,
+                "Lo eliminaste de tu instancia",
+            )
+        } else if anterior.is_some() && (igual || privado_antes) {
+            // Publicado antes y ahora privado: retirarlo es dejarlo privado.
+            (
+                v::GrupoPublicacion::Retiradas,
+                v::Marca::Retirada,
+                v::Eleccion::Privado,
+                v::Eleccion::Incluir,
+                "Decidiste dejar de compartirlo",
+            )
         } else if anterior.is_some() {
             (
-                if ruta.as_str().starts_with("resourcepacks/") {
-                    v::GrupoPublicacion::Resourcepacks
-                } else {
-                    v::GrupoPublicacion::Actualizaciones
-                },
+                v::GrupoPublicacion::Actualizaciones,
                 v::Marca::Actualizacion,
+                v::Eleccion::Incluir,
+                v::Eleccion::Posponer,
+                "",
+            )
+        } else if privado_antes {
+            (
+                v::GrupoPublicacion::Privado,
+                v::Marca::Conservado,
+                v::Eleccion::Compartir,
+                v::Eleccion::Privado,
+                "",
             )
         } else {
             (
-                if trabajo.seleccion.es_privado(&ruta) {
-                    v::GrupoPublicacion::Privado
-                } else {
-                    v::GrupoPublicacion::Nuevo
-                },
+                v::GrupoPublicacion::Nuevo,
                 v::Marca::Alta,
+                v::Eleccion::Compartir,
+                v::Eleccion::Privado,
+                "",
             )
         };
+        let tipo = v::TipoContenido::de_ruta(ruta.as_str());
+        let m_actual = meta.actuales.get(&ruta);
+        let m_anterior = meta.anteriores.get(&ruta);
+        let datos = m_actual.or(m_anterior);
+        let mut archivo = archivo(&a, trabajo);
+        if let Some(d) = datos {
+            archivo.nombre = d.nombre.clone();
+        }
+        if actual.is_none() {
+            archivo.tamano = String::new();
+        }
+        let (version, version_publicada) = version(tipo, grupo, m_actual, m_anterior);
+        let version = if version.is_empty()
+            && grupo == v::GrupoPublicacion::Actualizaciones
+        {
+            "Modificado".into()
+        } else {
+            version
+        };
+        let de_mod = (tipo == v::TipoContenido::Config)
+            .then(|| metadatos::mod_de_configuracion(ruta.as_str(), mods_por_id.keys().copied()))
+            .flatten()
+            .and_then(|id| mods_por_id.get(id))
+            .map(|(r, m)| (r.as_str().to_owned(), m.nombre.clone()));
+        let solo_cliente = match tipo {
+            v::TipoContenido::Mod => datos.is_some_and(|d| d.solo_cliente),
+            v::TipoContenido::Script => ruta.as_str().starts_with("kubejs/client_scripts/"),
+            v::TipoContenido::Shader => true,
+            _ => false,
+        };
         cambios.push(v::CambioPublicacion {
-            archivo: archivo(&a, trabajo),
+            archivo,
+            tipo,
             grupo,
             marca,
             eleccion: eleccion(e),
+            si,
+            no,
+            version,
+            version_publicada,
+            de_mod,
             propio: matches!(a.procedencia, Procedencia::Propio),
             autorizado: !pendientes.contains(&ruta),
-            solo_cliente: false,
+            solo_cliente,
             integrado: false,
             problema: None,
-            estado: String::new(),
+            estado: motivo.into(),
         });
     }
-    if base.map_or(&[][..], |m| m.packs.as_slice()) != trabajo.borrador.packs_publicados()
-        || trabajo.orden_pospuesto
-    {
+    let packs_base = base.map_or(&[][..], |m| m.packs.as_slice());
+    if packs_base != trabajo.borrador.packs_publicados() || trabajo.orden_pospuesto {
+        let nuevos: Vec<_> = trabajo
+            .activos
+            .iter()
+            .filter(|p| !packs_base.contains(p))
+            .collect();
+        let quitados = packs_base
+            .iter()
+            .filter(|p| !trabajo.activos.contains(p))
+            .count();
+        let version = match (nuevos.len(), quitados) {
+            (0, 0) => "Cambió el orden".into(),
+            (n, 0) => format!("{n} activado{}", if n == 1 { "" } else { "s" }),
+            (0, q) => format!("{q} desactivado{}", if q == 1 { "" } else { "s" }),
+            (n, q) => format!("{n} activados · {q} desactivados"),
+        };
         cambios.push(v::CambioPublicacion {
             archivo: v::ArchivoCompartido {
                 id: "@orden-resourcepacks".into(),
-                nombre: "Activación y orden de resourcepacks".into(),
-                detalle: format!("{} packs activos en la instancia", trabajo.activos.len()),
+                nombre: "Activación y orden".into(),
+                detalle: "options.txt · resourcePacks".into(),
                 carpeta: "resourcepacks".into(),
                 ..Default::default()
             },
-            grupo: v::GrupoPublicacion::Resourcepacks,
+            tipo: v::TipoContenido::Resourcepack,
+            grupo: v::GrupoPublicacion::Cambios,
             marca: v::Marca::Actualizacion,
             eleccion: if trabajo.orden_pospuesto {
                 v::Eleccion::Posponer
             } else {
                 v::Eleccion::Incluir
             },
+            si: v::Eleccion::Incluir,
+            no: v::Eleccion::Posponer,
+            version,
+            version_publicada: String::new(),
+            de_mod: None,
             propio: false,
             autorizado: true,
             solo_cliente: false,
@@ -168,16 +288,32 @@ pub fn revision(trabajo: &Trabajo) -> v::RevisionPublicacion {
             estado: String::new(),
         });
     }
+    // Sin cambios solo si lo único que hay es contenido privado desde antes, sin marcar.
+    let sin_cambios = cambios
+        .iter()
+        .all(|c| c.grupo == v::GrupoPublicacion::Privado && !c.marcado());
     v::RevisionPublicacion {
         instancia: instancia(&trabajo.instancia, false),
         base: base.map_or(0, |m| m.revision),
         nueva: base.map_or(1, |m| m.revision.saturating_add(1)),
-        estado: if cambios.is_empty() {
+        estado: if sin_cambios {
             v::EstadoRevisionPublicacion::SinCambios
         } else {
             v::EstadoRevisionPublicacion::Disponible
         },
         cambios,
         confirmar_cancelacion: false,
+        guardando: false,
+        vista: Default::default(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn tamano_legible_con_coma_y_sin_bytes_crudos() {
+        assert_eq!(super::tamano(900), "900 B");
+        assert_eq!(super::tamano(20_154), "19,7 KB");
+        assert_eq!(super::tamano(2_301_337), "2,2 MB");
     }
 }
