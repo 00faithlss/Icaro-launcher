@@ -17,6 +17,7 @@ pub mod invitaciones;
 mod manifiesto;
 pub mod packs;
 pub mod mantenimiento;
+pub mod metadatos;
 pub mod plan;
 pub mod protocolo;
 pub mod publicacion;
