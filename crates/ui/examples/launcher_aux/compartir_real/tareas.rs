@@ -49,9 +49,23 @@ impl Trabajo {
     pub fn elegir(&mut self, ruta: &str, eleccion: Eleccion) -> Result<(), String> {
         if ruta == "@orden-resourcepacks" {
             self.orden_pospuesto = eleccion == Eleccion::Posponer;
-            self.packs();
-            return Ok(());
+        } else {
+            self.elegir_archivo(ruta, eleccion)?;
         }
+        self.packs();
+        Ok(())
+    }
+    pub(super) fn elegir_varios<'a>(
+        &mut self,
+        elecciones: impl Iterator<Item = (&'a str, Eleccion)>,
+    ) -> Result<(), String> {
+        for (ruta, eleccion) in elecciones {
+            self.elegir_archivo(ruta, eleccion)?;
+        }
+        self.packs();
+        Ok(())
+    }
+    fn elegir_archivo(&mut self, ruta: &str, eleccion: Eleccion) -> Result<(), String> {
         let ruta =
             c::RutaCompartida::parse(ruta).map_err(icaro_core::diagnostico_contexto::texto)?;
         self.borrador
@@ -59,7 +73,6 @@ impl Trabajo {
             .map_err(icaro_core::diagnostico_contexto::texto)?;
         self.seleccion
             .mantener_privado(ruta, eleccion == Eleccion::Privado);
-        self.packs();
         Ok(())
     }
     fn packs(&mut self) {

@@ -5,9 +5,10 @@
 En `v0.4.x` existen el núcleo `compartir`, los componentes iced y el servicio local
 Workers/D1. Una prueba Rust recorre aceptación, transporte iroh autenticado,
 descarga y aplicación de configuración/texturas y revocación. El servicio gratuito
-ya está desplegado y pasó la prueba HTTP remota con identidades efímeras. Hay un publicador experimental en Servidores bajo
-`ICARO_COMPARTIR_DESARROLLO=1`; el recorrido normal sigue deshabilitado. Bajo esa
-bandera hay Sincronizar y consulta remota previa a Jugar, con confirmación de cambios.
+ya está desplegado y pasó la prueba HTTP remota con identidades efímeras. En
+Servidores, **Activar Compartir experimental** habilita el publicador y el invitado.
+El modo experimental incluye Sincronizar y la consulta remota previa a Jugar con
+confirmación de cambios.
 
 El controlador tiene tareas, consentimiento y privados persistentes, y un recorrido
 con Worker local. El invitado experimental conecta código, confianza persistente,

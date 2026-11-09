@@ -93,7 +93,8 @@ en `d48181f` y la interfaz experimental en `f4fbf08`. El usuario autorizó regis
 y subir este bloque a `v0.4.x`; eso no autoriza publicaciones ni futuros cambios.
 Núcleo, Worker/D1 local y componentes iced implementados;
 hay un controlador experimental del publicador en `launcher_aux/compartir_real/`,
-protegido por `ICARO_COMPARTIR_DESARROLLO=1`. Invitado, Sincronizar/Jugar, orden de
+con activación explícita en Servidores o `ICARO_COMPARTIR_DESARROLLO=1` para pruebas.
+Invitado, Sincronizar/Jugar, orden de
 packs, biblioteca, reconexión, diagnóstico, cierre/bandeja Windows y caché de
 contenido verificado conectados en `v0.4.x`. Servicio gratuito
 desplegado con autorización del usuario el 08-11-2026; HTTP remoto probado con

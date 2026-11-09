@@ -138,13 +138,15 @@ pub(super) fn dialogo<'a>(
         .style(marco_dialogo(p))
         .into()
 }
+pub(super) const BORDE_DIALOGO: f32 = 2.;
+
 pub(super) fn marco_dialogo(p: Paleta) -> impl Fn(&iced::Theme) -> container::Style {
     move |_| container::Style {
         background: Some(p.surface_raised.into()),
         text_color: Some(p.text),
         border: Border {
             color: p.text,
-            width: 2.,
+            width: BORDE_DIALOGO,
             radius: 0.0.into(),
         },
         ..Default::default()

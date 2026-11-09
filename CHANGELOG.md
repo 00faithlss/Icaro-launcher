@@ -2,6 +2,7 @@
 
 ## [Sin publicar]
 
+- Compartir instancia enmarca también el grabado y permite seleccionar de una vez los mods elegibles en la revisión. La autorización de archivos propios se conserva.
 - La preparación automática de Minecraft tras crear una instancia usa un estado de instalación alojado en el heap. Evita el desbordamiento de pila observado en el launcher de desarrollo de Windows.
 
 - Compartir experimental reutiliza contenido verificado entre instancias, deduplica por SHA-512 y descarga en paralelo con cupos por origen. Los archivos conservan su verificación y se aplican mediante la transacción recuperable.

@@ -127,7 +127,7 @@ struct App {
     servicios: servicios::Estado,
     modo: Modo,
     seccion: Seccion,
-    colapsada: bool,
+    colapsada: Option<bool>,
     barra_angosta: bool,
     filtro: usize,
     seleccionada: Option<usize>,
@@ -254,7 +254,9 @@ struct EdicionGrupo {
 }
 
 impl App {
-    fn barra_colapsada(&self) -> bool { self.colapsada || self.barra_angosta }
+    fn barra_colapsada(&self) -> bool {
+        self.colapsada.unwrap_or(self.barra_angosta)
+    }
     fn paleta(&self) -> icaro_ui::tema::Paleta { self.modo.paleta().con_metal(icaro_ui::tema::Metal::desde_indice(self.aj.metal)) }
     fn avisar_con(&mut self, texto:String, etiqueta:&str, accion:Mensaje) {
         let mut aviso=icaro_ui::avisos::Aviso::nuevo(texto,Some(accion),std::time::Instant::now());
@@ -410,6 +412,7 @@ enum Mensaje {
     ImagenesActualizadas,
     Cursor(Point),
     Tamano(Size),
+    AlternarBarra,
     Jugar(usize),
     UmbralVolver,
     Picar(picar_real::Accion),
@@ -495,7 +498,7 @@ fn abrir_instancia(app: &mut App, i: usize) {
 
 fn actualizar(app: &mut App, m: Mensaje) -> Task<Mensaje> {
     let guardar = !matches!(&m, Mensaje::CierreCompartir(_) | Mensaje::Diagnostico | Mensaje::Cuadro(_) | Mensaje::Cursor(_)
-        | Mensaje::Tamano(_) | Mensaje::Maximizada(_) | Mensaje::AvisoTic(_) | Mensaje::Nada | Mensaje::ImagenesActualizadas
+        | Mensaje::Tamano(_) | Mensaje::AlternarBarra | Mensaje::Maximizada(_) | Mensaje::AvisoTic(_) | Mensaje::Nada | Mensaje::ImagenesActualizadas
         | Mensaje::Pant(pantallas::Accion::VersionScroll(..) | pantallas::Accion::AsistenteBuscar(_) | pantallas::Accion::CambiarBuscar(_))
         | Mensaje::Juego(juego_real::Accion::Progreso(..) | juego_real::Accion::Evento(..)));
     let instalaciones = app.instalando.len();
@@ -549,6 +552,7 @@ fn guardar_si_cambio(app: &mut App) {
     let mut guardado = estado::Guardado::nuevo(&app.lista_grupos, &app.grupos, &app.cerrados, &app.configs, &instalados);
     if !app.servicios.demo {
         guardado.asociar(app.servicios.instancias.registros.iter().map(|i| i.id.clone()).collect());
+        guardado.compartir_experimental = app.servicios.compartir.activado_por_usuario;
     }
     guardado.java_global = app.java_global.clone();
     guardado.apariencia = estado::AparienciaGuardada { tema: app.tema, metal: app.aj.metal, escala: app.aj.escala, reducir: app.reducir };
@@ -1190,6 +1194,7 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
             }
             app.ahora = std::time::Instant::now();
         }
+        Mensaje::AlternarBarra => app.colapsada = Some(!app.barra_colapsada()),
         Mensaje::Tamano(s) => {
             // DisenoAngosto original: 64 px y 24 px de histéresis al redimensionar.
             app.barra_angosta = if app.barra_angosta {s.width < 1112.} else {s.width < 1088.};
@@ -3275,6 +3280,7 @@ pub(crate) fn con_barra_ventana<'a>(app: &App, contenido: Element<'a, Mensaje>) 
         ir_a: Box::new(Mensaje::Ir),
         arrastrar: Mensaje::Arrastrar,
         buscar: Mensaje::AbrirBusqueda,
+        alternar_barra: Mensaje::AlternarBarra,
         cuenta: Mensaje::Ses(sesion::Accion::Menu(true)),
         minimizar: Mensaje::Minimizar,
         maximizar: Mensaje::Maximizar,
@@ -3292,7 +3298,18 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
     } else {
         match app.seccion {
         Seccion::Instancias => pantalla_instancias(app),
-        Seccion::Servidores => pantalla_servidores(app),
+        Seccion::Servidores => iced::widget::stack![
+            pantalla_servidores(app),
+            container(componentes::insignia(
+                p,
+                componentes::Estado::Aviso,
+                "Fase experimental",
+            ))
+            .width(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Right)
+            .padding(espacio::S4),
+        ]
+        .into(),
         Seccion::Descargas => pantalla_descargas(app),
         Seccion::Ajustes => pantalla_ajustes(app),
         Seccion::Modpacks => pantalla_modpacks(app),
@@ -3355,6 +3372,7 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
             ir_a: Box::new(Mensaje::Ir),
             arrastrar: Mensaje::Arrastrar,
             buscar: Mensaje::AbrirBusqueda,
+            alternar_barra: Mensaje::AlternarBarra,
             cuenta: Mensaje::Ses(sesion::Accion::Menu(true)),
             minimizar: Mensaje::Minimizar,
             maximizar: Mensaje::Maximizar,
@@ -3517,7 +3535,7 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
         avisos=avisos.push(iced::widget::mouse_area(icaro_ui::efectos::aviso_desde_abajo(toast,a.entrada(app.ahora,app.reducir))).on_enter(Mensaje::PausarAviso(id,true)).on_exit(Mensaje::PausarAviso(id,false)));
     }
     if let Some(a)=&app.aviso {avisos=avisos.push(toast_con_opacidad(p,if a.error{Icono::Alerta}else{Icono::Check},&a.texto,a.accion.clone().map(|m|(a.etiqueta_accion.as_str(),m)),Some(Mensaje::CerrarAviso),a.error,a.opacidad(app.ahora,app.reducir)));}
-    let aviso:Element<Mensaje>=container(avisos).align_x(iced::alignment::Horizontal::Left).align_y(iced::alignment::Vertical::Bottom).width(Length::Fill).height(Length::Fill).padding(Padding {left:if app.colapsada{88.}else{256.},bottom:24.,top:0.,right:24.}).into();
+    let aviso:Element<Mensaje>=container(avisos).align_x(iced::alignment::Horizontal::Left).align_y(iced::alignment::Vertical::Bottom).width(Length::Fill).height(Length::Fill).padding(Padding {left:if app.barra_colapsada(){88.}else{256.},bottom:24.,top:0.,right:24.}).into();
     ventana = iced::widget::stack![ventana, aviso].into();
     if app.busqueda.abierta {
         ventana = icaro_ui::superficies::con_velo(p, ventana,
@@ -3769,6 +3787,8 @@ fn iniciar_con_guardado(seccion: Seccion, piedra: bool, menu: Option<usize>, con
         if !demo {
             if guardado.is_none() { guardado = Some(estado::Guardado::nuevo(&[], &[], &[], &[], &[])); }
             if let Some(g) = &mut guardado {
+                servicios.compartir.activado_por_usuario = g.compartir_experimental;
+                servicios.compartir.habilitado |= g.compartir_experimental;
                 g.restaurar_instancias(servicios.instancias.registros.iter().map(|i| i.id.clone()).collect());
                 if let Err(error) = g.cargar_configs(&servicios.instancias.almacen) {
                     config_error=Some(format!("No se pudo recuperar la configuración; se conservó el archivo para corregirlo: {error}"));
@@ -3825,7 +3845,7 @@ fn iniciar_con_guardado(seccion: Seccion, piedra: bool, menu: Option<usize>, con
                 modo: if prefs.tema==1 || (prefs.tema==2 && apariencia_real::sistema_claro()) {Modo::Piedra}else{Modo::Tinta},
                 busqueda: busqueda::Estado::default(),
                 seccion,
-                colapsada: false,
+                colapsada: None,
                 barra_angosta: false,
                 filtro: 0,
                 seleccionada: std::env::var("ICARO_EDITOR").ok().and_then(|_| (total > 0).then_some(0)),

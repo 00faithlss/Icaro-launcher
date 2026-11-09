@@ -14,7 +14,7 @@ locales. **El recorrido normal de Servidores/Jugar todavía no los conecta.**
 La sincronización HTTP del servidor dedicado es un recorrido distinto que se conserva.
 Ver [progreso y evidencias](superpowers/progreso/2026-11-07-compartir-instancias.md).
 
-- [ ] Validar el publicador experimental desde la ventana bajo `ICARO_COMPARTIR_DESARROLLO=1`: biblioteca, recuperación sin otra identidad y contadores cancelables ya conectados.
+- [ ] Validar el publicador tras activarlo en Servidores. Ya están conectadas la biblioteca, la recuperación sin otra identidad y los contadores cancelables.
 - [ ] Validar el invitado experimental con descarga real de Minecraft y ampliar cortes/disco lleno. Ya conecta confianza, destino/revisión, progreso por etapa y recuperación tras reinicio al reintroducir la invitación. La prueba del coordinador todavía inyecta el perfil; bloquea Jugar si no se aplicó la base.
 - [ ] Validar Sincronizar/Jugar con una partida real. La revisión ya incluye elección de orden de packs, conservación de personales y rechazo de cambios externos.
 - [ ] Validar cierre con transferencias entre equipos y reinicio real de Explorer; completar bandeja nativa Linux. Windows conecta bandeja restaurable y drenaje; Linux conserva la ventana minimizada.

@@ -4,8 +4,8 @@ Actualizado el **08-11-2026**. El [registro de progreso](superpowers/progreso/20
 enumera etapas, resultados de pruebas y el orden del trabajo siguiente.
 
 Trabajo de `v0.4.x`, sin publicación del launcher. Existen controladores experimentales
-del publicador y del invitado, deshabilitados por defecto. La aceptación e instalación,
-Sincronizar y la consulta previa a Jugar ya están conectados bajo bandera; el perfil
+del publicador y del invitado, con activación explícita desde Servidores. La aceptación e instalación,
+Sincronizar y la consulta previa a Jugar ya están conectados en modo experimental. El perfil
 real y las validaciones entre equipos todavía no completan el recorrido normal. Las escenas
 de diseño son fixtures y no habilitan una publicación.
 
@@ -25,8 +25,13 @@ launcher solo registra mensajes, la capa modal y los bloqueos de navegación.
 
 ## Controlador experimental del publicador
 
-Para desarrollo explícito, `ICARO_COMPARTIR_DESARROLLO=1` muestra los accesos en
-Servidores. Usa el endpoint gratuito desplegado de invitaciones. La variable
+En **Servidores**, pulsa **Activar Compartir experimental**. La elección se guarda
+en este equipo y aparecen **Compartir instancia** y **Aceptar invitación**. La
+primera abre la revisión de una instancia y, al publicarla, permite generar el
+código. La segunda abre la entrada del código en el equipo invitado.
+
+`ICARO_COMPARTIR_DESARROLLO=1` permite activar el controlador desde la consola
+para pruebas. Usa el endpoint gratuito desplegado de invitaciones. La variable
 `ICARO_SERVICIO_INVITACIONES` permite sustituirlo por HTTPS o loopback HTTP;
 un valor vacío lo deshabilita y no permite publicar. Con Worker
 local, `ICARO_COMPARTIR_LOCAL=1` usa iroh sin relés y solo loopback. El modo demo
@@ -34,6 +39,8 @@ no ejecuta estos servicios. Usar una raíz de pruebas propia; no instancias real
 
 El controlador permite revisar el inventario y el catálogo, elegir contenido,
 guardar exclusiones mediante tareas y confirmar archivos propios antes de publicar.
+En **Revisar publicación**, **Seleccionar todos los mods** marca los JAR elegibles.
+Cada mod se puede ajustar por separado y los JAR propios siguen pidiendo confirmación.
 La publicación y la generación de invitación son pasos distintos: si el transporte
 falla después del guardado, la interfaz conserva la revisión como detenida. Permite
 generar/editar/revocar códigos, revisar/revocar accesos y detener/reabrir la publicación.

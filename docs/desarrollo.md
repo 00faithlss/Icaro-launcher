@@ -41,9 +41,10 @@ las recompilaciones pueden tardar más. No cambia la configuración global de Ca
 `cargo clean` elimina también evidencias guardadas en `target`: el registro y las
 capturas se conservaron en `%TEMP%/icaro-compartir-desarrollo-20261107/`.
 
-El publicador experimental se activa únicamente con `ICARO_COMPARTIR_DESARROLLO=1`;
-su configuración y alcance están en la guía técnica. No habilitarlo como función
-normal hasta validar el instalador del invitado con perfil real, Jugar y cierre/bandeja.
+El publicador experimental se activa en Servidores o para pruebas con
+`ICARO_COMPARTIR_DESARROLLO=1`. Su configuración y alcance están en la guía técnica.
+La activación explícita se conserva hasta validar el instalador del invitado con
+perfil real, Jugar y cierre/bandeja.
 El invitado ya tiene controlador experimental de código, huella, destino, revisión y
 aplicación; la prueba de integración inyecta el perfil de Minecraft.
 El intento incompleto persiste en la instancia y se recupera al reintroducir la

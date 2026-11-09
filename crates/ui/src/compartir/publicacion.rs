@@ -218,11 +218,7 @@ fn fila<'a>(
             GrupoPublicacion::Nuevo => segmento(
                 p,
                 vec![
-                    (
-                        "Compartir",
-                        c.eleccion == Eleccion::Compartir,
-                        accion(Eleccion::Compartir),
-                    ),
+                    ("Compartir", seleccionado, accion(Eleccion::Compartir)),
                     (
                         "Mantener privado",
                         c.eleccion == Eleccion::Privado,
@@ -334,13 +330,25 @@ pub fn revision_publicacion<'a>(p: Paleta, m: &RevisionPublicacion) -> Element<'
             }
             if matches!(m.estado,EstadoRevisionPublicacion::SinCambios) {
                 c=c.push(row![marca(p,Marca::Conservado),cuerpo(p,format!("Tu instancia está igual que la revisión {}",m.base))].spacing(16));
-            }else{c=c.push(resumen(p,&r));}
+            } else {
+                let seleccionar_mods = (!m.confirmar_cancelacion
+                    && m.cambios.iter().any(|c| c.eleccion_para_seleccionar_mod().is_some()))
+                    .then_some(Accion::SeleccionarTodosLosMods);
+                c = c.push(column![
+                    resumen(p, &r),
+                    container(pequeno(
+                        p,
+                        "Seleccionar todos los mods",
+                        Variante::Secundario,
+                        seleccionar_mods,
+                    ))
+                    .width(Length::Fill)
+                    .align_x(Alignment::End),
+                ].spacing(12));
+            }
             for g in GrupoPublicacion::TODOS {
                 if matches!(m.estado,EstadoRevisionPublicacion::SinCambios)&&g!=GrupoPublicacion::Privado{continue;}
-                let cambios:Vec<_>=m.cambios.iter().filter(|c|{
-                    let movido=c.grupo==GrupoPublicacion::Nuevo&&c.eleccion==Eleccion::Privado;
-                    if g==GrupoPublicacion::Privado{c.grupo==g||movido}else{c.grupo==g&&!movido}
-                }).collect();
+                let cambios: Vec<_> = m.cambios.iter().filter(|c| c.grupo_visible() == g).collect();
                 let mut grupo=grupo(p,g.titulo(),&cambios.len().to_string()).push(tenue(p,g.nota()));
                 if cambios.is_empty()&&g==GrupoPublicacion::Nuevo {grupo=grupo.push(cuerpo(p,"Todo lo nuevo quedó privado. Lo encuentras abajo, en Contenido privado."));}
                 for cambio in cambios {

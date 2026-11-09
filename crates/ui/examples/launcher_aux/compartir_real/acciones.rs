@@ -11,6 +11,7 @@ use iced::Task;
 
 #[derive(Clone)]
 pub enum Accion {
+    ActivarExperimental,
     Biblioteca(u64, Result<Vec<c::biblioteca::PublicacionGuardada>, String>),
     Recuperada(u64, Result<super::biblioteca_tareas::Recuperada, String>),
     Reconectada(u64, Result<super::biblioteca_tareas::Reconectada, String>),
@@ -191,10 +192,17 @@ fn operar(s: &mut Estado, op: Operacion) -> Task<Mensaje> {
 }
 
 pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
-    if !app.servicios.compartir.habilitado || app.servicios.demo {
+    if app.servicios.demo
+        || (!app.servicios.compartir.habilitado && !matches!(a, Accion::ActivarExperimental))
+    {
         return Task::none();
     }
     match a {
+        Accion::ActivarExperimental => {
+            app.servicios.compartir.activado_por_usuario = true;
+            app.servicios.compartir.habilitado = true;
+            return super::biblioteca::cargar(app);
+        }
         Accion::Biblioteca(generacion, r) => {
             super::biblioteca::recibida(&mut app.servicios.compartir, generacion, r)
         }
@@ -415,6 +423,35 @@ fn vista(app: &mut App, a: v::Accion) -> Task<Mensaje> {
                 }
                 s.revision = Some(modelos::revision(t));
             }
+            return guardar(s, false);
+        }
+        v::Accion::SeleccionarTodosLosMods if s.etapa == Etapa::Revision => {
+            let (Some(t), Some(r)) = (&s.trabajo, &s.revision) else {
+                return Task::none();
+            };
+            if r.confirmar_cancelacion
+                || !matches!(r.estado, v::EstadoRevisionPublicacion::Disponible)
+            {
+                return Task::none();
+            }
+            let mut elecciones = r
+                .cambios
+                .iter()
+                .filter_map(|c| {
+                    c.eleccion_para_seleccionar_mod()
+                        .map(|e| (c.archivo.id.as_str(), modelos::desde_vista(e)))
+                })
+                .peekable();
+            if elecciones.peek().is_none() {
+                return Task::none();
+            }
+            let mut t = t.clone();
+            if let Err(e) = t.elegir_varios(elecciones) {
+                s.error = Some(e);
+                return Task::none();
+            }
+            s.revision = Some(modelos::revision(&t));
+            s.trabajo = Some(t);
             return guardar(s, false);
         }
         v::Accion::RevisarPropios if s.etapa == Etapa::Revision => {

@@ -42,6 +42,7 @@ pub enum Accion {
     NombreDestino(String),
     RevisarInstalacion,
     EleccionPublicacion(String, Eleccion),
+    SeleccionarTodosLosMods,
     PublicarRevision,
     ConfirmarCancelarPublicacion,
     SeguirRevisando,
@@ -351,6 +352,28 @@ pub struct CambioPublicacion {
     pub integrado: bool,
     pub problema: Option<Problema>,
     pub estado: String,
+}
+impl CambioPublicacion {
+    pub(super) fn grupo_visible(&self) -> GrupoPublicacion {
+        if self.grupo == GrupoPublicacion::Nuevo && self.eleccion == Eleccion::Privado {
+            GrupoPublicacion::Privado
+        } else {
+            self.grupo
+        }
+    }
+
+    pub fn eleccion_para_seleccionar_mod(&self) -> Option<Eleccion> {
+        if self.integrado || self.eleccion.publica() || !self.archivo.id.starts_with("mods/") {
+            return None;
+        }
+        match self.grupo_visible() {
+            GrupoPublicacion::Nuevo => Some(Eleccion::Compartir),
+            GrupoPublicacion::Actualizaciones | GrupoPublicacion::Privado => {
+                Some(Eleccion::Incluir)
+            }
+            GrupoPublicacion::Retiradas | GrupoPublicacion::Resourcepacks => None,
+        }
+    }
 }
 #[derive(Debug, Clone)]
 pub enum EstadoRevisionPublicacion {

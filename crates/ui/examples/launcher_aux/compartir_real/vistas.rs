@@ -115,12 +115,20 @@ pub fn vista(app: &App) -> Option<Element<'_, Mensaje>> {
     )
 }
 
-pub fn accesos(app: &App) -> Element<'_, Mensaje> {
+pub fn accesos(app: &App, ancho: f32) -> Element<'_, Mensaje> {
+    if !app.servicios.compartir.habilitado {
+        return icaro_ui::componentes::boton(
+            app.paleta(),
+            "Activar Compartir experimental",
+            icaro_ui::componentes::Variante::Secundario,
+            Some(Mensaje::Compartir(Accion::ActivarExperimental)),
+        );
+    }
     let resumen = super::biblioteca::resumenes(
         &app.servicios.compartir,
         &app.servicios.instancias.registros,
     );
-    v::accesos_servidores(app.paleta(), &resumen).map(|a| Mensaje::Compartir(Accion::Vista(a)))
+    v::accesos_servidores(app.paleta(), &resumen, ancho).map(|a| Mensaje::Compartir(Accion::Vista(a)))
 }
 
 pub fn transferencias(s: &super::Estado) -> Vec<v::Transferencia> {

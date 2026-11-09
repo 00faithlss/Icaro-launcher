@@ -358,7 +358,14 @@ pub fn error_compartir<'a>(p: Paleta, m: &ErrorCompartir) -> Element<'a, Accion>
 pub fn accesos_servidores<'a>(
     p: Paleta,
     publicaciones: &[ResumenPublicacion],
+    ancho: f32,
 ) -> Element<'a, Accion> {
+    // Con menos espacio se acorta el rótulo para mantener los tres en una línea.
+    let agregar_servidor = if ancho < 752.0 {
+        "Agregar servidor"
+    } else {
+        "Agregar servidor por dirección"
+    };
     let mut c = column![row![
         boton(
             p,
@@ -375,7 +382,7 @@ pub fn accesos_servidores<'a>(
         Space::new(Length::Fill, 0),
         boton(
             p,
-            "Agregar servidor por dirección",
+            agregar_servidor,
             Variante::Primario,
             Some(Accion::AgregarServidor)
         )

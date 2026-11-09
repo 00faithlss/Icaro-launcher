@@ -73,6 +73,18 @@ pub fn vista<'a>(app: &'a App, escena: &str) -> Option<Element<'a, Mensaje>> {
     }
     let p = app.paleta();
     let vista = match escena.trim_end_matches("-angosto") {
+        "compartir-instancia" => compartir_instancia(p, &CompartirInstancia {
+            instancias: vec![instancia()],
+            seleccionada: None,
+            estado: EstadoContenido::Bloqueado,
+            incluidos: vec![],
+            total_incluidos: 0,
+            excluidos: vec![],
+            propios: vec![],
+            carpetas: "mods · config · kubejs · resourcepacks".into(),
+            tamano_carpetas: String::new(),
+            problemas: vec![],
+        }),
         "compartir-publicacion" | "compartir-privados" | "compartir-retirada" | "compartir-packs" => revision_publicacion(p, &RevisionPublicacion {
             instancia:instancia(),base:2,nueva:3,estado:EstadoRevisionPublicacion::Disponible,confirmar_cancelacion:false,
             cambios:vec![

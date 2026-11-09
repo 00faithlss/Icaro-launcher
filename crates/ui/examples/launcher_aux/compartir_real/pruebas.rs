@@ -98,6 +98,29 @@ fn modo_demo_y_debug_no_disparan_el_servicio_ni_exponen_codigo() {
 }
 
 #[test]
+fn activar_desde_servidores_habilita_compartir_y_carga_publicaciones() {
+    let mut a = app();
+    a.servicios.compartir.habilitado = false;
+    a.servicios.demo = true;
+    let _ = super::actualizar(&mut a, super::Accion::ActivarExperimental);
+    assert!(!a.servicios.compartir.habilitado);
+    assert!(!a.servicios.compartir.biblioteca.cargando);
+
+    a.servicios.demo = false;
+    let _ = super::actualizar(&mut a, super::Accion::ActivarExperimental);
+    assert!(a.servicios.compartir.habilitado);
+    assert!(a.servicios.compartir.activado_por_usuario);
+    assert!(a.servicios.compartir.biblioteca.cargando);
+
+    let _ = super::actualizar(&mut a, super::Accion::Vista(v::Accion::AbrirCompartir));
+    assert_eq!(a.servicios.compartir.etapa, Etapa::Selector);
+
+    let _ = super::actualizar(&mut a, super::Accion::Vista(v::Accion::Cerrar));
+    let _ = super::actualizar(&mut a, super::Accion::Vista(v::Accion::AceptarInvitacion));
+    assert_eq!(a.servicios.compartir.etapa, Etapa::Entrada);
+}
+
+#[test]
 fn cerrar_panel_conserva_datos_para_editar_invitacion_y_reabrir_publicacion() {
     let mut s = Estado::default();
     s.panel = Some(panel());
@@ -320,6 +343,121 @@ fn trabajo() -> super::tareas::Trabajo {
         aviso: None,
         orden_pospuesto: false,
     }
+}
+
+#[test]
+fn seleccionar_todos_los_mods_respeta_el_alcance_y_el_permiso_de_propios() {
+    use icaro_core::compartir::{
+        inventario::ArchivoInventario,
+        publicacion::{Borrador, Eleccion},
+        revisiones, Artefacto, Manifiesto, Procedencia, RutaCompartida,
+    };
+    let ruta = |nombre: &str| RutaCompartida::parse(nombre).unwrap();
+    let mut t = trabajo();
+    for (nombre, huella) in [
+        ("mods/actualizado.JAR", "11"),
+        ("mods/privado.jar", "22"),
+        ("config/mod.toml", "33"),
+        ("kubejs/startup_scripts/mod.js", "44"),
+        ("resourcepacks/texturas.zip", "55"),
+    ] {
+        t.inventario.archivos.push(ArchivoInventario {
+            ruta: ruta(nombre),
+            bytes: 3,
+            sha512: huella.repeat(64),
+            sha256: huella.repeat(32),
+        });
+    }
+    t.inventario.archivos.sort_by(|a, b| a.ruta.cmp(&b.ruta));
+    t.inventario.bytes = 18;
+    t.seleccion.mantener_privado(ruta("mods/privado.jar"), true);
+    let manifiesto = Manifiesto {
+        esquema: "icaro-compartir/1".into(),
+        origen: t.contexto.origen.clone(),
+        perfil: t.contexto.perfil.clone(),
+        revision: 1,
+        archivos: ["mods/actualizado.JAR", "mods/retirado.jar"]
+            .into_iter()
+            .map(|nombre| Artefacto {
+                ruta: ruta(nombre),
+                bytes: 3,
+                sha512: "00".repeat(64),
+                procedencia: Procedencia::Propio,
+            })
+            .collect(),
+        packs: vec![],
+    };
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let raiz = std::env::temp_dir().join(format!("icaro-seleccion-{}-{nonce}", std::process::id()));
+    std::fs::create_dir(&raiz).unwrap();
+    std::fs::write(
+        raiz.join("vigente.json"),
+        serde_json::to_vec(&manifiesto).unwrap(),
+    )
+    .unwrap();
+    t.contexto.almacen = raiz.clone();
+    t.anterior = revisiones::vigente(&t.contexto).unwrap();
+    std::fs::remove_file(raiz.join("vigente.json")).unwrap();
+    std::fs::remove_dir(raiz).unwrap();
+    t.borrador = Borrador::comparar(&t.inventario, Some(&manifiesto), &t.seleccion).unwrap();
+    for nombre in ["mods/actualizado.JAR", "mods/retirado.jar"] {
+        t.elegir(nombre, Eleccion::Posponer).unwrap();
+    }
+    t.elegir("@orden-resourcepacks", Eleccion::Posponer)
+        .unwrap();
+
+    let mut a = app();
+    let id = a.servicios.compartir.comenzar(t.instancia.id.clone());
+    let _ = super::actualizar(&mut a, super::Accion::Analizada(id, Ok(t)));
+    let _ = super::actualizar(
+        &mut a,
+        super::Accion::Vista(v::Accion::SeleccionarTodosLosMods),
+    );
+    assert_eq!(a.servicios.compartir.etapa, Etapa::Guardando);
+    let t = a.servicios.compartir.trabajo.as_ref().unwrap();
+    for nombre in [
+        "mods/actualizado.JAR",
+        "mods/privado.jar",
+        "mods/propio.jar",
+    ] {
+        assert_eq!(t.borrador.eleccion(&ruta(nombre)), Some(Eleccion::Incluir));
+    }
+    assert!(!t.seleccion.es_privado(&ruta("mods/privado.jar")));
+    assert_eq!(
+        t.borrador.eleccion(&ruta("mods/retirado.jar")),
+        Some(Eleccion::Posponer)
+    );
+    assert!(t.orden_pospuesto);
+    for nombre in [
+        "config/mod.toml",
+        "kubejs/startup_scripts/mod.js",
+        "resourcepacks/texturas.zip",
+    ] {
+        assert_eq!(t.borrador.eleccion(&ruta(nombre)), Some(Eleccion::Privado));
+    }
+    let _ = super::actualizar(&mut a, super::Accion::Guardada(id, false, Ok(())));
+    let _ = super::actualizar(
+        &mut a,
+        super::Accion::Vista(v::Accion::EleccionPublicacion(
+            "mods/privado.jar".into(),
+            v::Eleccion::Privado,
+        )),
+    );
+    let _ = super::actualizar(&mut a, super::Accion::Guardada(id, false, Ok(())));
+    let _ = super::actualizar(&mut a, super::Accion::Vista(v::Accion::PublicarRevision));
+    assert_eq!(a.servicios.compartir.etapa, Etapa::Propios);
+    let t = a.servicios.compartir.trabajo.as_ref().unwrap();
+    assert_eq!(
+        t.borrador
+            .autorizacion_pendiente()
+            .iter()
+            .map(|a| a.ruta.as_str())
+            .collect::<Vec<_>>(),
+        ["mods/actualizado.JAR", "mods/propio.jar"]
+    );
 }
 
 #[test]
