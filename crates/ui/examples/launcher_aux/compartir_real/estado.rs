@@ -13,6 +13,8 @@ pub enum Etapa {
     Analizando,
     Revision,
     Propios,
+    /// CompartidoListo, justo después de publicar.
+    Listo,
     Publicando,
     Guardando,
     Panel,
@@ -51,6 +53,14 @@ pub struct Estado {
     pub cupo: u32,
     pub opcion_cierre: v::OpcionCierre,
     pub codigo_entrada: String,
+    /// Servidores › Instancias compartidas abierta; sobrevive a los flujos.
+    pub compartidas: Option<v::PestanaCompartidas>,
+    pub menu_compartida: Option<String>,
+    pub recibidas: Vec<super::compartidas::Recibida>,
+    pub recibidas_generacion: u64,
+    pub copiado_de: Option<String>,
+    pub selector: super::selector::Selector,
+    pub listo: super::listo::Listo,
 }
 impl Default for Estado {
     fn default() -> Self {
@@ -77,6 +87,13 @@ impl Default for Estado {
             cupo: 10,
             opcion_cierre: Default::default(),
             codigo_entrada: String::new(),
+            compartidas: None,
+            menu_compartida: None,
+            recibidas: Vec::new(),
+            recibidas_generacion: 0,
+            copiado_de: None,
+            selector: Default::default(),
+            listo: Default::default(),
         }
     }
 }

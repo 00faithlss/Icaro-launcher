@@ -71,6 +71,93 @@ pub enum Accion {
     AbrirCompartir,
     AceptarInvitacion,
     AgregarServidor,
+    /// Página Servidores › Instancias compartidas.
+    VerCompartidas,
+    /// Vuelve a la página de Servidores.
+    VerServidores,
+    PestanaCompartidas(PestanaCompartidas),
+    /// Abre o cierra el menú de la fila con ese ID de instancia.
+    MenuCompartida(Option<String>),
+    CopiarCodigoDe(String),
+    ReanudarDe(String),
+    RevisarCambiosDe(String),
+    PausarDe(String),
+    CambiarCodigoDe(String),
+    DejarDeCompartirDe(String),
+    JugarRecibida(String),
+    SincronizarRecibida(String),
+    /// Elige la instancia en el selector sin analizarla todavía.
+    SeleccionarInstancia(String),
+    BuscarInstancia(String),
+    CrearInstancia,
+    /// CompartidoListo: mensaje con instrucciones al portapapeles.
+    CopiarMensaje,
+    /// Pide confirmación en línea antes de cambiar el código.
+    PedirCambioCodigo,
+    CancelarCambioCodigo,
+    /// Anula el código actual y genera otro.
+    CambiarCodigo,
+}
+
+/// Pestañas de Instancias compartidas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PestanaCompartidas {
+    #[default]
+    Compartes,
+    Recibes,
+}
+
+/// Estado de una instancia que compartes; decide la insignia y la acción.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EstadoCompartida {
+    Disponible,
+    CambiosSinPublicar,
+    EnPausa,
+}
+
+#[derive(Debug, Clone)]
+pub struct InstanciaQueCompartes {
+    pub id: String,
+    pub nombre: String,
+    pub estado: EstadoCompartida,
+    pub revision: u64,
+    pub personas: usize,
+    /// `1.21.1 · Fabric 0.16.9`.
+    pub version: String,
+    /// `None`: código anulado o sin código vigente.
+    pub codigo: Option<String>,
+    /// «caduca en 23 h».
+    pub caduca: String,
+    pub copiado: bool,
+}
+
+/// Lo que se sabe del anfitrión de una instancia recibida.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnfitrionRecibida {
+    Comprobando,
+    Disponible,
+    SinConexion,
+}
+
+#[derive(Debug, Clone)]
+pub struct InstanciaQueRecibes {
+    pub id: String,
+    pub nombre: String,
+    /// Quién la comparte: «Equipo 9e2a 7b14» mientras no haya nombres.
+    pub anfitrion: String,
+    pub estado: AnfitrionRecibida,
+    pub revision: Option<u64>,
+    /// `Some(n)` con cambios nuevos conocidos; `Some(0)` al día.
+    pub cambios: Option<usize>,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct InstanciasCompartidas {
+    pub pestana: PestanaCompartidas,
+    pub compartes: Vec<InstanciaQueCompartes>,
+    pub recibes: Vec<InstanciaQueRecibes>,
+    pub menu: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]

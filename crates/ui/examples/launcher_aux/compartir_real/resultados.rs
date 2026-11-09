@@ -15,7 +15,8 @@ pub fn analizada(s: &mut Estado, id: u64, resultado: Result<tareas::Trabajo, Str
         }
         Ok(_) => (),
         Err(e) => {
-            s.etapa = Etapa::Selector;
+            // Se queda en la fase: la revisión muestra el error y «Reintentar».
+            s.etapa = Etapa::Analizando;
             s.error = Some(e);
         }
     }
@@ -70,7 +71,18 @@ pub fn publicada(s: &mut Estado, id: u64, resultado: Result<tareas::Publicada, S
                     ..Default::default()
                 },
             });
-            s.etapa = Etapa::Panel;
+            // Activa: CompartidoListo con el código; si no pudo iniciar, la publicación.
+            s.listo = super::listo::Listo {
+                resumen: super::listo::resumen(
+                    publicada.revision.manifiesto.revision,
+                    &s.revision
+                        .as_ref()
+                        .map(v::frase_publicacion)
+                        .unwrap_or_default(),
+                ),
+                ..Default::default()
+            };
+            s.etapa = if activa { Etapa::Listo } else { Etapa::Panel };
             if activa && !s.cerrar_al_terminar {
                 return true;
             }
@@ -94,6 +106,7 @@ pub fn invitacion(
     if let Some(p) = &mut s.panel {
         match resultado {
             Ok(i) => {
+                s.listo.vence = Some(super::listo::vence_desde(i.expires_at));
                 p.invitacion = Some(v::Invitacion {
                     codigo: icaro_core::compartir::invitaciones::Codigo::parse(&i.code)
                         .map_or_else(|_| String::new(), |c| c.mostrar()),

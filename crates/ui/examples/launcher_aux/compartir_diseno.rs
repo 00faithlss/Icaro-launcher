@@ -277,6 +277,34 @@ pub fn vista<'a>(app: &'a App, escena: &str) -> Option<Element<'a, Mensaje>> {
             tamano_carpetas: String::new(),
             problemas: vec![],
         }),
+        s if s.starts_with("compartir-listo") => {
+            let migas = [
+                Miga::enlace("Servidores", Accion::VerServidores),
+                Miga::enlace("Instancias compartidas", Accion::VerCompartidas),
+                Miga::actual("Compartida"),
+            ];
+            return Some(
+                pagina(p, &migas, 700., compartido_listo(p, &listo_ejemplo(s)))
+                    .map(|_| Mensaje::Nada),
+            );
+        }
+        s if s.starts_with("compartir-selector") => {
+            let migas = [
+                Miga::enlace("Servidores", Accion::VerServidores),
+                Miga::enlace("Instancias compartidas", Accion::VerCompartidas),
+                Miga::actual("Compartir instancia"),
+            ];
+            return Some(
+                pagina(p, &migas, 720., selector_instancia(p, &selector_ejemplo(s)))
+                    .map(|_| Mensaje::Nada),
+            );
+        }
+        s if s.starts_with("compartir-compartidas") => {
+            return Some(
+                instancias_compartidas(p, &compartidas_ejemplo(s))
+                    .map(|_| Mensaje::Nada),
+            )
+        }
         s if s.starts_with("compartir-publicacion")
             || matches!(s, "compartir-privados" | "compartir-retirada" | "compartir-packs") =>
         {
@@ -313,4 +341,118 @@ pub fn vista<'a>(app: &'a App, escena: &str) -> Option<Element<'a, Mensaje>> {
             .padding(16)
             .into(),
     )
+}
+
+/// Datos de la preview de InstanciasCompartidas.
+fn compartidas_ejemplo(escena: &str) -> InstanciasCompartidas {
+    let fila = |id: &str, nombre: &str, estado, revision, personas, version: &str, codigo: Option<&str>, caduca: &str| {
+        InstanciaQueCompartes {
+            id: id.into(),
+            nombre: nombre.into(),
+            estado,
+            revision,
+            personas,
+            version: version.into(),
+            codigo: codigo.map(Into::into),
+            caduca: caduca.into(),
+            copiado: false,
+        }
+    };
+    let recibida = |id: &str, nombre: &str, de: &str, estado, revision, cambios, version: &str| {
+        InstanciaQueRecibes {
+            id: id.into(),
+            nombre: nombre.into(),
+            anfitrion: de.into(),
+            estado,
+            revision: Some(revision),
+            cambios: Some(cambios),
+            version: version.into(),
+        }
+    };
+    if escena.contains("vacio") {
+        return InstanciasCompartidas {
+            pestana: if escena.contains("recibes") { PestanaCompartidas::Recibes } else { PestanaCompartidas::Compartes },
+            ..Default::default()
+        };
+    }
+    InstanciasCompartidas {
+        pestana: if escena.contains("recibes") { PestanaCompartidas::Recibes } else { PestanaCompartidas::Compartes },
+        compartes: vec![
+            fila("amigos", "Amigos", EstadoCompartida::Disponible, 4, 3, "1.21.1 · Fabric 0.16.9", Some("7QKM-4XPT-R2C9"), "caduca en 23 h"),
+            fila("boys", "Boys SMP", EstadoCompartida::CambiosSinPublicar, 12, 5, "1.21.1 · NeoForge 21.1.77", Some("H3WD-8KQA-ZF47"), "caduca en 6 días"),
+            fila("sky", "Skyblock", EstadoCompartida::EnPausa, 2, 1, "1.20.1 · Forge 47.3.0", None, ""),
+        ],
+        recibes: vec![
+            recibida("s26", "Survival 26", "Equipo 9e2a 7b14", AnfitrionRecibida::Disponible, 9, 0, "1.21.1 · Fabric 0.16.9"),
+            recibida("create", "Create Moderno", "Equipo 4c1d 0a77", AnfitrionRecibida::Disponible, 13, 3, "1.20.1 · Forge 47.3.0"),
+            recibida("hard", "Hardcore", "Equipo b812 e3f0", AnfitrionRecibida::SinConexion, 2, 0, "1.21.4 · Vanilla"),
+        ],
+        menu: escena.contains("menu").then(|| "amigos".into()),
+    }
+}
+
+/// Datos de la preview de SelectorInstanciaCompartir.
+fn selector_ejemplo(escena: &str) -> SelectorInstancia {
+    if escena.contains("vacio") {
+        return SelectorInstancia::default();
+    }
+    let o = |n: &str, v: &str, m: &str, t: &str, j: &str, e: EstadoOpcion| OpcionInstancia {
+        id: n.into(),
+        nombre: n.into(),
+        version: v.into(),
+        mods: m.into(),
+        tamano: t.into(),
+        jugado: j.into(),
+        estado: e,
+    };
+    SelectorInstancia {
+        opciones: vec![
+            o("Amigos", "1.21.1 · Fabric 0.16.9", "38 mods", "1,2 GB", "Jugaste hace 2 h", EstadoOpcion::Libre),
+            o("Supervivencia", "1.21.4 · Fabric 0.16.9", "46 mods", "2,4 GB", "Jugaste ayer", EstadoOpcion::Libre),
+            o("Boys SMP", "1.21.1 · NeoForge 21.1.77", "112 mods", "3,1 GB", "Jugaste el 05-11", EstadoOpcion::Compartida { revision: 12, personas: 3 }),
+            o("Creativo", "1.21.1 · Vanilla", "Sin mods", "240 MB", "Jugaste el 28-10", EstadoOpcion::Vanilla),
+            o("Better MC", "1.21.1 · NeoForge 21.1.77", "214 mods", "5,8 GB", "Jugando ahora", EstadoOpcion::EnUso),
+            o("Skyblock", "1.20.1 · Forge 47.3.0", "88 mods", "2,0 GB", "Jugaste el 12-10", EstadoOpcion::Libre),
+        ],
+        elegida: Some("Amigos".into()),
+        busqueda: if escena.contains("buscando") { "sup".into() } else { String::new() },
+    }
+}
+
+/// Estados de la preview de CompartidoListo.
+fn listo_ejemplo(escena: &str) -> CompartidoListo {
+    let estado = escena.trim_end_matches("-angosto").trim_end_matches("-piedra");
+    let personas = !estado.ends_with("-listo") && estado != "compartir-listo";
+    let completo = estado.ends_with("completo");
+    CompartidoListo {
+        instancia: "Amigos".into(),
+        resumen: "Revisión 1 · 21 mods, 9 configuraciones y 2 scripts".into(),
+        codigo: if estado.ends_with("nuevo") { "B8RN-3WQF-K6TD" } else { "7QKM-4XPT-R2C9" }.into(),
+        estado: if estado.ends_with("nuevo") {
+            EstadoCodigo::Nuevo
+        } else if completo {
+            EstadoCodigo::Completo
+        } else if estado.ends_with("vencido") {
+            EstadoCodigo::Vencido
+        } else {
+            EstadoCodigo::Vigente
+        },
+        cupo: 10,
+        aceptados: if completo { 10 } else if personas { 3 } else { 0 },
+        personas: if personas {
+            ["Equipo 9e2a 7b14", "Equipo 4c1d 0a77", "Equipo b812 e3f0"]
+                .into_iter()
+                .map(|n| PersonaUnida { nombre: n.into(), detalle: String::new() })
+                .collect()
+        } else {
+            vec![]
+        },
+        caducidad: Caducidad::Horas24,
+        vence: "Hasta mañana, martes 10-11 a las 04:15".into(),
+        vencio: "Venció hoy a las 04:15.".into(),
+        confirmar_cambio: estado.ends_with("cambiar"),
+        copiado: false,
+        copiado_mensaje: false,
+        ocupado: false,
+    }
 }

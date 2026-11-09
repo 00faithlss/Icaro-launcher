@@ -6,7 +6,6 @@
 
 use super::{comun::*, *};
 use crate::{
-    botones,
     componentes::{self, Estado, Variante},
     estilo, fuentes,
     iconos::{icono, Icono, Tam},
@@ -315,28 +314,6 @@ fn bloque<'a>(
         .into()
 }
 
-/// Insignia del diseño: relleno suave y regla del estado, sin glifo.
-fn insignia<'a>(p: Paleta, e: Estado, palabra: &str) -> Element<'a, Accion> {
-    let (fondo, tinta) = match e {
-        Estado::Exito => (p.success_soft, p.success),
-        Estado::Aviso => (p.warning_soft, p.warning),
-        Estado::Error => (p.error_soft, p.error),
-        Estado::Info => (p.info_soft, p.info),
-    };
-    container(
-        text(palabra.to_uppercase())
-            .font(fuentes::ETIQUETA)
-            .size(10)
-            .line_height(iced::widget::text::LineHeight::Relative(1.))
-            .wrapping(iced::widget::text::Wrapping::None),
-    )
-    .height(20)
-    .center_y(20)
-    .padding([0., 6.])
-    .style(estilo::insignia(fondo, tinta))
-    .into()
-}
-
 /// Marca `ic-diff` de la fila; atenuada cuando no se publica.
 fn marca_fila<'a>(p: Paleta, m: Marca, apagada: bool) -> Element<'a, Accion> {
     let (fondo, tinta, borde) = match m {
@@ -453,46 +430,6 @@ fn superficie(
     }
 }
 
-/// `ic-btn` de 36 px; el icono invade 4 px el relleno de su lado.
-fn btn<'a>(
-    p: Paleta,
-    izquierda: Option<Icono>,
-    rotulo: &str,
-    derecha: Option<Icono>,
-    v: Variante,
-    accion: Option<Accion>,
-) -> Element<'a, Accion> {
-    let mut contenido = row![].spacing(4).align_y(Alignment::Center);
-    if let Some(i) = izquierda {
-        contenido = contenido.push(botones::icono_heredado(i, Tam::Base));
-    }
-    contenido = contenido.push(
-        text(rotulo.to_uppercase())
-            .font(fuentes::ETIQUETA)
-            .size(11)
-            .wrapping(iced::widget::text::Wrapping::None),
-    );
-    if let Some(i) = derecha {
-        contenido = contenido.push(botones::icono_heredado(i, Tam::Base));
-    }
-    let b = button(container(contenido).center_y(Length::Fill))
-        .height(36)
-        .padding(Padding {
-            top: 0.,
-            right: if derecha.is_some() { 12. } else { 16. },
-            bottom: 0.,
-            left: if izquierda.is_some() { 12. } else { 16. },
-        })
-        .on_press_maybe(accion);
-    match v {
-        Variante::Primario => b.style(estilo::boton_primario(p)),
-        Variante::Secundario => b.style(estilo::boton_secundario(p)),
-        Variante::Fantasma => b.style(estilo::boton_fantasma(p)),
-        Variante::Peligro => b.style(estilo::boton_peligro(p)),
-    }
-    .into()
-}
-
 /// Aviso `ic-aviso` con su icono.
 fn aviso<'a>(
     p: Paleta,
@@ -574,21 +511,11 @@ fn cabecera_rp<'a>(p: Paleta, m: &RevisionPublicacion) -> Element<'a, Accion> {
     .align_y(Alignment::Center)
     .wrap();
     column![
+        // Fase de página: sin X; la salida son las migas y Cancelar.
         container(
-            row![
-                column![titulo(p, "Revisar publicación"), instancia]
-                    .spacing(12)
-                    .width(Length::Fill),
-                botones::boton_icono_estilo(
-                    p,
-                    Icono::Cerrar,
-                    "Cerrar",
-                    estilo::boton_fantasma(p),
-                    Accion::Cerrar
-                )
-            ]
-            .spacing(24)
-            .align_y(Alignment::Start),
+            column![titulo(p, "Revisar publicación"), instancia]
+                .spacing(12)
+                .width(Length::Fill),
         )
         .padding(Padding {
             top: 28.,
@@ -617,7 +544,7 @@ fn atajos<'a>(p: Paleta, m: &RevisionPublicacion) -> Element<'a, Accion> {
         .spacing(10)
         .align_y(Alignment::Center);
         if recomendado {
-            cabeza = cabeza.push(insignia(p, Estado::Exito, "Recomendado"));
+            cabeza = cabeza.push(insignia_plana(p, Estado::Exito, "Recomendado"));
         }
         let interior = container(
             column![cabeza, body_sm(detalle, p.text_muted)]
@@ -945,10 +872,10 @@ fn fila<'a>(p: Paleta, m: &RevisionPublicacion, c: &CambioPublicacion) -> Elemen
     .spacing(8)
     .align_y(Alignment::Center);
     if c.propio && c.tipo == TipoContenido::Mod {
-        titulo = titulo.push(insignia(p, Estado::Aviso, "Archivo propio"));
+        titulo = titulo.push(insignia_plana(p, Estado::Aviso, "Archivo propio"));
     }
     if c.solo_cliente {
-        titulo = titulo.push(insignia(p, Estado::Info, "Solo cliente"));
+        titulo = titulo.push(insignia_plana(p, Estado::Info, "Solo cliente"));
     }
     if let Some((id, _)) = &c.de_mod {
         let sigue = m.vista.siguen_mod
@@ -1263,8 +1190,16 @@ fn cuerpo_rp<'a>(p: Paleta, m: &RevisionPublicacion, r: &Resumen<'_>) -> Column<
                 container(
                     avance_rp(
                         p,
-                        format!("Buscando qué cambió desde la revisión {}", m.base),
-                        format!("{} de {} archivos", miles(*hechos), miles(*total)),
+                        if m.base == 0 {
+                            "Revisando el contenido de tu instancia".to_string()
+                        } else {
+                            format!("Buscando qué cambió desde la revisión {}", m.base)
+                        },
+                        if *total == 0 {
+                            String::new()
+                        } else {
+                            format!("{} de {} archivos", miles(*hechos), miles(*total))
+                        },
                         if *total == 0 {
                             0.
                         } else {
@@ -1272,7 +1207,11 @@ fn cuerpo_rp<'a>(p: Paleta, m: &RevisionPublicacion, r: &Resumen<'_>) -> Column<
                         },
                     )
                     .push(body_sm(
-                        format!("Tus amigos siguen recibiendo la revisión {}.", m.base),
+                        if m.base == 0 {
+                            "Todavía no compartes nada de esta instancia.".to_string()
+                        } else {
+                            format!("Tus amigos siguen recibiendo la revisión {}.", m.base)
+                        },
                         p.text_muted,
                     ))
                     .spacing(10),
@@ -1615,7 +1554,7 @@ fn pie_rp<'a>(p: Paleta, m: &RevisionPublicacion, r: &Resumen<'_>) -> Element<'a
         container(contenido).padding([18., 32.]).width(Length::Fill)
     ])
     .width(Length::Fill)
-    .style(estilo::bloque(p.surface_raised))
+    // Sobre el fondo de la página, como el resto de la fase.
     .into()
 }
 
@@ -1640,7 +1579,7 @@ pub fn revision_publicacion<'a>(p: Paleta, m: &RevisionPublicacion) -> Element<'
         .padding(BORDE_DIALOGO)
         .width(Length::Fill)
         .max_width(960)
-        .max_height(800)
+        .height(Length::Fill)
         .style(marco_dialogo(p))
         .into()
 }

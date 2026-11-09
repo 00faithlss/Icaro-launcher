@@ -105,7 +105,7 @@ pub fn entrada_invitacion<'a>(p: Paleta, m: &EntradaInvitacion) -> Element<'a, A
     container(row![puente(p), d])
         .width(Length::Fill)
         .max_width(820)
-        .max_height(800)
+        .height(Length::Fill)
         .style(marco_dialogo(p))
         .into()
 }

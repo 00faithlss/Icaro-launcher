@@ -38,6 +38,8 @@ mod sincronizacion_real;
 mod almacenamiento_real;
 #[path = "launcher_aux/estadisticas_reales.rs"]
 mod estadisticas_reales;
+#[path = "launcher_aux/hora_local.rs"]
+mod hora_local;
 #[path = "launcher_aux/java_real.rs"]
 mod java_real;
 #[path = "launcher_aux/capt.rs"]
@@ -505,7 +507,13 @@ fn actualizar(app: &mut App, m: Mensaje) -> Task<Mensaje> {
     mods::fijar_recurso(app.editor == Some(3));
     let deshacer_captura = matches!(&m, Mensaje::Capt(capt::Accion::Deshacer));
     let habia = hay_dialogo(app);
-    let tarea = actualizar_estado(app, m);
+    let compartiendo = app.servicios.compartir.modal();
+    let mut tarea = actualizar_estado(app, m);
+    // Compartir ya no es un diálogo: sus fases viven en Servidores. Si un flujo
+    // empieza desde otra sección (por ejemplo, Jugar), se navega hasta allí.
+    if !compartiendo && app.servicios.compartir.modal() && app.seccion != Seccion::Servidores {
+        tarea = Task::batch([tarea, Task::done(Mensaje::Ir(Seccion::Servidores))]);
+    }
     app.servicios.servidores.avanzar();
     if let Some(aviso)=app.aviso.take(){app.avisos.agregar(aviso);}
     if deshacer_captura { app.aviso = None; }
@@ -574,7 +582,8 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
         return Task::none();
     }
     if app.servicios.sincronizacion.modal() && matches!(m,Mensaje::Ir(_)){return Task::none();}
-    if app.servicios.compartir.modal() && matches!(m,Mensaje::Ir(_)|Mensaje::Jugar(_)){return Task::none();}
+    // Durante un flujo de compartir se puede navegar; jugar espera a que termine.
+    if app.servicios.compartir.modal() && matches!(m,Mensaje::Jugar(_)){return Task::none();}
     if matches!(&m, Mensaje::Pant(pantallas::Accion::Abrir(pantallas::Pantalla::Actualizacion))) {
         return actualizacion_real::actualizar(app, actualizacion_real::Accion::Abrir);
     }
@@ -3142,7 +3151,17 @@ fn pantalla_capturas(app: &App) -> Element<'_, Mensaje> {
     capt::pantalla(app)
 }
 
+/// Servidores y las fases de compartir comparten lugar: la transición desliza
+/// y hace aparecer la fase nueva sin velo ni diálogo.
 fn pantalla_servidores(app: &App) -> Element<'_, Mensaje> {
+    let clave = compartir_real::clave_fase(&app.servicios.compartir);
+    let contenido = compartir_real::vista(app)
+        .or_else(|| compartir_real::pagina_compartidas(app))
+        .unwrap_or_else(|| pantalla_servidores_base(app));
+    icaro_ui::transicion::fase(app.paleta().bg, clave, contenido)
+}
+
+fn pantalla_servidores_base(app: &App) -> Element<'_, Mensaje> {
     if !app.servicios.demo || app.servicios.servidores.visual {return servidores_reales::vista(app);}
     if app.capt.vacio || app.red.servidores.is_empty() {
         return capt::vacio_servidores(app);
@@ -3450,7 +3469,7 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
     } else { None };
     ventana = icaro_ui::superficies::capa_flotante(ventana, capa_mod);
     ventana=icaro_ui::superficies::capa_flotante(ventana,servidores_reales::panel(app));
-    if let Some(vista)=cierre_compartir::vista(app).or_else(|| compartir_real::vista(app)) {
+    if let Some(vista)=cierre_compartir::vista(app) {
         ventana=con_velo_losa(p,ventana,vista,Mensaje::Compartir(compartir_real::Accion::Vista(icaro_ui::compartir::Accion::Cerrar)),desfase_losa(app));
     }
     if let Some(s) = &app.asistente {

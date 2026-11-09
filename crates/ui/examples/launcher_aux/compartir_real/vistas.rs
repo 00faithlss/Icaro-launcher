@@ -2,50 +2,41 @@
 use super::{modelos, Accion, Etapa};
 use crate::{App, Mensaje};
 use icaro_ui::compartir as v;
-use iced::{widget::container, Element};
+use iced::Element;
 
 pub fn vista(app: &App) -> Option<Element<'_, Mensaje>> {
     let s = &app.servicios.compartir;
     let p = app.paleta();
     let vista = match s.etapa {
         Etapa::Cerrada => return None,
-        Etapa::Selector | Etapa::Analizando => {
-            let modelo = v::CompartirInstancia {
-                instancias: app
-                    .servicios
-                    .instancias
-                    .registros
-                    .iter()
-                    .map(|i| modelos::instancia(i, app.servicios.juego.ocupada(&i.id)))
-                    .collect(),
-                seleccionada: s.seleccionada.clone(),
-                estado: if s.etapa == Etapa::Analizando {
-                    v::EstadoContenido::Analizando {
-                        hechos: 0,
-                        total: 0,
-                    }
-                } else {
-                    v::EstadoContenido::Bloqueado
+        Etapa::Selector => v::selector_instancia(p, &super::selector::modelo(app)),
+        Etapa::Analizando => {
+            // Misma fase que la revisión: se ve su estado «Analizando» o su error.
+            let id = s.seleccionada.as_deref()?;
+            let i = app.servicios.instancias.registros.iter().find(|i| i.id == id)?;
+            let base = s
+                .biblioteca
+                .entradas
+                .iter()
+                .find(|e| e.instancia == id)
+                .and_then(|e| e.revision)
+                .unwrap_or(0);
+            v::revision_publicacion(
+                p,
+                &v::RevisionPublicacion {
+                    instancia: modelos::instancia(i, false),
+                    base,
+                    nueva: base + 1,
+                    cambios: vec![],
+                    estado: match &s.error {
+                        Some(e) => v::EstadoRevisionPublicacion::Error(e.clone()),
+                        None => v::EstadoRevisionPublicacion::Analizando { hechos: 0, total: 0 },
+                    },
+                    confirmar_cancelacion: false,
+                    guardando: false,
+                    vista: Default::default(),
                 },
-                incluidos: vec![],
-                total_incluidos: 0,
-                excluidos: vec![],
-                propios: vec![],
-                carpetas: "mods · config · kubejs · resourcepacks".into(),
-                tamano_carpetas: String::new(),
-                problemas: s
-                    .error
-                    .iter()
-                    .map(|e| v::Problema {
-                        archivo: String::new(),
-                        titulo: "No se pudo revisar la instancia".into(),
-                        detalle: e.clone(),
-                        accion: v::Accion::Reintentar,
-                        rotulo: "Volver a revisar".into(),
-                    })
-                    .collect(),
-            };
-            v::compartir_instancia(p, &modelo)
+            )
         }
         Etapa::Revision | Etapa::Publicando | Etapa::Guardando => {
             v::revision_publicacion(p, s.revision.as_ref()?)
@@ -67,6 +58,7 @@ pub fn vista(app: &App) -> Option<Element<'_, Mensaje>> {
                 },
             )
         }
+        Etapa::Listo => v::compartido_listo(p, &super::listo::modelo(s)?),
         Etapa::Panel => v::panel_publicacion(p, s.panel.as_ref()?),
         Etapa::Cierre => v::cierre_transferencias(
             p,
@@ -97,22 +89,66 @@ pub fn vista(app: &App) -> Option<Element<'_, Mensaje>> {
         | Etapa::ErrorVinculo => super::sync_vistas::vista(p, s)?,
     };
     let ancho: f32 = match s.etapa {
-        Etapa::Selector | Etapa::Analizando => 900.,
+        Etapa::Selector => 720.,
         Etapa::Propios => 720.,
+        Etapa::Listo => 700.,
         Etapa::Cierre => 640.,
         Etapa::Entrada => 820.,
         Etapa::Identidad => 680.,
         Etapa::Destino => 720.,
         _ => 960.,
     };
-    Some(
-        container(vista.map(|a| Mensaje::Compartir(Accion::Vista(a))))
-            .width(ancho.min((app.ventana.width - 48.).max(240.)))
-            .height((app.ventana.height - 96.).clamp(240., 800.))
-            .align_x(iced::Alignment::Center)
-            .align_y(iced::Alignment::Center)
-            .into(),
-    )
+    // Fase de página dentro de Servidores: migas y fase centradas, sin velo.
+    let migas = [
+        v::Miga::enlace("Servidores", v::Accion::VerServidores),
+        v::Miga::enlace("Instancias compartidas", v::Accion::VerCompartidas),
+        v::Miga::actual(titulo(s.etapa)),
+    ];
+    Some(v::pagina(p, &migas, ancho, vista).map(|a| Mensaje::Compartir(Accion::Vista(a))))
+}
+
+/// Nombre de la fase en las migas.
+fn titulo(e: Etapa) -> &'static str {
+    match e {
+        Etapa::Cerrada | Etapa::Selector => "Compartir instancia",
+        Etapa::Analizando | Etapa::Revision | Etapa::Guardando | Etapa::Publicando => {
+            "Revisar publicación"
+        }
+        Etapa::Propios => "Archivos propios",
+        Etapa::Listo => "Compartida",
+        Etapa::Panel => "Publicación",
+        Etapa::Cierre => "Dejar de compartir",
+        Etapa::Entrada | Etapa::Identidad | Etapa::Destino => "Unirme con un código",
+        Etapa::RevisionInvitado | Etapa::InstalandoInvitado | Etapa::ResultadoInvitado => {
+            "Instalar instancia"
+        }
+        Etapa::ConsultandoVinculo
+        | Etapa::RevisionVinculo
+        | Etapa::AplicandoVinculo
+        | Etapa::ErrorVinculo => "Sincronizar",
+    }
+}
+
+/// Orden de la fase en su flujo: la transición avanza o vuelve según la clave.
+/// 0 es la página de Servidores y 1 Instancias compartidas.
+pub fn clave(s: &super::Estado) -> u64 {
+    match s.etapa {
+        Etapa::Cerrada if s.compartidas.is_some() => 1,
+        Etapa::Cerrada => 0,
+        Etapa::Selector => 10,
+        Etapa::Analizando | Etapa::Revision | Etapa::Guardando | Etapa::Publicando => 11,
+        Etapa::Propios => 12,
+        Etapa::Listo => 13,
+        Etapa::Panel => 14,
+        Etapa::Cierre => 15,
+        Etapa::Entrada => 20,
+        Etapa::Identidad => 21,
+        Etapa::Destino => 22,
+        Etapa::RevisionInvitado => 23,
+        Etapa::InstalandoInvitado | Etapa::ResultadoInvitado => 24,
+        Etapa::ConsultandoVinculo => 30,
+        Etapa::RevisionVinculo | Etapa::AplicandoVinculo | Etapa::ErrorVinculo => 31,
+    }
 }
 
 pub fn accesos(app: &App, ancho: f32) -> Element<'_, Mensaje> {

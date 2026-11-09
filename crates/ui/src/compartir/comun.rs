@@ -4,7 +4,7 @@
 use super::{Accion, ArchivoCompartido, InstanciaCompartida, Marca};
 use crate::{
     botones::{self, TamBoton},
-    componentes::Variante,
+    componentes::{Estado, Variante},
     estilo, fuentes,
     iconos::{icono, Icono, Tam},
     tema::Paleta,
@@ -91,22 +91,12 @@ pub(super) fn marco(p: Paleta) -> impl Fn(&iced::Theme) -> container::Style {
         ..Default::default()
     }
 }
+/// Cabecera de una fase de página: sin X, la salida son las migas y Cancelar.
 pub(super) fn cabecera<'a>(p: Paleta, nombre: &str, subtitulo: &str) -> Element<'a, Accion> {
     container(
-        row![
-            column![titulo(p, nombre), tenue(p, subtitulo)]
-                .spacing(6)
-                .width(Length::Fill),
-            botones::boton_icono_estilo(
-                p,
-                Icono::Cerrar,
-                "Cerrar",
-                estilo::boton_fantasma(p),
-                Accion::Cerrar
-            )
-        ]
-        .spacing(16)
-        .align_y(Alignment::Start),
+        column![titulo(p, nombre), tenue(p, subtitulo)]
+            .spacing(6)
+            .width(Length::Fill),
     )
     .padding(Padding {
         top: 28.,
@@ -134,21 +124,17 @@ pub(super) fn dialogo<'a>(
     container(interior_dialogo(p, nombre, subtitulo, contenido, acciones))
         .width(Length::Fill)
         .max_width(ancho)
-        .max_height(800)
+        .height(Length::Fill)
         .style(marco_dialogo(p))
         .into()
 }
-pub(super) const BORDE_DIALOGO: f32 = 2.;
+/// Las fases son páginas: sin marco de diálogo.
+pub(super) const BORDE_DIALOGO: f32 = 0.;
 
 pub(super) fn marco_dialogo(p: Paleta) -> impl Fn(&iced::Theme) -> container::Style {
+    // Página sobre el fondo del contenido, sin velo ni borde.
     move |_| container::Style {
-        background: Some(p.surface_raised.into()),
         text_color: Some(p.text),
-        border: Border {
-            color: p.text,
-            width: BORDE_DIALOGO,
-            radius: 0.0.into(),
-        },
         ..Default::default()
     }
 }
@@ -338,4 +324,67 @@ pub(super) fn peligro_fantasma<'a>(p: Paleta, s: &str, a: Option<Accion>) -> Ele
         },
         a,
     )
+}
+
+/// `ic-btn` de 36 px; el icono invade 4 px el relleno de su lado.
+pub(super) fn btn<'a>(
+    p: Paleta,
+    izquierda: Option<Icono>,
+    rotulo: &str,
+    derecha: Option<Icono>,
+    v: Variante,
+    accion: Option<Accion>,
+) -> Element<'a, Accion> {
+    let mut contenido = row![].spacing(4).align_y(Alignment::Center);
+    if let Some(i) = izquierda {
+        contenido = contenido.push(botones::icono_heredado(i, Tam::Base));
+    }
+    contenido = contenido.push(
+        text(rotulo.to_uppercase())
+            .font(fuentes::ETIQUETA)
+            .size(11)
+            .wrapping(iced::widget::text::Wrapping::None),
+    );
+    if let Some(i) = derecha {
+        contenido = contenido.push(botones::icono_heredado(i, Tam::Base));
+    }
+    let b = button(container(contenido).center_y(Length::Fill))
+        .height(36)
+        .padding(Padding {
+            top: 0.,
+            right: if derecha.is_some() { 12. } else { 16. },
+            bottom: 0.,
+            left: if izquierda.is_some() { 12. } else { 16. },
+        })
+        .on_press_maybe(accion);
+    match v {
+        Variante::Primario => b.style(estilo::boton_primario(p)),
+        Variante::Secundario => b.style(estilo::boton_secundario(p)),
+        Variante::Fantasma => b.style(estilo::boton_fantasma(p)),
+        Variante::Peligro => b.style(estilo::boton_peligro(p)),
+    }
+    .into()
+}
+
+
+/// Insignia del diseño: relleno suave y regla del estado, sin glifo.
+pub(super) fn insignia_plana<'a>(p: Paleta, e: Estado, palabra: &str) -> Element<'a, Accion> {
+    let (fondo, tinta) = match e {
+        Estado::Exito => (p.success_soft, p.success),
+        Estado::Aviso => (p.warning_soft, p.warning),
+        Estado::Error => (p.error_soft, p.error),
+        Estado::Info => (p.info_soft, p.info),
+    };
+    container(
+        text(palabra.to_uppercase())
+            .font(fuentes::ETIQUETA)
+            .size(10)
+            .line_height(iced::widget::text::LineHeight::Relative(1.))
+            .wrapping(iced::widget::text::Wrapping::None),
+    )
+    .height(20)
+    .center_y(20)
+    .padding([0., 6.])
+    .style(estilo::insignia(fondo, tinta))
+    .into()
 }

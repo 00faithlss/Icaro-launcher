@@ -222,7 +222,7 @@ pub fn compartir_instancia<'a>(p: Paleta, m: &CompartirInstancia) -> Element<'a,
     ])
     .width(Length::Fill)
     .max_width(900)
-    .max_height(800)
+    .height(Length::Fill)
     .padding(BORDE_DIALOGO)
     .style(marco_dialogo(p))
     .into()

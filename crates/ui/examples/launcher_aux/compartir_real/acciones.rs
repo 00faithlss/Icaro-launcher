@@ -34,6 +34,9 @@ pub enum Accion {
     ),
     Instalada(u64, super::invitado_instalacion::Resultado),
     Vista(v::Accion),
+    Recibidas(u64, Vec<super::compartidas::Recibida>),
+    DatosSelector(u64, Vec<(String, super::selector::DatosOpcion)>),
+    AnfitrionRecibido(u64, String, bool),
     Analizada(u64, Result<tareas::Trabajo, String>),
     Publicada(u64, Result<tareas::Publicada, String>),
     Guardada(u64, bool, Result<(), String>),
@@ -152,6 +155,10 @@ pub fn iniciar_invitacion(
         h.invitar(cad, cupo).await.map_err(|e| e.to_string())
     }))
 }
+/// Anula el código vigente; CompartidoListo lo usa para cambiarlo.
+pub(super) fn revocar_codigo(s: &mut Estado) -> Task<Mensaje> {
+    operar(s, Operacion::Codigo)
+}
 fn operar(s: &mut Estado, op: Operacion) -> Task<Mensaje> {
     if s.red_ocupada {
         return Task::none();
@@ -234,6 +241,15 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
         Accion::Resuelta(id, r) => super::invitado::resuelta(&mut app.servicios.compartir, id, r),
         Accion::Visitada(id, r) => super::invitado::visitada(&mut app.servicios.compartir, id, r),
         Accion::Confiada(id, r) => super::invitado::confiada(&mut app.servicios.compartir, id, r),
+        Accion::Recibidas(generacion, lista) => {
+            return super::compartidas::recibidas(&mut app.servicios.compartir, generacion, lista)
+        }
+        Accion::DatosSelector(generacion, datos) => {
+            super::selector::recibidos(app, generacion, datos)
+        }
+        Accion::AnfitrionRecibido(generacion, id, ok) => {
+            super::compartidas::anfitrion(&mut app.servicios.compartir, generacion, &id, ok)
+        }
         Accion::Analizada(id, r) => resultados::analizada(&mut app.servicios.compartir, id, r),
         Accion::Publicada(id, r) => {
             if resultados::publicada(&mut app.servicios.compartir, id, r) {
@@ -281,10 +297,20 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             return Task::batch([contadores, super::biblioteca::cargar(app)]);
         }
         Accion::Operada(id, op, r) => {
+            // Cambiar código: tras anular el actual se genera otro.
+            let regenerar = matches!(op, Operacion::Codigo)
+                && r.is_ok()
+                && std::mem::take(&mut app.servicios.compartir.listo.regenerar);
             resultados::operada(&mut app.servicios.compartir, id, op, r);
+            let nuevo = if regenerar {
+                app.servicios.compartir.listo.codigo_nuevo = true;
+                invitar(&mut app.servicios.compartir)
+            } else {
+                Task::none()
+            };
             let contadores =
                 super::contadores::pedir(&mut app.servicios.compartir).unwrap_or_else(Task::none);
-            return Task::batch([contadores, super::biblioteca::cargar(app)]);
+            return Task::batch([nuevo, contadores, super::biblioteca::cargar(app)]);
         }
         Accion::Guardada(id, confirmar, r) => {
             let s = &mut app.servicios.compartir;
@@ -343,6 +369,15 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
 }
 
 fn vista(app: &mut App, a: v::Accion) -> Task<Mensaje> {
+    if let Some(task) = super::compartidas::accion(app, &a) {
+        return task;
+    }
+    if let Some(task) = super::selector::accion(app, &a) {
+        return task;
+    }
+    if let Some(task) = super::listo::accion(&mut app.servicios.compartir, &a) {
+        return task;
+    }
     if let Some(task) = super::biblioteca::accion(app, &a) {
         return task;
     }
@@ -392,8 +427,10 @@ fn vista(app: &mut App, a: v::Accion) -> Task<Mensaje> {
                 s.solicitud = s.solicitud.wrapping_add(1);
                 s.etapa = Etapa::Selector;
                 s.error = None;
+                s.seleccionada = None;
             }
-            return super::biblioteca::cargar(app);
+            let biblioteca = super::biblioteca::cargar(app);
+            return Task::batch([biblioteca, super::selector::cargar(app)]);
         }
         v::Accion::AgregarServidor => {
             return crate::servidores_reales::actualizar(

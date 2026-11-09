@@ -76,6 +76,7 @@ pub fn ajustada(s: &mut Estado, id: u64, cad: v::Caducidad, r: Result<Invitacion
             i.ajustes_editables = true;
             match r {
                 Ok(r) => {
+                    s.listo.vence = Some(super::listo::vence_desde(r.expires_at));
                     i.caducidad = cad;
                     i.cupo = r.capacity;
                     i.aceptados = r.accepted;

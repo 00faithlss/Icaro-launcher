@@ -1,5 +1,12 @@
 # Changelog
 
+## [Sin publicar]
+
+- Compartir ya no abre diálogos: sus fases son páginas dentro de Servidores, con migas, contenido centrado y desplazamiento suave, y pasan de una a otra deslizándose 24 px y apareciendo (sin movimiento con «reducir movimiento»). Se puede navegar a otra sección y volver; la fase espera en Servidores.
+- Servidores › Instancias compartidas reúne lo que compartes (estado, revisión, personas, código con copiar, caducidad, acción principal y menú con Pausar, Cambiar código y Dejar de compartir) y lo que recibes (de quién es, si el anfitrión está disponible, revisión y Jugar o Sincronizar), con sus estados vacíos.
+- «¿Qué instancia compartes?» muestra versión, loader, mods, tamaño y cuándo se jugó por última vez; las ya compartidas abren su publicación y la que está en uso queda bloqueada. Incluye buscador y estado sin instancias.
+- Tras publicar aparece «Ya compartes…»: código para copiar o enviar con instrucciones, personas con barra de cupo, caducidad con fecha exacta, límite de personas, cambiar código con confirmación y anular. Las personas se muestran como «Equipo 9e2a 7b14» hasta que el servicio comparta nombres.
+
 ## [0.4.0] - 2026-11-09
 
 - «Revisar publicación» sigue RevisionPublicacion versión 32 del System Design: lo que se publica se ordena por tipo (mods, configuraciones, resourcepacks, shaders y scripts) con atajos, casillas por tipo de tres estados, búsqueda y filtros, y una casilla por fila. El núcleo lee nombre, versión y entorno de `fabric.mod.json`, `quilt.mod.json` y `neoforge.mods.toml` y asocia cada configuración a su mod. Los tamaños se muestran legibles.

@@ -87,6 +87,8 @@ iconos! {
     Documento => "file-text",
     Fichero => "file",
     Mando => "gamepad",
+    Llave => "key",
+    Reloj => "clock",
     Corazon => "heart",
     Calendario => "calendar",
     Paquete => "package",

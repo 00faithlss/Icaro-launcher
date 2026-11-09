@@ -32,6 +32,7 @@ pub mod servidores;
 pub mod shell;
 pub mod superficies;
 pub mod tema;
+pub mod transicion;
 pub mod vacios;
 pub mod visor;
 pub mod visor_skin;
