@@ -1,6 +1,9 @@
 # Changelog
 
-## [Sin publicar]
+## [0.4.0] - 2026-11-09
+
+- «Revisar publicación» sigue RevisionPublicacion versión 32 del System Design: lo que se publica se ordena por tipo (mods, configuraciones, resourcepacks, shaders y scripts) con atajos, casillas por tipo de tres estados, búsqueda y filtros, y una casilla por fila. El núcleo lee nombre, versión y entorno de `fabric.mod.json`, `quilt.mod.json` y `neoforge.mods.toml` y asocia cada configuración a su mod. Los tamaños se muestran legibles.
+- Los diálogos de compartir usan el desplazamiento suave del launcher; tocar una tarjeta de tipo lleva a su sección. El hover ya no tapa los bordes y las casillas cambian de tono.
 
 - Compartir instancia enmarca también el grabado y permite seleccionar de una vez los mods elegibles en la revisión. La autorización de archivos propios se conserva.
 - La preparación automática de Minecraft tras crear una instancia usa un estado de instalación alojado en el heap. Evita el desbordamiento de pila observado en el launcher de desarrollo de Windows.
