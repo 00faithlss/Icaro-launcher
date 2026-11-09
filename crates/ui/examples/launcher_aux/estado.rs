@@ -54,6 +54,9 @@ pub struct Guardado {
     /// Activación explícita en Servidores, independiente de la variable de pruebas.
     #[serde(default)]
     pub compartir_experimental: bool,
+    /// Versión cuyas novedades ya se mostraron al abrir Ícaro.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub novedades_vistas: Option<String>,
 }
 
 /// Preferencias de Apariencia compatibles con estados anteriores.
@@ -126,6 +129,7 @@ impl Guardado {
                 .collect(),
             canal: None,
             compartir_experimental: false,
+            novedades_vistas: None,
         }
     }
 

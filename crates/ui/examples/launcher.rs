@@ -40,6 +40,8 @@ mod almacenamiento_real;
 mod estadisticas_reales;
 #[path = "launcher_aux/hora_local.rs"]
 mod hora_local;
+#[path = "launcher_aux/novedades.rs"]
+mod novedades;
 #[path = "launcher_aux/saludo.rs"]
 mod saludo;
 #[path = "launcher_aux/java_real.rs"]
@@ -151,6 +153,8 @@ struct App {
     detalle_error: Option<String>,
     almacenamiento: almacenamiento_real::Estado,
     estadisticas: estadisticas_reales::Estado,
+    saludo: saludo::Estado,
+    novedades: novedades::Estado,
     java_global: java_real::Preferencias,
     java_detectadas: Vec<icaro_core::java::Java>,
     java_estado: String,
@@ -289,6 +293,8 @@ enum Mensaje {
     Java(java_real::Accion),
     Almacenamiento(almacenamiento_real::Accion),
     Estadisticas(estadisticas_reales::Accion),
+    Saludo(saludo::Accion),
+    Novedades(novedades::Accion),
     Verificacion(verificacion_real::Accion),
     Icono(icono_instancia::Accion),
     ExportarLista(exportar_lista_mods::Accion),
@@ -587,6 +593,7 @@ fn guardar_si_cambio(app: &mut App) {
     guardado.java_global = app.java_global.clone();
     guardado.apariencia = estado::AparienciaGuardada { tema: app.tema, metal: app.aj.metal, escala: app.aj.escala, reducir: app.reducir };
     guardado.canal = (app.aj.canal != actualizacion_real::canal_compilado()).then_some(app.aj.canal);
+    if !app.servicios.demo { guardado.novedades_vistas = Some(env!("CARGO_PKG_VERSION").into()); }
     let texto = guardado.texto();
     if texto != app.ultimo_guardado {
         match estado::Guardado::escribir(&texto, &app.ultimo_guardado, &app.servicios.instancias.almacen, app.servicios.demo) {
@@ -626,6 +633,8 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
         Mensaje::Sincronizacion(a)=>return sincronizacion_real::actualizar(app,a),
         Mensaje::Almacenamiento(a) => return almacenamiento_real::actualizar(app,a),
         Mensaje::Estadisticas(a) => return estadisticas_reales::actualizar(app, a),
+        Mensaje::Saludo(a) => return saludo::actualizar(app, a),
+        Mensaje::Novedades(a) => return novedades::actualizar(app, a),
         Mensaje::Java(a) => return java_real::actualizar(app, a),
         Mensaje::Actualizacion(a) => return actualizacion_real::actualizar(app, a),
         Mensaje::Juego(a) => return juego_real::actualizar(app, a),
@@ -1604,24 +1613,16 @@ fn pantalla_instancias(app: &App) -> Element<'_, Mensaje> {
         );
     }
     cuerpo_col = cuerpo_col.push(cuadricula);
+    // SaludoInicio: frase bajo la banda, antes de las herramientas.
+    let cuerpo_col = column![
+        icaro_ui::saludo::saludo_inicio(p, &saludo::datos(app)),
+        cuerpo_col
+    ];
     let cuerpo = cuerpo_col
         .spacing(espacio::S6)
         .padding(Padding::from([espacio::S6, espacio::S12]));
-    // Frase de bienvenida: cambia en cada inicio y saluda según la hora.
-    let nombre = app.servicios.nombre(app.sesion.estado.nombre());
-    let nombre = (!["Sin cuenta", "Invitado", "Recuperando sesión…", ""].contains(&nombre))
-        .then_some(nombre);
-    let frase = saludo::frase(nombre);
     column![
-        banda_completa(
-            p,
-            Lamina::CaidaCielo,
-            None,
-            "Instancias",
-            DatoBanda::Nota(&frase),
-            ALTO_BANDA,
-            texto::DISPLAY_XL,
-        ),
+        banda(p, Lamina::CaidaCielo, "Instancias", Some(todas.len())),
         suave(app, cuerpo)
     ]
     .into()
@@ -3377,7 +3378,12 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
         ]
         .into(),
         Seccion::Descargas => pantalla_descargas(app),
-        Seccion::Ajustes => pantalla_ajustes(app),
+        // Novedades es una página de Ajustes: entra y sale como una fase.
+        Seccion::Ajustes => icaro_ui::transicion::fase(
+            app.paleta().bg,
+            u64::from(app.novedades.abierta),
+            if app.novedades.abierta { novedades::pagina(app) } else { pantalla_ajustes(app) },
+        ),
         Seccion::Modpacks => pantalla_modpacks(app),
         Seccion::Consola => pantalla_consola(app),
         Seccion::Capturas => pantalla_capturas(app),
@@ -3825,12 +3831,20 @@ fn iniciar_app(seccion: Seccion, piedra: bool, menu: Option<usize>, con_dialogo:
     if !servicios.demo { servicios.instancias.cargar(); let _=icaro_core::almacenamiento::registrar(&estado::directorio(false),"Inicio del launcher"); icaro_core::mods::sincronizacion::activar_registro(&estado::directorio(false)); }
     let mut guardado = estado::Guardado::cargar(servicios.demo);
     if let Some(g)=&mut guardado {g.apariencia.normalizar();}
+    // Versión cuyas novedades ya se vieron; sin estado es una instalación nueva.
+    let vistas = guardado.as_ref().map(|g| g.novedades_vistas.clone());
     let (mut app, inicio) = iniciar_con_guardado(seccion, piedra, menu, con_dialogo, servicios, guardado);
     if let Some(error)=app.config_error.clone(){app.avisar(error);}
     if !app.servicios.demo {
+        novedades::al_iniciar(&mut app, vistas);
         if let Some(resultado)=icaro_core::actualizacion::tomar_resultado(env!("CARGO_PKG_VERSION"),env!("ICARO_COMPILACION").parse().unwrap_or(0)) {
+            // Una actualización correcta abre las novedades; un fallo, su pantalla.
+            if resultado.correcto {
+                let _ = novedades::actualizar(&mut app, novedades::Accion::Abrir { recien: true });
+            } else {
+                app.pantalla=Some(pantallas::Pantalla::Actualizacion);
+            }
             app.actualizacion.resultado=Some(resultado);
-            app.pantalla=Some(pantallas::Pantalla::Actualizacion);
         }
         app.actualizacion.comprobando = true;
         {
@@ -3840,7 +3854,8 @@ fn iniciar_app(seccion: Seccion, piedra: bool, menu: Option<usize>, con_dialogo:
             let iconos = icono_instancia::cargar(&app);
             let java = java_real::detectar(&mut app);
             let actualizacion = actualizacion_real::comprobar(app.aj.canal);
-            (app, Task::batch([inicio, actualizacion, iconos, java, servidores]))
+            let ultima = saludo::cargar(&app);
+            (app, Task::batch([inicio, actualizacion, iconos, java, servidores, ultima]))
         }
     } else { (app, inicio) }
 }
@@ -3901,6 +3916,8 @@ fn iniciar_con_guardado(seccion: Seccion, piedra: bool, menu: Option<usize>, con
                 detalle_error: None,
                 almacenamiento: Default::default(),
                 estadisticas: Default::default(),
+                saludo: Default::default(),
+                novedades: Default::default(),
                 actualizacion: actualizacion_real::Estado::default(),
                 verificacion: Default::default(),
                 iconos: Default::default(),

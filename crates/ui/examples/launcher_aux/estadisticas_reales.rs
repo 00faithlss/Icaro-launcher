@@ -103,6 +103,7 @@ pub fn actualizar(app: &mut App, accion: Accion) -> Task<Mensaje> {
             )
         }
         Accion::Sumado(id) => {
+            crate::saludo::jugada(app, &id);
             // La partida también pudo cambiar mundos, capturas y registros.
             vencer(app, &id);
             Task::none()

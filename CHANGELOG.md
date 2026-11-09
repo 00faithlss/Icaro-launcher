@@ -6,6 +6,8 @@
 - Servidores › Instancias compartidas reúne lo que compartes (estado, revisión, personas, código con copiar, caducidad, acción principal y menú con Pausar, Cambiar código y Dejar de compartir) y lo que recibes (de quién es, si el anfitrión está disponible, revisión y Jugar o Sincronizar), con sus estados vacíos.
 - «¿Qué instancia compartes?» muestra versión, loader, mods, tamaño y cuándo se jugó por última vez; las ya compartidas abren su publicación y la que está en uso queda bloqueada. Incluye buscador y estado sin instancias.
 - Tras publicar aparece «Ya compartes…»: código para copiar o enviar con instrucciones, personas con barra de cupo, caducidad con fecha exacta, límite de personas, cambiar código con confirmación y anular. Las personas se muestran como «Equipo 9e2a 7b14» hasta que el servicio comparta nombres.
+- Instancias abre con un saludo bajo la banda (SaludoInicio): una frase según la hora del día, o de regreso tras una semana sin jugar, con el nombre de la cuenta, y debajo la última instancia jugada y cuándo. Las frases vienen en el launcher y cambian al abrirlo. El núcleo guarda cuándo terminó la última partida de cada instancia.
+- Novedades de cada versión (NovedadesVersion): lista de versiones, filtros Todo, Nuevo, Mejoras y Correcciones con su número, funciones nuevas en tarjetas con acceso directo y aviso de versión de mantenimiento. Se abre sola la primera vez que se entra a una versión nueva y queda en Ajustes › Acerca de. Las notas salen de `docs/releases`; una nota nueva puede llevar `titulo` y `accion` (`servidores`, `cuenta` o `tienda`).
 
 ## [0.4.0] - 2026-11-09
 

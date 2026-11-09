@@ -1955,7 +1955,10 @@ pub fn pagina_ajustes<'a>(app: &'a App) -> Element<'a, Mensaje> {
                 .push(text("Un launcher de Minecraft escrito en Rust, ligero y optimizado, para Windows y Arch Linux.").size(texto::BODY.0).color(p.text_muted))
                 .push(text("Licencia GPL-3.0. Grabados de dominio público (CC0) de The Met, la National Gallery of Art y el Art Institute of Chicago. Íconos Pixelarticons (MIT).").size(texto::BODY.0).color(p.text_muted))
                 .push(Space::with_height(espacio::S2))
-                .push(row![componentes::boton_con_icono(p, Icono::Externo, "Código fuente en GitHub", Variante::Secundario, Some(m(Accion::AbrirRepositorio)), false)])
+                .push(row![
+                    componentes::boton_con_icono(p, Icono::Notas, "Novedades", Variante::Secundario, Some(Mensaje::Novedades(crate::novedades::Accion::Abrir { recien: false })), false),
+                    componentes::boton_con_icono(p, Icono::Externo, "Código fuente en GitHub", Variante::Secundario, Some(m(Accion::AbrirRepositorio)), false),
+                ].spacing(espacio::S2))
                 .push(Space::with_height(espacio::S2))
                 .push(fila_ajuste(p, "Canal de actualizaciones", "Beta recibe antes las versiones en desarrollo; pueden tener errores.",
                     componentes::selector(p, vec!["Estable".to_owned(), "Beta".to_owned()],

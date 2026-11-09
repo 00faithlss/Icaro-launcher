@@ -42,6 +42,7 @@ pub fn iniciar(piedra: bool) -> (App, Task<Mensaje>) {
         "icono-generado" | "icono-imagen" => crate::icono_instancia::preparar_diseno(&mut a,&scene),
         "exportar-lista-html" | "exportar-lista-json" | "exportar-lista-personalizado" => crate::exportar_lista_mods::preparar_diseno(&mut a,&scene),
         "noverif" => crate::verificacion_real::preparar_diseno(&mut a),
+        s if s.starts_with("novedades") => crate::novedades::preparar_diseno(&mut a, s),
         "actualizacion" => crate::actualizacion_real::preparar_diseno(&mut a),
         "actualizacion-al-cerrar" => crate::actualizacion_real::preparar_diseno_al_cerrar(&mut a),
         s if s.starts_with("actualizacion-") => crate::actualizacion_real::preparar_diseno_estado(&mut a,s),
