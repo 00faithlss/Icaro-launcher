@@ -25,26 +25,43 @@ pub struct Accesos {
     path: PathBuf,
     registro: Mutex<Registro>,
 }
+/// Lectura sin efectos del registro. Sin archivo no hay accesos y no se crea ninguno.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Resumen {
+    pub detenida: bool,
+    pub autorizados: usize,
+}
+pub fn resumen(path: &std::path::Path) -> Result<Resumen, Error> {
+    let r = leer(path)?;
+    Ok(Resumen {
+        detenida: r.detenida,
+        autorizados: r.permitidos.difference(&r.revocados).count(),
+    })
+}
+fn leer(path: &std::path::Path) -> Result<Registro, Error> {
+    let registro = match std::fs::read(path) {
+        Ok(bytes) => {
+            if bytes.len() > 1024 * 1024 {
+                return Err(Error::Limite("accesos"));
+            }
+            serde_json::from_slice::<Registro>(&bytes).map_err(|_| Error::Datos("accesos"))?
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Registro::default(),
+        Err(_) => return Err(Error::Disco),
+    };
+    if registro
+        .permitidos
+        .iter()
+        .chain(&registro.revocados)
+        .any(|k| !hexadecimal(k, 64))
+    {
+        return Err(Error::Datos("identidad de acceso"));
+    }
+    Ok(registro)
+}
 impl Accesos {
     pub fn abrir(path: PathBuf) -> Result<Self, Error> {
-        let registro = match std::fs::read(&path) {
-            Ok(bytes) => {
-                if bytes.len() > 1024 * 1024 {
-                    return Err(Error::Limite("accesos"));
-                }
-                serde_json::from_slice::<Registro>(&bytes).map_err(|_| Error::Datos("accesos"))?
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Registro::default(),
-            Err(_) => return Err(Error::Disco),
-        };
-        if registro
-            .permitidos
-            .iter()
-            .chain(&registro.revocados)
-            .any(|k| !hexadecimal(k, 64))
-        {
-            return Err(Error::Datos("identidad de acceso"));
-        }
+        let registro = leer(&path)?;
         Ok(Self {
             path,
             registro: Mutex::new(registro),

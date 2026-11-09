@@ -47,7 +47,10 @@ impl Avance {
     }
 }
 pub fn recibido(s: &mut Estado, id: u64, avance: Avance) {
-    if s.vigente(id) && s.etapa == Etapa::InstalandoInvitado && !s.cerrar_al_terminar {
+    if s.vigente(id)
+        && matches!(s.etapa, Etapa::InstalandoInvitado | Etapa::AplicandoVinculo)
+        && !s.cerrar_al_terminar
+    {
         s.invitado.avance = avance;
     }
 }
@@ -57,6 +60,19 @@ pub fn tarea<F, Fut>(id: u64, trabajo: F) -> iced::Task<crate::Mensaje>
 where
     F: FnOnce(Emitir) -> Fut + Send + 'static,
     Fut: std::future::Future<Output = super::invitado_instalacion::Resultado> + Send + 'static,
+{
+    tarea_con_resultado(id, trabajo, super::Accion::Instalada)
+}
+pub fn tarea_con_resultado<F, Fut, R, C>(
+    id: u64,
+    trabajo: F,
+    terminar: C,
+) -> iced::Task<crate::Mensaje>
+where
+    F: FnOnce(Emitir) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = R> + Send + 'static,
+    R: Send + 'static,
+    C: FnOnce(u64, R) -> super::Accion + Send + 'static,
 {
     use iced::futures::SinkExt;
     iced::Task::run(
@@ -71,7 +87,7 @@ where
             loop {
                 tokio::select! {
                     r=&mut operacion=> {
-                        let _=salida.send(super::Accion::Instalada(id,r)).await;
+                        let _=salida.send(terminar(id,r)).await;
                         break;
                     }
                     r=rx.changed(),if abierto=> {

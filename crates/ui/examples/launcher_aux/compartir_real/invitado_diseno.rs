@@ -81,6 +81,20 @@ pub fn preparar(app: &mut crate::App, escena: &str) {
         confianza: c::confianza::EstadoConfianza::PrimeraVez,
     });
     s.invitado.nombre = "Supervivencia compartida".into();
+    if escena.contains("sync-error") {
+        s.sincronizar.instancia = Some(icaro_core::instancias::Instancia {
+            id: "ab".repeat(16),
+            nombre: "Supervivencia compartida".into(),
+            minecraft: "1.21.1".into(),
+            loader: "fabric".into(),
+            portada: 0,
+            creada: 0,
+        });
+        s.sincronizar.error = Some("El equipo anfitrión está desconectado o el acceso dejó de estar vigente. Vuelve a comprobar la publicación antes de jugar.".into());
+        s.sincronizar.detalle = true;
+        s.etapa = Etapa::ErrorVinculo;
+        return;
+    }
     s.invitado.recuperando = escena.contains("recuperacion");
     s.etapa = if escena.contains("destino") || escena.contains("recuperacion") {
         Etapa::Destino

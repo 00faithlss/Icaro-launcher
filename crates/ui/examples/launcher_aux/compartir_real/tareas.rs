@@ -52,10 +52,11 @@ impl Trabajo {
             self.packs();
             return Ok(());
         }
-        let ruta = c::RutaCompartida::parse(ruta).map_err(|e| e.to_string())?;
+        let ruta =
+            c::RutaCompartida::parse(ruta).map_err(icaro_core::diagnostico_contexto::texto)?;
         self.borrador
             .elegir(&ruta, eleccion)
-            .map_err(|e| e.to_string())?;
+            .map_err(icaro_core::diagnostico_contexto::texto)?;
         self.seleccion
             .mantener_privado(ruta, eleccion == Eleccion::Privado);
         self.packs();
@@ -116,28 +117,54 @@ pub async fn analizar_con(
     catalogo: Option<Catalog>,
     cancel: CancellationToken,
 ) -> Result<Trabajo, String> {
+    let cancel_registro = cancel.clone();
+    let instancia_registro = instancia.id.clone();
+    icaro_core::diagnostico_contexto::observar(
+        "compartir",
+        "analizar_publicacion",
+        Some(&instancia_registro),
+        &cancel_registro,
+        analizar_con_interno(raiz, almacen, instancia, identidad, catalogo, cancel),
+    )
+    .await
+}
+
+async fn analizar_con_interno(
+    raiz: PathBuf,
+    almacen: Almacen,
+    instancia: Instancia,
+    identidad: Option<Identidad>,
+    catalogo: Option<Catalog>,
+    cancel: CancellationToken,
+) -> Result<Trabajo, String> {
+    icaro_core::diagnostico_contexto::etapa("inventario_local");
     let cancel_disco = cancel.clone();
-    let mut trabajo = tokio::task::spawn_blocking(move || {
+    let mut trabajo = icaro_core::diagnostico_contexto::bloqueante(move || {
         let identidad = match identidad {
             Some(identidad) => identidad,
-            None => Identidad::cargar_o_crear(&raiz).map_err(|e| e.to_string())?,
+            None => {
+                Identidad::cargar_o_crear(&raiz).map_err(icaro_core::diagnostico_contexto::texto)?
+            }
         };
         let contexto =
             c::vinculos::publicacion(&raiz, &almacen, &instancia, &identidad.clave_publica())
-                .map_err(|e| e.to_string())?;
-        c::aplicacion::recuperar(&contexto.juego).map_err(|e| e.to_string())?;
-        let anterior = revisiones::vigente(&contexto).map_err(|e| e.to_string())?;
+                .map_err(icaro_core::diagnostico_contexto::texto)?;
+        c::aplicacion::recuperar(&contexto.juego)
+            .map_err(icaro_core::diagnostico_contexto::texto)?;
+        let anterior =
+            revisiones::vigente(&contexto).map_err(icaro_core::diagnostico_contexto::texto)?;
         let inventario = c::inventario::analizar(&contexto.juego, &cancel_disco, &contexto.limites)
-            .map_err(|e| e.to_string())?;
-        let seleccion = Seleccion::cargar(&contexto.juego).map_err(|e| e.to_string())?;
+            .map_err(icaro_core::diagnostico_contexto::texto)?;
+        let seleccion =
+            Seleccion::cargar(&contexto.juego).map_err(icaro_core::diagnostico_contexto::texto)?;
         let borrador = Borrador::comparar(
             &inventario,
             anterior.as_ref().map(|r| &r.manifiesto),
             &seleccion,
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(icaro_core::diagnostico_contexto::texto)?;
         let activos = icaro_core::mods::recursos_activos(&almacen, &instancia.id)
-            .map_err(|e| e.to_string())?;
+            .map_err(icaro_core::diagnostico_contexto::texto)?;
         Ok::<_, String>(Trabajo {
             instancia,
             contexto,
@@ -154,6 +181,7 @@ pub async fn analizar_con(
     .await
     .map_err(|_| "No se pudo analizar la instancia.".to_string())??;
     if let Some(catalogo) = catalogo {
+        icaro_core::diagnostico_contexto::etapa("catalogo");
         let archivos: Vec<_> = trabajo
             .inventario
             .archivos
@@ -177,7 +205,7 @@ pub async fn analizar_con(
                             trabajo
                                 .borrador
                                 .reconocer_catalogo(&archivo.ruta, version)
-                                .map_err(|e| e.to_string())?;
+                                .map_err(icaro_core::diagnostico_contexto::texto)?;
                         }
                     }
                 }
@@ -200,11 +228,24 @@ pub async fn analizar_con(
 }
 
 pub async fn guardar_seleccion(trabajo: Trabajo) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
+    let cancel_registro = tokio_util::sync::CancellationToken::new();
+    let instancia_registro = trabajo.instancia.id.clone();
+    icaro_core::diagnostico_contexto::observar(
+        "compartir",
+        "guardar_privados",
+        Some(&instancia_registro),
+        &cancel_registro,
+        guardar_seleccion_interno(trabajo),
+    )
+    .await
+}
+
+async fn guardar_seleccion_interno(trabajo: Trabajo) -> Result<(), String> {
+    icaro_core::diagnostico_contexto::bloqueante(move || {
         trabajo
             .seleccion
             .guardar(&trabajo.contexto.juego)
-            .map_err(|e| e.to_string())
+            .map_err(icaro_core::diagnostico_contexto::texto)
     })
     .await
     .map_err(|_| "No se pudo guardar la selección privada.".to_string())?
@@ -230,29 +271,50 @@ pub async fn publicar_con(
     servicio: Option<Servicio>,
     cancel: CancellationToken,
 ) -> Result<Publicada, String> {
+    let cancel_registro = cancel.clone();
+    let instancia_registro = trabajo.instancia.id.clone();
+    icaro_core::diagnostico_contexto::observar_valor(
+        "compartir",
+        "publicar_revision",
+        Some(&instancia_registro),
+        &cancel_registro,
+        publicar_con_interno(trabajo, anterior, servicio, cancel),
+        |r: &Result<Publicada, String>| r.as_ref().is_ok_and(|p| p.anfitrion.is_ok()),
+    )
+    .await
+}
+
+async fn publicar_con_interno(
+    trabajo: Trabajo,
+    anterior: Option<Arc<PublicacionActiva>>,
+    servicio: Option<Servicio>,
+    cancel: CancellationToken,
+) -> Result<Publicada, String> {
     let Servicio { url, modo } = servicio
         .ok_or_else(|| "El servicio de invitaciones todavía no está configurado.".to_string())?;
     c::invitaciones::ClienteInvitaciones::nuevo(&url, trabajo.identidad.clone())
-        .map_err(|e| e.to_string())?;
+        .map_err(icaro_core::diagnostico_contexto::texto)?;
     let identidad = trabajo.identidad.clone();
     let acl = trabajo.contexto.almacen.join("accesos.json");
-    let revision = tokio::task::spawn_blocking(move || {
+    icaro_core::diagnostico_contexto::etapa("snapshot_publicacion");
+    let revision = icaro_core::diagnostico_contexto::bloqueante(move || {
         trabajo
             .seleccion
             .guardar(&trabajo.contexto.juego)
-            .map_err(|e| e.to_string())?;
+            .map_err(icaro_core::diagnostico_contexto::texto)?;
         let preparada =
             revisiones::preparar_revision(&trabajo.contexto, &trabajo.borrador, &cancel)
-                .map_err(|e| e.to_string())?;
-        revisiones::publicar_revision(preparada).map_err(|e| e.to_string())
+                .map_err(icaro_core::diagnostico_contexto::texto)?;
+        revisiones::publicar_revision(preparada).map_err(icaro_core::diagnostico_contexto::texto)
     })
     .await
     .map_err(|_| "No se pudo preparar la publicación.".to_string())??;
+    icaro_core::diagnostico_contexto::etapa("transporte_anfitrion");
     let anfitrion = if let Some(anterior) = anterior {
         anterior
             .actualizar_revision(revision.clone())
             .map(|_| anterior)
-            .map_err(|e| e.to_string())
+            .map_err(icaro_core::diagnostico_contexto::texto)
     } else {
         PublicacionActiva::iniciar(
             identidad,
@@ -264,7 +326,7 @@ pub async fn publicar_con(
         )
         .await
         .map(Arc::new)
-        .map_err(|e| e.to_string())
+        .map_err(icaro_core::diagnostico_contexto::texto)
     };
     Ok(Publicada {
         revision,

@@ -2,7 +2,7 @@
 
 Estado al 07-11-2026: acuerdos de producto vigentes, núcleo y componentes implementados; integración funcional del launcher y validación externa pendientes. [Progreso y evidencia](../progreso/2026-11-07-compartir-instancias.md).
 
-El transporte iroh, el servicio Workers/D1 local y las quince vistas iced ya existen, con pruebas locales. Hay un controlador experimental del publicador en Servidores bajo `ICARO_COMPARTIR_DESARROLLO=1`; por defecto sigue deshabilitado. Invitado/Jugar y cierre/bandeja no completan aún el recorrido, y no hay despliegue remoto. Los acuerdos siguientes sustituyen los puntos incompatibles de la propuesta inicial, conservada al final como antecedente.
+El transporte iroh, Worker/D1 y las quince vistas iced ya existen. Hay controladores experimentales del publicador, invitado y Sincronizar/Jugar bajo `ICARO_COMPARTIR_DESARROLLO=1`; por defecto sigue deshabilitado. Al 08-11-2026 se conectaron elección de orden de packs, biblioteca, reconexión conservando accesos, contadores y bandeja Windows, y se desplegó el servicio gratuito con prueba HTTP remota. Faltan perfil/partida reales, validación entre equipos y bandeja nativa Linux. Los acuerdos siguientes sustituyen los puntos incompatibles de la propuesta inicial, conservada al final como antecedente.
 
 ## Acuerdos vigentes
 

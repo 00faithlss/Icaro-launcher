@@ -629,7 +629,7 @@
         let registro = fs::read_to_string(raiz.join("logs/sincronizacion.log")).unwrap();
         let propias: Vec<_> = registro
             .lines()
-            .filter(|l| l.contains(&format!("instancia={} ", i.id)) || l.contains(&format!("carpeta={carpeta} ")))
+            .filter(|l| l.contains(&format!("instancia={} ", registro_seguro::alias(&i.id))) || l.contains(&format!("carpeta={} ", registro_seguro::alias(&carpeta))))
             .collect();
         for esperado in [
             "revision-local instancia=",

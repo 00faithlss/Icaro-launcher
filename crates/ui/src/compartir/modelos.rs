@@ -25,6 +25,8 @@ pub enum Accion {
     Cupo(u32),
     RevisarPublicacion,
     VerPublicacion,
+    /// Abre la publicación guardada de esa instancia (ID, nunca el nombre).
+    VerPublicacionDe(String),
     CopiarHuella,
     ConfirmarRevocacion(String),
     CancelarRevocacion,
@@ -405,6 +407,7 @@ pub enum Fase {
 #[derive(Debug, Clone)]
 pub enum EstadoProgreso {
     Activo(Fase),
+    Error(Box<ErrorCompartir>),
     Cancelado,
     Recuperando,
     Completado { resumen: String },
@@ -465,6 +468,8 @@ pub struct ErrorCompartir {
 }
 #[derive(Debug, Clone)]
 pub struct ResumenPublicacion {
+    /// ID de la instancia; la tarjeta lo envía en `Accion::VerPublicacionDe`.
+    pub id: String,
     pub instancia: String,
     pub revision: u64,
     pub sesiones: usize,

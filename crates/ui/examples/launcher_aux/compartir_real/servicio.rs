@@ -10,9 +10,13 @@ pub struct Servicio {
     pub modo: Modo,
 }
 impl Servicio {
-    /// Sin `ICARO_SERVICIO_INVITACIONES` no hay servicio configurado.
+    /// Endpoint desplegado; el entorno permite desarrollo o deshabilitarlo con vacío.
     pub fn desde_entorno() -> Option<Self> {
-        let url = std::env::var("ICARO_SERVICIO_INVITACIONES").ok()?;
+        let url = std::env::var("ICARO_SERVICIO_INVITACIONES")
+            .unwrap_or_else(|_| "https://icaro-invitaciones.maurigajardov.workers.dev".into());
+        if url.trim().is_empty() {
+            return None;
+        }
         let modo = if std::env::var("ICARO_COMPARTIR_LOCAL").as_deref() == Ok("1") {
             Modo::Local
         } else {

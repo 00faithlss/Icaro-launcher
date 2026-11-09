@@ -5,7 +5,8 @@ enumera etapas, resultados de pruebas y el orden del trabajo siguiente.
 
 Trabajo de `v0.4.x`, sin publicación del launcher. Existen controladores experimentales
 del publicador y del invitado, deshabilitados por defecto. La aceptación e instalación,
-Sincronizar/Jugar y bandeja todavía no completan el recorrido normal. Las escenas
+Sincronizar y la consulta previa a Jugar ya están conectados bajo bandera; el perfil
+real y las validaciones entre equipos todavía no completan el recorrido normal. Las escenas
 de diseño son fixtures y no habilitan una publicación.
 
 ## Módulos
@@ -25,8 +26,9 @@ launcher solo registra mensajes, la capa modal y los bloqueos de navegación.
 ## Controlador experimental del publicador
 
 Para desarrollo explícito, `ICARO_COMPARTIR_DESARROLLO=1` muestra los accesos en
-Servidores. `ICARO_SERVICIO_INVITACIONES` debe contener una URL HTTPS válida o
-loopback HTTP; sin servicio configurado, la revisión no se publica. Con Worker
+Servidores. Usa el endpoint gratuito desplegado de invitaciones. La variable
+`ICARO_SERVICIO_INVITACIONES` permite sustituirlo por HTTPS o loopback HTTP;
+un valor vacío lo deshabilita y no permite publicar. Con Worker
 local, `ICARO_COMPARTIR_LOCAL=1` usa iroh sin relés y solo loopback. El modo demo
 no ejecuta estos servicios. Usar una raíz de pruebas propia; no instancias reales.
 
@@ -43,11 +45,26 @@ mostrado en el panel. También comprueba aceptación, edición del mismo código
 otra revisión y reapertura con nueva aceptación. Usa los futuros y reductores del
 publicador; no automatiza clics ni el recorrido completo de `App`.
 
-Es un bloque experimental, no una función entregada: falta recorrer todas sus
-operaciones desde la ventana, actualizar automáticamente contadores
-y disponibilidad, y completar Sincronizar/Jugar/cierre del launcher.
-Se admite un anfitrión activo en este
-controlador; el panel no es todavía una biblioteca persistente de publicaciones.
+Es un bloque experimental: falta recorrer sus operaciones completas desde la
+ventana y con una partida real. La biblioteca recupera publicaciones propias ya
+persistidas desde Servidores, sin crear otra identidad/origen. Solo hay un anfitrión
+activo a la vez. Reconectar conserva los accesos; «Volver a compartir» tras detener
+exige otra aceptación. Los contadores se consultan cada minuto con tareas
+cancelables y conservan sus datos ante errores de red.
+
+Cerrar ofrece esperar o cerrar ahora. Esperar rechaza nuevas transferencias,
+drena las admitidas y después cierra el transporte conservando accesos. La bandeja
+Windows usa el icono propio y permite restaurar o salir; si falla, minimiza sin
+ocultar una ventana irrecuperable. En Linux se usa ese fallback visible y queda
+pendiente la bandeja nativa. Las operaciones de instalación/publicación esperan su
+acuse antes del cierre para conservar la recuperación.
+
+Antes de descargar o preparar se calcula el presupuesto de disco (dos copias de
+los archivos, margen por entrada y 64 MiB para diario/opciones/manifiesto) y se
+consulta el volumen. Es una estimación, no una reserva: otro proceso puede consumir
+espacio después. El staging queda reservado; se limpian parciales propios de más
+de siete días sin borrar recursivamente, ignorando entradas ajenas y locks activos.
+Se conservan parciales recientes para reanudarlos y los snapshots publicados.
 
 ## Invitado experimental
 
@@ -72,11 +89,45 @@ Una publicación cambiada exige revisar otra vez. Cambiar de origen o perfil pro
 otro destino y conserva el anterior. No se adopta una instancia personal existente.
 
 El lanzamiento normal rechaza un vínculo sin base aplicada coherente, fuera del hilo
-de la interfaz. Esto no completa la consulta remota previa a cada Jugar ni la exclusión
-entre partida y sincronización.
+de la interfaz. Bajo la bandera experimental también consulta la revisión remota
+antes de Jugar y comparte una reserva de actividad con instalación y sincronización.
 La prueba de este coordinador inyecta la instalación del perfil: los archivos,
 transporte, hashes, packs y transacción son reales; no acredita descargar Minecraft
 ni jugar desde esta ruta nueva.
+
+## Sincronizar y comprobación antes de Jugar
+
+Con la bandera experimental, el menú de instancias ofrece «Sincronizar publicación».
+Una instancia sin vínculo se informa como tal; nunca se adopta por nombre. Un destino
+vinculado usa `/v1/reconnect` con su identidad autorizada y origen persistido, sin
+reintroducir el código ni consumir otro cupo. Caducar o revocar el código no elimina
+ese acceso; revocar a la persona o detener la publicación sí impide la reconexión.
+
+La consulta verifica la firma, el perfil exacto y la revisión, inventaría los archivos
+y muestra el componente original de revisión. No descarga contenido ni aplica el plan.
+Los conflictos de archivo permiten cambiar entre «Del anfitrión» y «Conservar la mía»
+antes de confirmar. Sincronizar vuelve a consultar el manifiesto antes de descargar;
+si cambió, exige revisar otra vez. Se conservan los archivos personales.
+
+Jugar consulta de nuevo incluso después de una sincronización exitosa. Si la revisión
+está al día continúa la preparación sin descargar contenido de la publicación; si hay
+cambios pide confirmación. Si el anfitrión o el servicio no están disponibles, muestra
+un error y permite reintentar: no inicia automáticamente una partida sin comprobarla.
+Los cambios simultáneos de selección/orden de packs aparecen como otra fila de
+conflicto en la revisión original: del anfitrión o conservar la mía. Ambas conservan
+el orden relativo de los packs personales; conservar la selección local no activa
+automáticamente los nuevos. Los retirados dejan de estar activos. La selección local
+revisada se vuelve a comprobar antes de descargar y preparar; el diario protege el
+resto de `options.txt` frente a cambios externos. Conservar un archivo ausente no
+introduce una activación nueva que lo requiera.
+
+`actividad_instancia::Guardia` usa un bloqueo del sistema operativo por ID en
+`instances/.icaro-actividades/<id>/.icaro-actividad.lock`. Está fuera de la carpeta
+renombrable de cada instancia: la recuperación puede cambiar su nombre sin liberar
+la reserva. Una misma `Arc` pasa desde la revisión a la preparación y al futuro que
+ejecuta Java. Otra preparación o sincronización del mismo ID se rechaza. Soltar la
+última referencia o terminar el proceso libera el bloqueo; no depende de PID ni de
+borrar un archivo. Esto coordina esos recorridos del launcher, no herramientas externas.
 
 ## Progreso y recuperación del instalador
 
@@ -100,8 +151,9 @@ al preparar un destino con registro propio válido. La limpieza del registro exi
 vínculo correcto y una base aplicada exactamente igual al manifiesto. Si la base ya
 se aplicó y quedó el registro, no se ofrece la instancia completa como incompleta.
 Sigue existiendo una ventana de cierre abrupto entre crear y registrar: una instancia
-huérfana sin registro se conserva y no se adopta automáticamente. Una biblioteca
-general de publicaciones/instalaciones continúa pendiente.
+huérfana sin registro se conserva y no se adopta automáticamente. La biblioteca
+del anfitrión ya recupera publicaciones propias; la recuperación de intentos no
+constituye una biblioteca general de instalaciones del invitado.
 
 ## Recorrido comprobado localmente
 
@@ -179,17 +231,35 @@ El sufijo `-angosto` activa la ventana pequeña. Usar `ICARO_DEMO=1`,
 `ICARO_TEMA_DISENO=tinta|piedra`, `ICARO_VISTA_DISENO` y `ICARO_CAPTURA_DISENO`.
 Estas escenas no realizan solicitudes ni crean identidades en el almacén seguro.
 
+## Caché y descargas
+
+Instalar o sincronizar reutiliza archivos de `compartir/cache-contenido` bajo la
+raíz de datos del launcher. Se comprueban el tamaño y SHA-512 de cada objeto y se
+conservan copias independientes en las instancias. Si se desconoce la procedencia
+de Modrinth, se consulta la versión exacta. La autorización y la revisión se
+consultan antes de preparar los archivos.
+
+El coordinador descarga hasta dos archivos del anfitrión y hasta cuatro del CDN
+en paralelo, con un máximo de dos por host del CDN. El contenido propio admite
+reanudar un parcial verificado al finalizar. La limpieza intenta mantener hasta
+1 GiB y retirar objetos sin uso tras siete días. Respeta objetos y parciales en
+uso. Los límites de red, escritura y espera mantienen acotado el trabajo simultáneo.
+
+El [registro de rendimiento](investigaciones/rendimiento-compartir-2026-11-08.md)
+documenta la fixture local y lo que queda por medir.
+
 ## Pendiente antes de habilitarlo
 
-- Completar y validar el controlador experimental; añadir aceptación, confianza
-  e instalación en pruebas nativas reales y biblioteca de publicaciones. La aceptación,
+- Validar el controlador experimental, aceptación, confianza
+  e instalación en pruebas nativas reales. La aceptación,
   confianza persistente, destino/revisión y coordinador de instalación ya están conectados
   bajo bandera; progreso por etapa y recuperación al reintroducir la invitación ya
   están conectados. Falta validar el perfil descargado y ampliar cortes/disco lleno.
-- Conectar la comprobación al pulsar Jugar, instalación exacta y bloqueo durante
-  la partida; gestión de cierre, bandeja restaurable y detención con transferencias.
-- Exponer conflictos de orden de packs como una decisión revisable en la interfaz.
-- Acotar concurrencia y caché de descargas del nuevo coordinador, limpieza del
-  staging/CAS y precomprobación de espacio. Medir los recorridos completos.
-- Configurar y desplegar el servicio gratuito; validar entre dos equipos, redes,
-  relé, Windows/Linux y una partida real. Las pruebas locales no acreditan eso.
+- Validar la comprobación al pulsar Jugar y la reserva durante una partida real,
+  cierre con transferencias entre equipos y el reinicio real de Explorer.
+- Completar bandeja nativa Linux; actualmente se conserva la ventana minimizada.
+- Medir recorridos completos en release y en redes reales. La limpieza de la caché
+  del invitado y la limpieza de staging están conectadas. Queda la recolección de
+  contenido publicado que ya no referencian las revisiones retenidas.
+- Validar el servicio desplegado entre dos equipos, redes, relé, Windows/Linux y
+  una partida real. Las pruebas remotas HTTP no acreditan esos recorridos.

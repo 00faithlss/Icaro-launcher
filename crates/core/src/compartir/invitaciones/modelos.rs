@@ -44,6 +44,14 @@ pub struct InvitacionResuelta {
     pub accepted: u32,
     pub authorized: bool,
 }
+/// Encuentro vigente de una publicación ya aceptada, obtenido sin código.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Reencuentro {
+    pub host: String,
+    pub publication: String,
+    pub meeting: EncuentroFirmado,
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct PaginaAccesos {

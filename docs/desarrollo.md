@@ -1,5 +1,16 @@
 # Desarrollo
 
+Para investigar errores, consultar [Registros de diagnóstico](diagnostico.md):
+ubicación, correlación de operaciones, causas y límites de captura.
+
+Comprobación aislada de bandeja Windows (crea el icono unos instantes, sin cuentas
+ni red): `cargo run --locked -j 2 -p icaro-ui --example probar_bandeja`.
+Las escenas `compartir-cierre-real` y `compartir-cierre-real-angosto` capturan el
+controlador de cierre con fixtures en Tinta/Piedra. El recorrido ignorado
+`publicador_real_publica_seleccion_y_el_invitado_resuelve_el_codigo` requiere
+`ICARO_PRUEBA_WORKER_URL=http://127.0.0.1:8787`, Worker local y APPDATA temporal;
+su hilo reserva 8 MiB de pila para componer las tareas en debug de Windows.
+
 ## Requisitos
 
 Rust estable, instalado con [rustup](https://rustup.rs), en Windows o Arch Linux.
@@ -38,6 +49,11 @@ aplicación; la prueba de integración inyecta el perfil de Minecraft.
 El intento incompleto persiste en la instancia y se recupera al reintroducir la
 invitación tras reiniciar. Los contadores de progreso representan la etapa actual;
 las descargas avanzan por archivo verificado, sin estimar un total global.
+El menú «Sincronizar publicación» y Jugar consultan el origen vinculado mediante
+reconexión autorizada. Sin anfitrión/servicio se muestra error y no se lanza el juego.
+La reserva por ID vive fuera de la carpeta renombrable, en `.icaro-actividades` del
+almacén. La escena `compartir-controlador-invitado-sync-error` muestra el diagnóstico
+real con fixture, sin red, y admite `-angosto` y ambos temas.
 
 El [registro de progreso](superpowers/progreso/2026-11-07-compartir-instancias.md)
 indica evidencia y pendientes. La [guía técnica](compartir-instancias.md) contiene

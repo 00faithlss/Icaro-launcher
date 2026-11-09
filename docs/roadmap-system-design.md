@@ -26,13 +26,13 @@ Referencias añadidas: `icaro-compartir-instancia.zip` y
 
 | Área | Estado | Validación y trabajo restante |
 | --- | --- | --- |
-| Quince componentes de compartir/publicación/invitación/revisión | Visual implementado; publicador e invitado experimentales | Controladores bajo bandera y pruebas con Worker local. Invitado conecta código, huella, destino/revisión y aplicación; perfil inyectado en la prueba. Jugar, cierre/bandeja y validación nativa completa pendientes. |
+| Quince componentes de compartir/publicación/invitación/revisión | Controladores experimentales conectados | Incluyen orden de packs revisable, biblioteca persistida, reconexión conservando accesos, contadores y cierre con bandeja Windows. Servicio gratuito desplegado y prueba HTTP remota pasada. Faltan perfil/partida reales, validación entre equipos y bandeja nativa Linux. |
 | Publicación, privados, posponer y consentimiento | Núcleo y controlador experimental | Guardado mediante tareas, permiso explícito y respuestas tardías probados. Falta validar el recorrido real de red desde la interfaz. |
 | Centrado y medidas uniformes | Aplicado a los componentes nuevos y botones comunes | Icono/texto centrados, padding simétrico, celdas iguales y pie visible. Comprobado en Tinta/Piedra y ventana pequeña; regla en `AGENTS.md`. |
-| Cierre y segundo plano | Vista y primitivas de transporte | Drenaje disponible en núcleo; faltan coordinación del cierre y bandeja restaurable. |
+| Cierre y segundo plano | Conectado en Windows bajo bandera | Drenaje, acuse de tareas, icono propio, restauración y salida conectados. Transferencias con bytes/progreso en memoria. Falta validación entre equipos, reinicio real de Explorer y bandeja nativa Linux. |
 
-Siguiente paso: conectar modelos y acciones sin disco/red en update/view, y revisar
-otra vez foco, teclado, escala y ventanas pequeñas con datos reales. El estado
+Siguiente paso: validar los controladores conectados con perfil y partida reales,
+dos equipos, foco, teclado, escala y ventanas pequeñas con datos reales. El estado
 completo y las pruebas están en [progreso](superpowers/progreso/2026-11-07-compartir-instancias.md).
 
 - [x] Esquinas exteriores de la ventana con radio pequeño mediante DWM en Windows 11; al maximizar o acoplar, Windows aplica su geometría habitual. Botones, tarjetas y paneles conservan esquinas rectas. Windows anteriores y Linux mantienen la geometría disponible del sistema; redondeado explícito en Linux pendiente de evaluación.

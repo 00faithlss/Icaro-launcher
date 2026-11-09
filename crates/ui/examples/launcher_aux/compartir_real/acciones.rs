@@ -11,6 +11,16 @@ use iced::Task;
 
 #[derive(Clone)]
 pub enum Accion {
+    Biblioteca(u64, Result<Vec<c::biblioteca::PublicacionGuardada>, String>),
+    Recuperada(u64, Result<super::biblioteca_tareas::Recuperada, String>),
+    Reconectada(u64, Result<super::biblioteca_tareas::Reconectada, String>),
+    Contadores(u64, u64, super::contadores::Contadores),
+    RevisarVinculo(usize),
+    VinculoConsultado(
+        u64,
+        Result<Option<std::sync::Arc<super::sync_tareas::Revision>>, String>,
+    ),
+    VinculoAplicado(u64, Result<(), String>),
     Avance(u64, super::avance::Avance),
     Resuelta(
         u64,
@@ -148,6 +158,8 @@ fn operar(s: &mut Estado, op: Operacion) -> Task<Mensaje> {
     let Some(h) = s.anfitrion.clone() else {
         return Task::none();
     };
+    s.biblioteca.cancel_contadores.cancel();
+    s.biblioteca.contadores = s.biblioteca.contadores.wrapping_add(1);
     let codigo = s
         .panel
         .as_ref()
@@ -183,6 +195,30 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
         return Task::none();
     }
     match a {
+        Accion::Biblioteca(generacion, r) => {
+            super::biblioteca::recibida(&mut app.servicios.compartir, generacion, r)
+        }
+        Accion::Recuperada(id, r) => {
+            if super::biblioteca::recuperada(&mut app.servicios.compartir, id, r) {
+                return super::biblioteca::reconectar(&mut app.servicios.compartir);
+            }
+        }
+        Accion::Reconectada(id, r) => {
+            super::biblioteca::reconectada(&mut app.servicios.compartir, id, r);
+            return super::contadores::pedir(&mut app.servicios.compartir)
+                .unwrap_or_else(Task::none);
+        }
+        Accion::Contadores(id, generacion, r) => {
+            let s = &mut app.servicios.compartir;
+            if !s.vigente(id) || generacion != s.biblioteca.contadores {
+                return Task::none();
+            }
+            super::contadores::recibidos(s, id, generacion, r);
+            return super::contadores::pedir(s).unwrap_or_else(Task::none);
+        }
+        Accion::RevisarVinculo(index) => return super::sincronizar::abrir(app, index, false, None),
+        Accion::VinculoConsultado(id, r) => return super::sincronizar::recibida(app, id, r),
+        Accion::VinculoAplicado(id, r) => return super::sincronizar::aplicada(app, id, r),
         Accion::Avance(id, avance) => {
             super::avance::recibido(&mut app.servicios.compartir, id, avance)
         }
@@ -193,10 +229,16 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
         Accion::Analizada(id, r) => resultados::analizada(&mut app.servicios.compartir, id, r),
         Accion::Publicada(id, r) => {
             if resultados::publicada(&mut app.servicios.compartir, id, r) {
-                return invitar(&mut app.servicios.compartir);
+                let invitacion = invitar(&mut app.servicios.compartir);
+                return Task::batch([invitacion, super::biblioteca::cargar(app)]);
             }
+            return super::biblioteca::cargar(app);
         }
-        Accion::Invitacion(id, r) => resultados::invitacion(&mut app.servicios.compartir, id, r),
+        Accion::Invitacion(id, r) => {
+            resultados::invitacion(&mut app.servicios.compartir, id, r);
+            return super::contadores::pedir(&mut app.servicios.compartir)
+                .unwrap_or_else(Task::none);
+        }
         Accion::Ajustada(id, cad, r) => {
             super::invitaciones::ajustada(&mut app.servicios.compartir, id, cad, r)
         }
@@ -226,8 +268,16 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                     }
                 }
             }
+            let contadores =
+                super::contadores::pedir(&mut app.servicios.compartir).unwrap_or_else(Task::none);
+            return Task::batch([contadores, super::biblioteca::cargar(app)]);
         }
-        Accion::Operada(id, op, r) => resultados::operada(&mut app.servicios.compartir, id, op, r),
+        Accion::Operada(id, op, r) => {
+            resultados::operada(&mut app.servicios.compartir, id, op, r);
+            let contadores =
+                super::contadores::pedir(&mut app.servicios.compartir).unwrap_or_else(Task::none);
+            return Task::batch([contadores, super::biblioteca::cargar(app)]);
+        }
         Accion::Guardada(id, confirmar, r) => {
             let s = &mut app.servicios.compartir;
             if !s.vigente(id) || s.etapa != Etapa::Guardando {
@@ -287,6 +337,14 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
 }
 
 fn vista(app: &mut App, a: v::Accion) -> Task<Mensaje> {
+    if let Some(task) = super::biblioteca::accion(app, &a) {
+        return task;
+    }
+    if !app.servicios.compartir.red_ocupada {
+        if let Some(task) = super::sincronizar::accion(app, a.clone()) {
+            return task;
+        }
+    }
     if let v::Accion::ElegirInstancia(id) = a {
         return analizar(app, id);
     }
@@ -326,6 +384,7 @@ fn vista(app: &mut App, a: v::Accion) -> Task<Mensaje> {
                 s.etapa = Etapa::Selector;
                 s.error = None;
             }
+            return super::biblioteca::cargar(app);
         }
         v::Accion::AgregarServidor => {
             return crate::servidores_reales::actualizar(
@@ -409,10 +468,14 @@ fn vista(app: &mut App, a: v::Accion) -> Task<Mensaje> {
             if let Some(h) = s.anfitrion.clone() {
                 let id = s.solicitud;
                 s.red_ocupada = true;
-                return Task::perform(
+                let accesos = Task::perform(
                     async move { h.accesos().await.map_err(|e| e.to_string()) },
                     move |r| m(Accion::Accesos(id, r)),
                 );
+                return Task::batch([
+                    accesos,
+                    super::contadores::pedir(s).unwrap_or_else(Task::none),
+                ]);
             }
         }
         v::Accion::GenerarInvitacion => return invitar(s),

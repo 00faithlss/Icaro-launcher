@@ -3,8 +3,8 @@
 mod anfitrion;
 mod cliente;
 use super::{identidad::Identidad, protocolo::ALPN, Error};
-pub use anfitrion::NodoAnfitrion;
-pub use cliente::Cliente;
+pub use anfitrion::{NodoAnfitrion, TransferenciaActiva};
+pub use cliente::{Cliente, RevisionDescarga};
 use iroh::{endpoint::presets, Endpoint, RelayMode};
 
 #[derive(Clone, Copy, Debug)]

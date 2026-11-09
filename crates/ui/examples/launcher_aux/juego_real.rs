@@ -4,6 +4,8 @@
 //! Preparación de Vanilla y proceso del juego, usando las vistas del System Design.
 
 use crate::{App, Mensaje};
+#[path = "juego_actividad.rs"]
+pub(crate) mod actividad;
 use icaro_core::{auth::CancellationToken, instancias::Instancia, java, lanzamiento, minecraft};
 use icaro_ui::{
     componentes::{self, EstadoJugar},
@@ -33,11 +35,13 @@ use std::{
 
 #[derive(Debug, Clone)]
 pub struct Preparacion {
+    actividad: Option<std::sync::Arc<icaro_core::actividad_instancia::Guardia>>,
     pub minecraft: minecraft::Instalado,
     pub java: java::Java,
 }
 
 struct Solicitud {
+    actividad: Option<std::sync::Arc<icaro_core::actividad_instancia::Guardia>>,
     instancia: Instancia,
     jugar: bool,
     java: Option<std::path::PathBuf>,
@@ -452,7 +456,15 @@ pub fn iniciar(app: &mut App, index: usize, jugar: bool) -> Task<Mensaje> {
     iniciar_con_servidor(app,index,jugar,None)
 }
 pub fn iniciar_con_servidor(app:&mut App,index:usize,jugar:bool,servidor:Option<String>)->Task<Mensaje> {
+    if let Some(t)=crate::compartir_real::antes_de_jugar(app,index,jugar,servidor.clone()) {return t;}
+    iniciar_revisado(app,index,jugar,servidor,None)
+}
+pub(crate) fn iniciar_revisado(app:&mut App,index:usize,jugar:bool,servidor:Option<String>,actividad:Option<std::sync::Arc<icaro_core::actividad_instancia::Guardia>>)->Task<Mensaje> {
     if let Some(i)=app.servicios.instancias.registros.get(index) {
+        if actividad.is_some() && app.servicios.juego.ocupada(&i.id) {
+            app.avisar("La actividad de la instancia cambió. Espera y vuelve a comprobar antes de jugar.".into());
+            return Task::none();
+        }
         if servidor.is_some()&&app.servicios.juego.ocupada(&i.id) {
             app.avisar("Espera a que termine la actividad de esta instancia antes de conectar al servidor.".into());
             return Task::none();
@@ -549,6 +561,7 @@ pub fn iniciar_con_servidor(app:&mut App,index:usize,jugar:bool,servidor:Option<
         },
     );
     s.pendientes.push_back(Solicitud {
+        actividad,
         instancia: i,
         jugar,
         java,
@@ -609,15 +622,19 @@ fn siguiente(app: &mut App) -> Task<Mensaje> {
     Task::run(
         iced::stream::channel(32, async move |mut output| {
             let (tx, mut rx) = tokio::sync::mpsc::channel::<(String, u64, u64)>(32);
-            let operation = async {
+            let contexto_cancel = cancel.clone();
+            let contexto_id = solicitud.instancia.id.clone();
+            let operation = icaro_core::diagnostico_contexto::observar("juego", "preparar", Some(&contexto_id), &contexto_cancel, async {
+                icaro_core::diagnostico_contexto::etapa("reserva_instancia");
+                let actividad=actividad::adquirir(store.clone(),solicitud.instancia.clone(),solicitud.actividad.clone()).await?;
                 let compartida_store = store.clone();
                 let compartida_instancia = solicitud.instancia.clone();
-                tokio::task::spawn_blocking(move || {
+                icaro_core::diagnostico_contexto::bloqueante(move || {
                     icaro_core::compartir::vinculos::comprobar_lista(
                         &compartida_store,
                         &compartida_instancia,
                     )
-                    .map_err(|e| e.to_string())
+                    .map_err(icaro_core::diagnostico_contexto::texto)
                 })
                 .await
                 .map_err(|_| "No se pudo comprobar la instancia compartida.".to_string())??;
@@ -625,6 +642,7 @@ fn siguiente(app: &mut App) -> Task<Mensaje> {
                     let _ = tx.try_send((p.etapa.to_string(), p.completados, p.total));
                 })
                 .await?;
+                icaro_core::diagnostico_contexto::etapa("minecraft_loader");
                 let game = minecraft::instalar_con_java(
                     &store,
                     &solicitud.instancia,
@@ -636,7 +654,8 @@ fn siguiente(app: &mut App) -> Task<Mensaje> {
                     },
                 )
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(icaro_core::diagnostico_contexto::texto)?;
+                icaro_core::diagnostico_contexto::etapa("java");
                 let runtime = java::preparar_perfil(
                     &base,
                     &game.perfil_java(),
@@ -648,12 +667,13 @@ fn siguiente(app: &mut App) -> Task<Mensaje> {
                     },
                 )
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(icaro_core::diagnostico_contexto::texto)?;
                 Ok::<_, String>(Preparacion {
+                    actividad:Some(actividad),
                     minecraft: game,
                     java: runtime,
                 })
-            };
+            });
             tokio::pin!(operation);
             loop {
                 tokio::select! {
@@ -739,9 +759,13 @@ fn lanzar(app: &mut App, id: String, preparada: Preparacion) -> Task<Mensaje> {
     Task::run(
         iced::stream::channel(64, async move |mut output| {
             let (tx, mut rx) = tokio::sync::mpsc::channel(256);
+            let _actividad=preparada.actividad.clone();
             let omitidas = AtomicU64::new(0);
             let fin = Mutex::new(None);
-            let operation = lanzamiento::ejecutar(
+            let contexto_cancel = cancel.clone();
+            let operation = icaro_core::diagnostico_contexto::observar_valor("juego", "ejecutar", Some(&id), &contexto_cancel, async {
+                icaro_core::diagnostico_contexto::etapa("proceso_java");
+                let salida = lanzamiento::ejecutar(
                 &preparada.minecraft,
                 &preparada.java.executable,
                 &game,
@@ -755,7 +779,16 @@ fn lanzar(app: &mut App, id: String, preparada: Preparacion) -> Task<Mensaje> {
                         omitidas.fetch_add(1, Ordering::Relaxed);
                     }
                 },
-            );
+                ).await;
+                match &salida {
+                    Ok(salida) => {
+                        icaro_core::diagnostico_contexto::dato(icaro_core::diagnostico::Campo::CodigoSalida(salida.codigo));
+                        if !salida.exito && !salida.cancelado { icaro_core::diagnostico_contexto::fallo(icaro_core::diagnostico::Causa::Proceso { codigo: salida.codigo }); }
+                    }
+                    Err(error) => icaro_core::diagnostico_contexto::registrar_error(error),
+                }
+                salida
+            }, |r: &Result<lanzamiento::Salida, lanzamiento::Error>| r.as_ref().is_ok_and(|s|s.exito));
             tokio::pin!(operation);
             loop {
                 tokio::select! {
@@ -2221,6 +2254,7 @@ pub fn preparar_diseno(app: &mut App, scene: &str) {
                 );
                 if n == 2 {
                     app.servicios.juego.pendientes.push_back(Solicitud {
+                        actividad:None,
                         instancia,
                         jugar: false,
                         java: None,
@@ -2544,6 +2578,7 @@ mod tests {
             .trabajos
             .insert("c".into(), trabajo(EstadoDescarga::Completada));
         estado.pendientes.push_back(Solicitud {
+            actividad:None,
             instancia: Instancia {
                 id: "b".into(),
                 nombre: "Otra".into(),

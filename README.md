@@ -183,10 +183,14 @@ instancias en `v0.4.x`. El núcleo, las invitaciones y las vistas están impleme
 y probados localmente; hay publicador e invitado experimentales en Servidores bajo
 bandera. El invitado conecta huella, destino/revisión y aplicación, con perfil
 inyectado en su prueba, progreso por etapa y recuperación del intento tras reinicio.
-Faltan validación con Minecraft real, Sincronizar/Jugar posterior y cierre/bandeja.
+Sincronizar y la consulta previa a Jugar están conectados bajo bandera, con conflictos
+de archivo y reserva de actividad por instancia. Faltan validación con Minecraft real,
+validación del cierre con transferencias entre equipos y bandeja nativa Linux.
+Orden de packs, biblioteca persistida, reconexión y bandeja Windows ya están conectados.
 Consulta el [progreso por etapas](docs/superpowers/progreso/2026-11-07-compartir-instancias.md)
 y la [guía técnica](docs/compartir-instancias.md). No está habilitado en el recorrido
-normal ni hay despliegue público. Los puntos siguientes son el resto del roadmap.
+normal; el servicio gratuito de invitaciones ya está desplegado y probado por HTTP.
+Los puntos siguientes son el resto del roadmap.
 
 Consulta el [detalle de implementación pendiente](docs/pendientes-implementacion.md) para el alcance y las comprobaciones de loaders oficiales, importación de packs y funciones restantes.
 
@@ -272,6 +276,7 @@ Las obras y reproducciones utilizadas en los grabados conservan las condiciones 
 - [Índice de documentación](docs/README.md)
 - [Acerca de Icaro Launcher](docs/acerca-de.md)
 - [Desarrollo y estructura del proyecto](docs/desarrollo.md)
+- [Registros de diagnóstico y errores](docs/diagnostico.md)
 - [Roadmap del System Design](docs/roadmap-system-design.md)
 - [Implementación pendiente: loaders, importación y siguientes entregas](docs/pendientes-implementacion.md)
 - [Comparación con el System Design](docs/revision-system-design.md)

@@ -3,7 +3,13 @@
 use super::*;
 use crate::compartir_real::{invitado_instalacion, invitado_tareas};
 
-pub(super) async fn comprobar(url: &str, codigo: &Codigo, root: &std::path::Path) {
+pub(super) async fn comprobar(
+    url: &str,
+    codigo: &Codigo,
+    root: &std::path::Path,
+    host: &std::sync::Arc<icaro_core::compartir::anfitrion::PublicacionActiva>,
+    ctx: &icaro_core::compartir::revisiones::ContextoPublicacion,
+) {
     use icaro_core::compartir::{
         self as c,
         confianza::{self, EstadoConfianza},
@@ -200,7 +206,7 @@ pub(super) async fn comprobar(url: &str, codigo: &Codigo, root: &std::path::Path
     assert_eq!(store.cargar().unwrap().instancias.len(), 2);
     assert_eq!(
         c::aplicacion::cargar_base(&contexto).unwrap().manifiesto,
-        Some(visita.manifiesto)
+        Some(visita.manifiesto.clone())
     );
     assert!(juego.join("mods/propio.jar").exists());
     assert!(juego.join("resourcepacks/texturas.zip").exists());
@@ -212,4 +218,8 @@ pub(super) async fn comprobar(url: &str, codigo: &Codigo, root: &std::path::Path
         std::fs::read(personal_juego.join("worlds/mi-mundo/nivel")).unwrap(),
         b"conservar"
     );
+    Box::pin(crate::compartir_real::sync_worker::comprobar(
+        url, &raiz, &store, &destino, &visita, host, ctx,
+    ))
+    .await;
 }

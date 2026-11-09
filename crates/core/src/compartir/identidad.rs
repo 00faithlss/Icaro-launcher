@@ -26,23 +26,32 @@ impl Identidad {
     pub fn cargar_o_crear(raiz: &Path) -> Result<Self, Error> {
         sistema::cargar(raiz)
     }
-    pub fn desde_almacen(almacen: &impl AlmacenClave) -> Result<Self, Error> {
-        let mut semilla = Zeroizing::new([0u8; 32]);
-        match almacen.leer()? {
-            Some(valor) => {
-                if valor.len() != 32 {
-                    return Err(Error::Credencial);
-                }
-                semilla.copy_from_slice(&valor);
-            }
-            None => {
-                getrandom::fill(semilla.as_mut()).map_err(|_| Error::Credencial)?;
-                almacen.guardar(semilla.as_ref())?;
-            }
+    /// Solo lee la identidad guardada del sistema: nunca genera ni guarda una clave.
+    pub fn cargar_existente(raiz: &Path) -> Result<Option<Self>, Error> {
+        sistema::existente(raiz)
+    }
+    /// Lee una identidad ya guardada; `None` si no existe. Nunca llama a `guardar`.
+    pub fn existente(almacen: &impl AlmacenClave) -> Result<Option<Self>, Error> {
+        almacen.leer()?.map(|valor| Self::desde_semilla(&valor)).transpose()
+    }
+    fn desde_semilla(valor: &[u8]) -> Result<Self, Error> {
+        if valor.len() != 32 {
+            return Err(Error::Credencial);
         }
+        let mut semilla = Zeroizing::new([0u8; 32]);
+        semilla.copy_from_slice(valor);
         Ok(Self {
             clave: iroh::SecretKey::from_bytes(&semilla),
         })
+    }
+    pub fn desde_almacen(almacen: &impl AlmacenClave) -> Result<Self, Error> {
+        if let Some(identidad) = Self::existente(almacen)? {
+            return Ok(identidad);
+        }
+        let mut semilla = Zeroizing::new([0u8; 32]);
+        getrandom::fill(semilla.as_mut()).map_err(|_| Error::Credencial)?;
+        almacen.guardar(semilla.as_ref())?;
+        Self::desde_semilla(semilla.as_ref())
     }
     pub fn clave_publica(&self) -> String {
         self.clave.public().to_string()

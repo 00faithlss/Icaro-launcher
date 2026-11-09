@@ -103,6 +103,12 @@ mod ficha;
 mod info_proyecto;
 #[path = "launcher_aux/ventana.rs"]
 mod ventana;
+#[path = "launcher_aux/diagnostico_real.rs"]
+mod diagnostico_real;
+#[path = "launcher_aux/bandeja.rs"]
+mod bandeja;
+#[path = "launcher_aux/cierre_compartir.rs"]
+mod cierre_compartir;
 
 use archivos::Explorador;
 use icaro_ui::scroll::desplazable;
@@ -113,6 +119,7 @@ use iced::widget::{column, container, row, text, Space};
 use iced::{window, Alignment, Element, Length, Padding, Point, Size, Task};
 
 struct App {
+    cierre: cierre_compartir::Estado,
     actualizacion: actualizacion_real::Estado,
     verificacion: verificacion_real::Estado,
     iconos: icono_instancia::Estado,
@@ -271,6 +278,8 @@ impl App {
 
 #[derive(Debug, Clone)]
 enum Mensaje {
+    CierreCompartir(cierre_compartir::Accion),
+    Diagnostico,
     Java(java_real::Accion),
     Almacenamiento(almacenamiento_real::Accion),
     Estadisticas(estadisticas_reales::Accion),
@@ -485,7 +494,7 @@ fn abrir_instancia(app: &mut App, i: usize) {
 }
 
 fn actualizar(app: &mut App, m: Mensaje) -> Task<Mensaje> {
-    let guardar = !matches!(&m, Mensaje::Cuadro(_) | Mensaje::Cursor(_)
+    let guardar = !matches!(&m, Mensaje::CierreCompartir(_) | Mensaje::Diagnostico | Mensaje::Cuadro(_) | Mensaje::Cursor(_)
         | Mensaje::Tamano(_) | Mensaje::Maximizada(_) | Mensaje::AvisoTic(_) | Mensaje::Nada | Mensaje::ImagenesActualizadas
         | Mensaje::Pant(pantallas::Accion::VersionScroll(..) | pantallas::Accion::AsistenteBuscar(_) | pantallas::Accion::CambiarBuscar(_))
         | Mensaje::Juego(juego_real::Accion::Progreso(..) | juego_real::Accion::Evento(..)));
@@ -554,6 +563,12 @@ fn guardar_si_cambio(app: &mut App) {
 }
 
 fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
+    if let Some(tarea) = cierre_compartir::filtrar(app, &m) { return tarea; }
+    if let Mensaje::CierreCompartir(a) = m { return cierre_compartir::actualizar(app, a); }
+    if matches!(m, Mensaje::Diagnostico) {
+        if let Some(aviso)=diagnostico_real::aviso_salud(){app.avisar(aviso.into());}
+        return Task::none();
+    }
     if app.servicios.sincronizacion.modal() && matches!(m,Mensaje::Ir(_)){return Task::none();}
     if app.servicios.compartir.modal() && matches!(m,Mensaje::Ir(_)|Mensaje::Jugar(_)){return Task::none();}
     if matches!(&m, Mensaje::Pant(pantallas::Accion::Abrir(pantallas::Pantalla::Actualizacion))) {
@@ -892,7 +907,7 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
             app.tienda_cat.clear();
             app.tienda_lado = 2;
             if s == Seccion::Modpacks && !app.servicios.demo { return servicios::buscar(app, 0, false); }
-            if s == Seccion::Servidores && !app.servicios.demo { return servidores_reales::actualizar(app,servidores_reales::Accion::Abrir); }
+            if s == Seccion::Servidores && !app.servicios.demo { return Task::batch([servidores_reales::actualizar(app,servidores_reales::Accion::Abrir), compartir_real::cargar_biblioteca(app)]); }
             if s == Seccion::Capturas { return capt::refrescar(app); }
             if s == Seccion::Consola && !app.servicios.demo { return juego_real::cargar_consola(app); }
         }
@@ -1280,6 +1295,7 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
         Mensaje::Maximizar => return window::get_oldest().and_then(window::toggle_maximize),
         Mensaje::Cerrar => {
             if !actualizacion_real::al_cerrar(app) { return Task::none(); }
+            if let Some(tarea) = cierre_compartir::solicitar(app) { return tarea; }
             if !app.servicios.demo && app.editor.is_some() {
                 let nombre = app.general.nombre.clone();
                 if let Err(error) = instancias_reales::renombrar(app, &nombre) {
@@ -1289,7 +1305,7 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
             app.servicios.cancel();
             return if app.servicios.demo {window::get_oldest().and_then(window::close)}else{juego_real::cerrar(app)};
         }
-        Mensaje::Nada | Mensaje::ImagenesActualizadas => {}
+        Mensaje::Nada | Mensaje::ImagenesActualizadas | Mensaje::Diagnostico | Mensaje::CierreCompartir(_) => {}
     }
     Task::none()
 }
@@ -3378,6 +3394,9 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
                 ElementoMenu::Separador,
                 ElementoMenu::Opcion { icono: Icono::Papelera, texto: "Eliminar".into(), atajo: Some("Supr"), peligro: true, mensaje: Mensaje::PedirEliminar },
             ] };
+        if !app.menu_grupos && !app.servicios.demo && app.servicios.compartir.habilitado {
+            elementos.insert(1,ElementoMenu::Opcion {icono:Icono::Actualizar,texto:"Sincronizar publicación".into(),atajo:None,peligro:false,mensaje:Mensaje::Compartir(compartir_real::Accion::RevisarVinculo(app.menu.unwrap_or(0)))});
+        }
         let posicion = posicion_menu(app.menu_en, app.ventana, tamano_menu(&elementos),
             if app.reducir { 1.0 } else { progreso(app.anim_menu, app.ahora, MS_MENU) });
         if !app.servicios.demo && app.servicios.instancias.registros.get(app.menu.unwrap_or(0)).is_some_and(|i|i.loader=="vanilla") {
@@ -3413,7 +3432,7 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
     } else { None };
     ventana = icaro_ui::superficies::capa_flotante(ventana, capa_mod);
     ventana=icaro_ui::superficies::capa_flotante(ventana,servidores_reales::panel(app));
-    if let Some(vista)=compartir_real::vista(app) {
+    if let Some(vista)=cierre_compartir::vista(app).or_else(|| compartir_real::vista(app)) {
         ventana=con_velo_losa(p,ventana,vista,Mensaje::Compartir(compartir_real::Accion::Vista(icaro_ui::compartir::Accion::Cerrar)),desfase_losa(app));
     }
     if let Some(s) = &app.asistente {
@@ -3519,6 +3538,8 @@ fn main() -> iced::Result {
         }
         return Ok(());
     }
+    let mut registro = diagnostico_real::iniciar();
+    let fallo_registro = registro.fallo;
     let mut app = iced::application("Icaro Launcher", actualizar, vista)
         .theme(|app: &App| if app.modo==Modo::Piedra {iced::Theme::Light}else{iced::Theme::Dark})
         .scale_factor(|app: &App| app.aj.escala.clamp(80,150) as f64/100.)
@@ -3662,6 +3683,12 @@ fn main() -> iced::Result {
                 }));
             }
             subs.push(servicios::suscripcion(app));
+            if app.cierre.solicitado || app.cierre.esperando || app.cierre.bandeja.is_some() {
+                subs.push(iced::time::every(std::time::Duration::from_millis(250)).map(|_| Mensaje::CierreCompartir(cierre_compartir::Accion::Tic)));
+            }
+            if !app.servicios.demo && diagnostico_real::activo() {
+                subs.push(iced::time::every(std::time::Duration::from_secs(5)).map(|_| Mensaje::Diagnostico));
+            }
             subs.push(mods_reales::suscripcion(app));
             subs.push(servidores_reales::suscripcion(app));
             subs.push(red_privada_real::suscripcion(app));
@@ -3699,14 +3726,17 @@ fn main() -> iced::Result {
     let piedra = std::env::var_os("ICARO_PIEDRA").is_some();
     let menu = std::env::var_os("ICARO_MENU").is_some().then_some(0);
     let con_dialogo = std::env::var_os("ICARO_DIALOGO").is_some();
-    app.run_with(move || {
-        let (app, inicio) = if std::env::var_os("ICARO_CAPTURA_DISENO").is_some() {
+    let resultado = app.run_with(move || {
+        let (mut app, inicio) = if std::env::var_os("ICARO_CAPTURA_DISENO").is_some() {
             pruebas_diseno::iniciar(piedra)
         } else {
             iniciar_app(seccion, piedra, menu, con_dialogo, servicios::Estado::default())
         };
+        if let Some(error)=fallo_registro { app.avisar(diagnostico_real::aviso_inicio(error)); }
         (app, Task::batch([inicio, ventana::configurar_esquinas()]))
-    })
+    });
+    diagnostico_real::terminar(&mut registro, resultado.is_ok());
+    resultado
 }
 
 fn iniciar_app(seccion: Seccion, piedra: bool, menu: Option<usize>, con_dialogo: bool, mut servicios: servicios::Estado) -> (App, Task<Mensaje>) {
@@ -3723,7 +3753,7 @@ fn iniciar_app(seccion: Seccion, piedra: bool, menu: Option<usize>, con_dialogo:
         app.actualizacion.comprobando = true;
         {
             let servidores = if app.seccion == Seccion::Servidores {
-                servidores_reales::actualizar(&mut app, servidores_reales::Accion::Abrir)
+                Task::batch([servidores_reales::actualizar(&mut app, servidores_reales::Accion::Abrir), compartir_real::cargar_biblioteca(&mut app)])
             } else { Task::none() };
             let iconos = icono_instancia::cargar(&app);
             let java = java_real::detectar(&mut app);
@@ -3782,6 +3812,7 @@ fn iniciar_con_guardado(seccion: Seccion, piedra: bool, menu: Option<usize>, con
         icaro_ui::movimiento::fijar_reducir(prefs.reducir);
         (
             App {
+                cierre: Default::default(),
                 config_error,
                 detalle_error: None,
                 almacenamiento: Default::default(),

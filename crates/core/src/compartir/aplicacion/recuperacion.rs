@@ -9,8 +9,8 @@ use tokio_util::sync::CancellationToken;
 
 pub(super) fn recuperar(juego: &Path) -> Result<(), Error> {
     rutas::directorio(juego)?;
-    for entry in fs::read_dir(juego).map_err(|_| Error::Disco)? {
-        let entry = entry.map_err(|_| Error::Disco)?;
+    for entry in fs::read_dir(juego).map_err(|e| crate::compartir::diagnostico::disco(e))? {
+        let entry = entry.map_err(|e| crate::compartir::diagnostico::disco(e))?;
         let nombre = entry.file_name().to_string_lossy().into_owned();
         if !nombre.starts_with(PREFIJO) {
             continue;
@@ -25,7 +25,7 @@ pub(super) fn recuperar(juego: &Path) -> Result<(), Error> {
             if fs::symlink_metadata(&incompleta).is_ok() {
                 return Err(Error::Recuperacion);
             }
-            fs::rename(tx, incompleta).map_err(|_| Error::Disco)?;
+            fs::rename(tx, incompleta).map_err(|e| crate::compartir::diagnostico::disco(e))?;
             continue;
         }
         let diario = Diario::cargar(&tx)?;
@@ -49,7 +49,7 @@ pub(super) fn conservar_respaldo(juego: &Path, nombre: &str) -> Result<(), Error
     if fs::symlink_metadata(&respaldo).is_ok() {
         return Err(Error::Recuperacion);
     }
-    fs::rename(tx, respaldo).map_err(|_| Error::Disco)
+    fs::rename(tx, respaldo).map_err(|e| crate::compartir::diagnostico::disco(e))
 }
 pub(super) fn deshacer(juego: &Path, nombre: &str, diario: &Diario) -> Result<(), Error> {
     let tx = rutas::transaccion(juego, nombre)?;
@@ -85,9 +85,9 @@ fn deshacer_operacion(juego: &Path, tx: &Path, i: usize, op: &Operacion) -> Resu
                 if actual != op.despues || pendiente {
                     return Err(Error::Recuperacion);
                 }
-                fs::rename(&destino, &nuevo).map_err(|_| Error::Disco)?;
+                fs::rename(&destino, &nuevo).map_err(|e| crate::compartir::diagnostico::disco(e))?;
             }
-            fs::rename(&anterior, &destino).map_err(|_| Error::Disco)?;
+            fs::rename(&anterior, &destino).map_err(|e| crate::compartir::diagnostico::disco(e))?;
         } else if actual.as_ref() != Some(esperada)
             && !(actual.is_some() && (pendiente || op.despues.is_none()))
         {
@@ -99,7 +99,7 @@ fn deshacer_operacion(juego: &Path, tx: &Path, i: usize, op: &Operacion) -> Resu
         if actual != op.despues {
             return Err(Error::Recuperacion);
         }
-        fs::rename(&destino, &nuevo).map_err(|_| Error::Disco)?;
+        fs::rename(&destino, &nuevo).map_err(|e| crate::compartir::diagnostico::disco(e))?;
     }
     Ok(())
 }
@@ -110,7 +110,7 @@ fn descartar(tx: &Path, diario: &Diario) -> Result<(), Error> {
             let path = rutas::slot(tx, grupo, i)?;
             match fs::symlink_metadata(&path) {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(_) => return Err(Error::Disco),
+                Err(e) => return Err(crate::compartir::diagnostico::disco(e)),
                 Ok(_) => (),
             }
             if !crate::almacenamiento::regular(&path)
@@ -119,11 +119,11 @@ fn descartar(tx: &Path, diario: &Diario) -> Result<(), Error> {
             {
                 return Err(Error::Recuperacion);
             }
-            fs::remove_file(path).map_err(|_| Error::Disco)?;
+            fs::remove_file(path).map_err(|e| crate::compartir::diagnostico::disco(e))?;
         }
     }
-    fs::remove_dir(tx.join("nuevos")).map_err(|_| Error::Disco)?;
-    fs::remove_dir(tx.join("anteriores")).map_err(|_| Error::Disco)?;
-    fs::remove_file(tx.join("diario.json")).map_err(|_| Error::Disco)?;
-    fs::remove_dir(tx).map_err(|_| Error::Disco)
+    fs::remove_dir(tx.join("nuevos")).map_err(|e| crate::compartir::diagnostico::disco(e))?;
+    fs::remove_dir(tx.join("anteriores")).map_err(|e| crate::compartir::diagnostico::disco(e))?;
+    fs::remove_file(tx.join("diario.json")).map_err(|e| crate::compartir::diagnostico::disco(e))?;
+    fs::remove_dir(tx).map_err(|e| crate::compartir::diagnostico::disco(e))
 }

@@ -19,10 +19,14 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
+#[path = "instantanea.rs"]
+mod instantanea;
+use instantanea::Instantanea;
 
 struct Estado {
     identidad: Identidad,
     revision: Arc<RwLock<Revision>>,
+    instantanea: Mutex<Option<Arc<Instantanea>>>,
     accesos: Arc<Accesos>,
     autoridad: Arc<dyn Autoridad>,
     limites: Limites,
@@ -35,24 +39,57 @@ struct Estado {
 struct Actividad {
     drenando: bool,
     activas: usize,
+    siguiente: u64,
+    detalles: HashMap<u64, TransferenciaActiva>,
 }
-struct Transferencia(Arc<Estado>);
+#[derive(Debug, Clone)]
+pub struct TransferenciaActiva {
+    pub invitado: String,
+    pub archivo: String,
+    pub enviados: u64,
+    pub total: u64,
+}
+struct Transferencia(Arc<Estado>, u64);
 impl Transferencia {
-    fn iniciar(estado: Arc<Estado>) -> Result<Self, Error> {
-        {
+    fn iniciar(estado: Arc<Estado>, invitado: &str) -> Result<Self, Error> {
+        let id = {
             let mut actividad = estado.actividad.lock().map_err(|_| Error::Disco)?;
             if actividad.drenando {
                 return Err(Error::Datos("publicación terminando"));
             }
             actividad.activas += 1;
+            actividad.siguiente = actividad.siguiente.wrapping_add(1);
+            let id = actividad.siguiente;
+            actividad.detalles.insert(
+                id,
+                TransferenciaActiva {
+                    invitado: invitado.into(),
+                    archivo: String::new(),
+                    enviados: 0,
+                    total: 0,
+                },
+            );
+            id
+        };
+        Ok(Self(estado, id))
+    }
+    fn actualizar(&self, archivo: &str, enviados: u64, total: u64) {
+        if let Ok(mut a) = self.0.actividad.lock() {
+            if let Some(t) = a.detalles.get_mut(&self.1) {
+                if t.archivo.is_empty() {
+                    t.archivo = archivo.rsplit('/').next().unwrap_or(archivo).into();
+                }
+                t.enviados = enviados;
+                t.total = total;
+            }
         }
-        Ok(Self(estado))
     }
 }
 impl Drop for Transferencia {
     fn drop(&mut self) {
         if let Ok(mut actividad) = self.0.actividad.lock() {
             actividad.activas = actividad.activas.saturating_sub(1);
+            actividad.detalles.remove(&self.1);
         }
         self.0.fin.notify_waiters();
     }
@@ -83,6 +120,7 @@ impl NodoAnfitrion {
         let estado = Arc::new(Estado {
             identidad,
             revision,
+            instantanea: Mutex::new(None),
             accesos,
             autoridad,
             limites,
@@ -105,6 +143,17 @@ impl NodoAnfitrion {
     }
     pub fn contar_transferencias(&self) -> usize {
         self.estado.actividad.lock().map_or(0, |a| a.activas)
+    }
+    /// Instantánea en memoria, sin rutas absolutas; no se vuelca al logger.
+    pub fn transferencias_activas(&self) -> Vec<TransferenciaActiva> {
+        self.estado.actividad.lock().map_or_else(
+            |_| vec![],
+            |a| {
+                let mut detalles: Vec<_> = a.detalles.iter().collect();
+                detalles.sort_by_key(|(id, _)| **id);
+                detalles.into_iter().map(|(_, t)| t.clone()).collect()
+            },
+        )
     }
     /// Rechaza nuevas conexiones/descargas y espera la entrega de las ya admitidas.
     /// Al terminar, el llamante puede cerrar el nodo conservando las autorizaciones.
@@ -236,21 +285,26 @@ async fn conexion(incoming: iroh::endpoint::Incoming, estado: Arc<Estado>) -> Re
         return Ok(());
     }
     let mut tareas = tokio::task::JoinSet::new();
+    let admision = Arc::new(Semaphore::new(4));
     while let Ok((send, recv)) = conn.accept_bi().await {
         if !estado.accesos.permitir(&key) {
             break;
         }
-        let Ok(permiso) = cupo.clone().try_acquire_owned() else {
-            drop(send);
-            drop(recv);
-            continue;
+        let permiso = tokio::select! {
+            _ = conn.closed() => break,
+            permiso = admision.clone().acquire_owned() => match permiso {
+                Ok(permiso) => permiso,
+                Err(_) => break,
+            },
         };
         let estado = estado.clone();
+        let invitado = key.clone();
+        let cupo = cupo.clone();
         tareas.spawn(async move {
             let _permiso = permiso;
             let _ = tokio::time::timeout(
                 std::time::Duration::from_secs(120),
-                servir(send, recv, estado),
+                servir(send, recv, estado, &invitado, cupo),
             )
             .await;
         });
@@ -269,14 +323,30 @@ async fn servir(
     mut send: iroh::endpoint::SendStream,
     mut recv: iroh::endpoint::RecvStream,
     estado: Arc<Estado>,
+    invitado: &str,
+    cupo: Arc<Semaphore>,
 ) -> Result<(), Error> {
     let solicitud: Solicitud = protocolo::leer(&mut recv, CONTROL_BYTES).await?;
-    let _transferencia = if matches!(&solicitud, Solicitud::Archivo { .. }) {
-        Some(Transferencia::iniciar(estado.clone())?)
+    let _cupo_archivo = if matches!(&solicitud, Solicitud::Archivo { .. }) {
+        if estado.actividad.lock().map_err(|_| Error::Disco)?.drenando {
+            return Err(Error::Datos("publicación terminando"));
+        }
+        // El invitado puede recibir el final antes de que llegue su acuse QUIC.
+        Some(
+            cupo.acquire_owned()
+                .await
+                .map_err(|_| Error::Datos("descargas ocupadas"))?,
+        )
     } else {
         None
     };
-    let revision = estado.revision.read().map_err(|_| Error::Disco)?.clone();
+    let _transferencia = if matches!(&solicitud, Solicitud::Archivo { .. }) {
+        Some(Transferencia::iniciar(estado.clone(), invitado)?)
+    } else {
+        None
+    };
+    let instantanea = estado.instantanea()?;
+    let revision = &instantanea.revision;
     let max = estado
         .limites
         .manifiesto_bytes
@@ -294,18 +364,16 @@ async fn servir(
             sha512,
             offset,
         } if origen == revision.manifiesto.origen && numero == revision.manifiesto.revision => {
-            let artefacto = revision
-                .manifiesto
+            let indice = *instantanea
                 .archivos
-                .iter()
-                .find(|a| a.sha512 == sha512 && matches!(a.procedencia, Procedencia::Propio))
+                .get(&sha512)
                 .ok_or(Error::Datos("archivo no publicado"))?;
+            let artefacto = &revision.manifiesto.archivos[indice];
             if offset > artefacto.bytes || artefacto.bytes > estado.limites.archivo_bytes {
                 return Err(Error::Datos("desplazamiento"));
             }
             let r = revision.clone();
-            let ruta = artefacto.ruta.clone();
-            let path = tokio::task::spawn_blocking(move || r.archivo(&ruta))
+            let path = tokio::task::spawn_blocking(move || r.archivo_en(indice))
                 .await
                 .map_err(|_| Error::Disco)??;
             let mut archivo = tokio::fs::File::open(path)
@@ -325,6 +393,9 @@ async fn servir(
             .await?;
             let mut buf = vec![0; 64 * 1024];
             let mut quedan = artefacto.bytes - offset;
+            if let Some(t) = &_transferencia {
+                t.actualizar(artefacto.ruta.as_str(), offset, artefacto.bytes);
+            }
             while quedan > 0 {
                 let take = quedan.min(buf.len() as u64) as usize;
                 let n = archivo
@@ -338,6 +409,13 @@ async fn servir(
                     .await
                     .map_err(|_| Error::Datos("conexión"))?;
                 quedan -= n as u64;
+                if let Some(t) = &_transferencia {
+                    t.actualizar(
+                        artefacto.ruta.as_str(),
+                        artefacto.bytes - quedan,
+                        artefacto.bytes,
+                    );
+                }
             }
         }
         _ => protocolo::escribir(&mut send, &Respuesta::Rechazada, CONTROL_BYTES).await?,

@@ -34,6 +34,7 @@ pub struct Conflicto {
 }
 #[derive(Debug, Clone)]
 pub struct PlanCompartido {
+    pub orden_packs: Option<super::packs::RevisionOrden>,
     pub(crate) base: BaseAplicada,
     pub revision: Manifiesto,
     pub cambios: Vec<CambioCompartido>,
@@ -42,7 +43,7 @@ pub struct PlanCompartido {
 }
 impl PlanCompartido {
     pub fn puede_aplicar(&self) -> bool {
-        self.conflictos.is_empty()
+        self.conflictos.is_empty() && !self.orden_packs.as_ref().is_some_and(|o| o.pendiente())
     }
     pub fn resolver(&mut self, ruta: &RutaCompartida, resolucion: Resolucion) -> Result<(), Error> {
         let indice = self
@@ -111,6 +112,7 @@ pub fn planificar(
         return Err(Error::Datos("colisión de nombres entre equipos"));
     }
     let mut plan = PlanCompartido {
+        orden_packs: None,
         base: aplicada.clone(),
         revision: remoto.clone(),
         cambios: vec![],

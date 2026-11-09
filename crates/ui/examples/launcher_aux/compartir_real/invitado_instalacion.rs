@@ -84,7 +84,7 @@ pub async fn instalar(
             })
             .await
             .map(|_| ())
-            .map_err(|e| e.to_string())
+            .map_err(icaro_core::diagnostico_contexto::texto)
         },
     )
     .await
@@ -135,6 +135,36 @@ where
     F: FnOnce(Almacen, Instancia, CancellationToken, Emitir) -> Fut,
     Fut: std::future::Future<Output = Result<(), String>>,
 {
+    let cancel_registro = cancel.clone();
+    icaro_core::diagnostico_contexto::observar_valor(
+        "compartir",
+        "instalar_invitado",
+        None,
+        &cancel_registro,
+        instalar_con_avance_interno(
+            raiz, store, visita, nombre, anterior, catalogo, host, cancel, emitir, perfil,
+        ),
+        |r: &Resultado| r.resultado.is_ok(),
+    )
+    .await
+}
+
+async fn instalar_con_avance_interno<F, Fut>(
+    raiz: PathBuf,
+    store: Almacen,
+    visita: Visita,
+    nombre: String,
+    anterior: Option<Instancia>,
+    catalogo: Option<Catalog>,
+    host: Option<Arc<c::anfitrion::PublicacionActiva>>,
+    cancel: CancellationToken,
+    emitir: Emitir,
+    perfil: F,
+) -> Resultado
+where
+    F: FnOnce(Almacen, Instancia, CancellationToken, Emitir) -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+{
     emitir(Avance::default());
     let crear_store = store.clone();
     let destino_anterior = anterior.clone();
@@ -142,25 +172,25 @@ where
     let raiz_confianza = raiz.clone();
     let nombre_revisado = nombre.clone();
     let cancel_creacion = cancel.clone();
-    let creada = tokio::task::spawn_blocking(move || {
+    let creada = icaro_core::diagnostico_contexto::bloqueante(move || {
         if cancel_creacion.is_cancelled() {return Err("Instalación cancelada antes de crear el destino.".into());}
         if !matches!(
             c::confianza::consultar(&raiz_confianza, &manifiesto.origen)
-                .map_err(|e| e.to_string())?,
+                .map_err(icaro_core::diagnostico_contexto::texto)?,
             c::confianza::EstadoConfianza::Conocido { .. }
         ) {
             return Err("Confirma la huella del anfitrión antes de crear el destino.".into());
         }
         if let Some(i) = anterior {
-            let juego = crear_store.juego(&i.id).map_err(|e| e.to_string())?;
-            if let Some(vinculo) = c::vinculos::leer(&juego).map_err(|e| e.to_string())? {
+            let juego = crear_store.juego(&i.id).map_err(icaro_core::diagnostico_contexto::texto)?;
+            if let Some(vinculo) = c::vinculos::leer(&juego).map_err(icaro_core::diagnostico_contexto::texto)? {
                 if vinculo.origen != manifiesto.origen || vinculo.perfil != manifiesto.perfil {
                     return Err("El destino pertenece a otra publicación.".into());
                 }
             }
             Ok(i)
         } else {
-            if c::intentos::buscar(&crear_store,&manifiesto).map_err(|e|e.to_string())?.is_some() {
+            if c::intentos::buscar(&crear_store,&manifiesto).map_err(icaro_core::diagnostico_contexto::texto)?.is_some() {
                 return Err("Hay una instalación incompleta de esta publicación. Vuelve a confirmar el destino para continuarla.".into());
             }
             crear_store
@@ -170,7 +200,7 @@ where
                     &manifiesto.perfil.loader,
                     0,
                 )
-                .map_err(|e| e.to_string())
+                .map_err(icaro_core::diagnostico_contexto::texto)
         }
     })
     .await
@@ -187,6 +217,7 @@ where
             }
         }
     };
+    icaro_core::diagnostico_contexto::instancia(&instancia.id);
     let mut revisar_nueva = false;
     emitir(Avance::nuevo(
         v::Fase::Preparacion,
@@ -196,16 +227,27 @@ where
         "Destino preparado",
     ));
     let resultado = async {
+        let actividad_store = store.clone();
+        let actividad_instancia = instancia.clone();
+        let _actividad = icaro_core::diagnostico_contexto::bloqueante(move || {
+            icaro_core::actividad_instancia::Guardia::adquirir_instancia(
+                &actividad_store,
+                &actividad_instancia.id,
+            )
+            .map_err(icaro_core::diagnostico_contexto::texto)
+        })
+        .await
+        .map_err(|_| "No se pudo reservar la instancia.".to_string())??;
         let registrar_store = store.clone();
         let registrar_instancia = instancia.clone();
         let registrar_manifiesto = visita.manifiesto.clone();
-        tokio::task::spawn_blocking(move || {
+        icaro_core::diagnostico_contexto::bloqueante(move || {
             c::intentos::registrar(
                 &registrar_store,
                 &registrar_instancia,
                 &registrar_manifiesto,
             )
-            .map_err(|e| e.to_string())
+            .map_err(icaro_core::diagnostico_contexto::texto)
         })
         .await
         .map_err(|_| "No se pudo registrar el intento de instalación.".to_string())??;
@@ -215,10 +257,10 @@ where
         let preparar_store = store.clone();
         let preparar_instancia = instancia.clone();
         let manifiesto = visita.manifiesto.clone();
-        instancia = tokio::task::spawn_blocking(move || {
+        instancia = icaro_core::diagnostico_contexto::bloqueante(move || {
             let mut actual = preparar_store
                 .cargar()
-                .map_err(|e| e.to_string())?
+                .map_err(icaro_core::diagnostico_contexto::texto)?
                 .instancias
                 .into_iter()
                 .find(|i| i.id == preparar_instancia.id)
@@ -229,15 +271,18 @@ where
                 &manifiesto,
                 &c::Limites::default(),
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(icaro_core::diagnostico_contexto::texto)?;
             if actual.nombre != nombre_revisado.trim() {
                 actual.nombre = nombre_revisado.trim().into();
-                preparar_store.guardar(&actual).map_err(|e| e.to_string())?;
+                preparar_store
+                    .guardar(&actual)
+                    .map_err(icaro_core::diagnostico_contexto::texto)?;
             }
             Ok::<_, String>(actual)
         })
         .await
         .map_err(|_| "No se pudo completar el vínculo del destino.".to_string())??;
+        icaro_core::diagnostico_contexto::etapa("perfil_minecraft");
         perfil(
             store.clone(),
             instancia.clone(),
@@ -252,9 +297,13 @@ where
             "",
             "Comprobando la publicación del anfitrión",
         ));
+        icaro_core::diagnostico_contexto::etapa("revalidacion_manifiesto");
         let conexion = invitado_tareas::conectar(&visita.invitacion, host, &cancel).await?;
         let resultado = async {
-            let actual = conexion.consultar().await.map_err(|e| e.to_string())?;
+            let actual = conexion
+                .consultar()
+                .await
+                .map_err(icaro_core::diagnostico_contexto::texto)?;
             if actual != visita.manifiesto {
                 revisar_nueva = true;
                 return Err(
@@ -262,19 +311,24 @@ where
                         .into(),
                 );
             }
-            let juego = store.juego(&instancia.id).map_err(|e| e.to_string())?;
+            let juego = store
+                .juego(&instancia.id)
+                .map_err(icaro_core::diagnostico_contexto::texto)?;
             let ctx = ContextoDestino {
                 juego,
                 limites: c::Limites::default(),
             };
             let contexto = ctx.clone();
             let token = cancel.clone();
-            let plan = tokio::task::spawn_blocking(move || {
-                c::aplicacion::recuperar(&contexto.juego).map_err(|e| e.to_string())?;
-                let base = c::aplicacion::cargar_base(&contexto).map_err(|e| e.to_string())?;
+            let plan = icaro_core::diagnostico_contexto::bloqueante(move || {
+                c::aplicacion::recuperar(&contexto.juego)
+                    .map_err(icaro_core::diagnostico_contexto::texto)?;
+                let base = c::aplicacion::cargar_base(&contexto)
+                    .map_err(icaro_core::diagnostico_contexto::texto)?;
                 let inv = c::inventario::analizar(&contexto.juego, &token, &contexto.limites)
-                    .map_err(|e| e.to_string())?;
-                c::plan::planificar(&actual, &base, &inv).map_err(|e| e.to_string())
+                    .map_err(icaro_core::diagnostico_contexto::texto)?;
+                c::plan::planificar(&actual, &base, &inv)
+                    .map_err(icaro_core::diagnostico_contexto::texto)
             })
             .await
             .map_err(|_| "No se pudo revisar el destino.".to_string())??;
@@ -284,14 +338,22 @@ where
                 );
             }
             let staging = raiz.join("compartir/descargas").join(&instancia.id);
+            icaro_core::diagnostico_contexto::etapa("descarga_verificacion");
             let avance_descarga = emitir.clone();
-            let preparada = c::descargas::preparar_con_progreso(
+            let opciones = c::descargas::OpcionesDescarga {
+                cache: Some(c::cache::CacheContenido::nueva(
+                    raiz.join("compartir/cache-contenido"),
+                )),
+                ..Default::default()
+            };
+            let preparada = c::descargas::preparar_configurado(
                 &ctx,
                 plan,
                 &conexion,
                 catalogo.as_ref(),
                 &staging,
                 &cancel,
+                &opciones,
                 move |evento| match evento {
                     c::descargas::EventoDescarga::Archivos {
                         ruta,
@@ -316,7 +378,7 @@ where
                 },
             )
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(icaro_core::diagnostico_contexto::texto)?;
             let token = cancel.clone();
             let avance_aplicacion = emitir.clone();
             let completar_store = store.clone();
@@ -329,7 +391,7 @@ where
                 "",
                 "Aplicando los cambios revisados",
             ));
-            tokio::task::spawn_blocking(move || {
+            icaro_core::diagnostico_contexto::bloqueante(move || {
                 c::aplicacion::aplicar(preparada, &token, move |evento| {
                     if let c::aplicacion::EventoAplicacion::Movimiento { hechos, total } = evento {
                         avance_aplicacion(Avance::nuevo(
@@ -341,13 +403,13 @@ where
                         ));
                     }
                 })
-                .map_err(|e| e.to_string())?;
+                .map_err(icaro_core::diagnostico_contexto::texto)?;
                 c::intentos::completar(
                     &completar_store,
                     &completar_instancia,
                     &completar_manifiesto,
                 )
-                .map_err(|e| e.to_string())
+                .map_err(icaro_core::diagnostico_contexto::texto)
             })
             .await
             .map_err(|_| "No se pudo aplicar la revisión.".to_string())?
@@ -360,7 +422,7 @@ where
     let listar = store.clone();
     let registro = instancia.clone();
     let exito = resultado.is_ok();
-    let tarjeta = tokio::task::spawn_blocking(move || {
+    let tarjeta = icaro_core::diagnostico_contexto::bloqueante(move || {
         let mut datos = crate::instancias_reales::Estado::datos(&listar, &registro);
         if !exito {
             datos.estado = icaro_ui::instancias::EstadoInstancia::Error;

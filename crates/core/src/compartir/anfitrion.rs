@@ -121,6 +121,9 @@ impl PublicacionActiva {
     pub fn transferencias(&self) -> usize {
         self.nodo.contar_transferencias()
     }
+    pub fn transferencias_activas(&self) -> Vec<super::transporte::TransferenciaActiva> {
+        self.nodo.transferencias_activas()
+    }
     pub async fn drenar(&self) -> Result<(), Error> {
         self.nodo.drenar().await
     }

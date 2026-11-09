@@ -27,10 +27,10 @@ Las interfaces de las tareas 6 y 8 son el objetivo pendiente de integración.
 | 2 | Implementada y conectada al publicador experimental; pendientes espacio y limpieza. |
 | 3 | Implementada y probada localmente; faltan disco lleno y resolución visual del orden de packs. |
 | 4 | Identidad/transporte implementados y probados con endpoints locales; sin validación entre redes. |
-| 5 | Servicio/cliente implementados; 17 pruebas D1 y recorrido Rust local; sin despliegue. |
-| 6 | Coordinadores conectados con progreso por etapa y registro recuperable del destino; faltan validar perfil real, cortes adicionales y exclusión de partida. |
+| 5 | Servicio/cliente y reconexión sin código implementados; 24 pruebas D1 y recorrido Rust local; sin despliegue. |
+| 6 | Coordinadores con progreso, registro recuperable y reserva de actividad por ID; faltan validar perfil real y cortes adicionales. |
 | 7 | Quince vistas y capturas implementadas; acciones reales, foco/teclado y escala pendientes. |
-| 8 | Publicador/invitado bajo bandera, progreso acotado y recuperación tras reinicio al reintroducir invitación. Prueba Worker con perfil inyectado; Jugar y cierre/bandeja pendientes. |
+| 8 | Publicador/invitado y Sincronizar/Jugar bajo bandera, conflictos de archivo y reserva compartida hasta Java. Prueba Worker con perfil inyectado; partida real, orden de packs y cierre/bandeja pendientes. |
 | 9 | Verificación local/documentación parciales; entrega, mediciones y validación externa pendientes. |
 
 ## Restricciones globales
@@ -127,12 +127,13 @@ No son nuevos requisitos atribuidos al usuario. Se revisan con este plan antes d
 
 ## Tarea 6: creación, vínculo y coordinación del recorrido
 
-**Archivos actuales y pendientes:** existen `compartir/{anfitrion,vinculos,descargas}.rs`. Falta completar la coordinación con `instancias.rs`, `minecraft.rs` y `lanzamiento.rs`, incluida la exclusión real de instalación/juego; no existe todavía el ejemplo por consola propuesto.
+**Archivos actuales y pendientes:** existen `compartir/{anfitrion,vinculos,descargas}.rs`, registro `intentos.rs` y `actividad_instancia.rs`. La coordinación con instalación y lanzamiento está conectada bajo bandera, con reserva compartida por ID. Falta validarla con una partida real; no existe todavía el ejemplo por consola propuesto.
 
-**Interfaces actuales:** `vinculos::{publicacion,crear_destino,leer}`, `descargas::preparar` y `anfitrion::PublicacionActiva`. El destino recibe un ID nuevo; vínculo y base aplicada son metadatos privados separados. **Objetivo pendiente:** coordinar instalación y eventos con cantidades reales, conservando preparación/revisión y aplicación como pasos explícitos.
+**Interfaces actuales:** `vinculos::{publicacion,crear_destino,leer}`, `descargas::preparar_con_progreso`, `intentos::{registrar,buscar,completar}`, `actividad_instancia::Guardia::adquirir_instancia` y `anfitrion::PublicacionActiva`. El destino recibe un ID nuevo; vínculo y base aplicada son metadatos privados separados. Instalación/eventos y Sincronizar/Jugar están conectados con preparación/revisión y aplicación explícitas. Quedan las validaciones nativas enumeradas abajo.
 
 - [ ] Probar dos aceptaciones que no colisionen por nombre, renombrado local que conserve vínculo, identidad distinta que no herede origen, fallo de loader sin estado «listo» y reintento sobre la creación incompleta propia.
 - [ ] Probar Minecraft ocupado y carrera entre lanzar y aplicar: mismo mecanismo de exclusión, no solo una comprobación visual previa.
+- [x] Probar reserva entre procesos, liberación al terminar/matar proceso auxiliar, renombrado sin liberar y transferencia de la misma `Arc` desde revisión a preparación; no sustituye la partida real.
 - [ ] Implementar creación/instalación exacta reutilizando servicios; no añadir Fabric API ni dependencias extra contra el manifiesto sin revisión. La utilidad solo usa directorios de prueba explícitos y no busca datos reales por defecto.
 - [ ] Probar recorrido completo por consola y servicio local: publicar, aceptar, planificar, confirmar, aplicar, modificar, publicar revisión y actualizar preservando un archivo personal.
 
@@ -169,6 +170,7 @@ la ventana con perfil real, Jugar y cierre/bandeja; no cerrar esta tarea todaví
 **Interfaces:** `compartir_real::actualizar(&mut App, Accion) -> Task<Mensaje>`; `subscription(&App) -> Subscription<Mensaje>`; `al_cerrar(&mut App) -> Task<Mensaje>`. Identificadores de petición descartan respuestas viejas; cancelación coopera con tareas del núcleo.
 
 - [ ] Probar pulsar Jugar con revisión nueva que exige confirmación, revisión intacta sin descargas, anfitrión inaccesible y solicitud cancelada cuya respuesta llega después.
+- [x] Conectar la consulta previa y Sincronizar con confirmación explícita; probar localmente ambas elecciones de conflicto, conservación personal, reconexión/revocación y entrega de la misma reserva a la preparación. Mantener abierta la comprobación nativa con partida real.
 - [ ] Integrar accesos en Servidores y paneles completos. Task/Subscription ejecutan servicios y disco fuera de update/view; los callbacks solo cambian estado.
 - [ ] Probar minimizar que mantiene publicación, seguir hasta terminar que cierra después y rechaza nuevas descargas, cerrar ahora que conserva autorización y detener que revoca todo.
 - [ ] Implementar bandeja con biblioteca y API compatibles verificadas; no presentar ventana oculta sin forma de restaurarla. Revalidar actualizador y cierre del juego para no romper sus diálogos existentes.
@@ -199,8 +201,8 @@ aceptación, descarga, aplicación de configuración/texturas y revocación.
 Las quince vistas están implementadas y las escenas de diseño se capturan desde
 el launcher en ambos temas y ventana pequeña. Las capturas detectaron y permitieron
 corregir el pie recortado en listas largas; la revisión visual sigue en curso.
-El controlador funcional de Servidores/Jugar y la bandeja todavía están pendientes:
-no hay una función nueva habilitada en el recorrido normal del launcher.
+Los controladores funcionales y Sincronizar/Jugar existen bajo bandera; la bandeja
+y la validación nativa siguen pendientes. No hay una función nueva habilitada por defecto.
 
 El código se registra en los commits indicados al inicio, sin cambio de versión
 ni despliegue. El apartado de inicio que sigue se conserva como historial, no como

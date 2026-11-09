@@ -9,7 +9,7 @@ use crate::{
     tema::Paleta,
 };
 use iced::{
-    widget::{button, column, container, row, Space},
+    widget::{button, column, container, row, text, Space},
     Alignment, Element, Length,
 };
 
@@ -59,7 +59,7 @@ pub fn cierre_transferencias<'a>(p: Paleta, m: &CierreTransferencias) -> Element
                 container(
                     row![
                         container(if elegido {
-                            icono_estado(p, Icono::Check)
+                            crate::botones::icono_heredado(Icono::Check, crate::iconos::Tam::Base)
                         } else {
                             Space::new(24, 24).into()
                         })
@@ -67,13 +67,25 @@ pub fn cierre_transferencias<'a>(p: Paleta, m: &CierreTransferencias) -> Element
                         .height(24)
                         .align_x(Alignment::Center)
                         .align_y(Alignment::Center),
-                        column![heading(p, titulo), tenue(p, detalle)].spacing(6)
+                        // Heredar tinta del botón también en hover/inversión.
+                        column![
+                            text(titulo.to_owned())
+                                .font(crate::fuentes::CUERPO_NEGRITA)
+                                .size(14),
+                            text(detalle.to_owned())
+                                .font(crate::fuentes::CUERPO)
+                                .size(13)
+                        ]
+                        .spacing(6)
                     ]
-                    .spacing(14),
+                    .spacing(14)
+                    .align_y(Alignment::Center),
                 )
+                .center_y(Length::Fill)
                 .padding([16., 18.]),
             )
             .width(Length::Fill)
+            .height(112)
             .padding(0)
             .style(estilo::segmento(p, elegido))
             .on_press(Accion::OpcionCierre(opcion)),
@@ -202,6 +214,13 @@ pub fn progreso_sincronizacion<'a>(p: Paleta, m: &ProgresoSincronizacion) -> Ele
     }
     let mut c = column![riel];
     let acciones = match &m.estado {
+        EstadoProgreso::Error(error) => {
+            c = column![error_compartir(p, error)];
+            row![
+                Space::new(Length::Fill, 0),
+                boton(p, "Cerrar", Variante::Secundario, Some(Accion::Cerrar))
+            ]
+        }
         EstadoProgreso::Activo(fase) => {
             c = c
                 .push(avance(p, &m.detalle, m.porcentaje))
@@ -288,7 +307,11 @@ pub fn progreso_sincronizacion<'a>(p: Paleta, m: &ProgresoSincronizacion) -> Ele
         p,
         720.,
         &format!("Sincronizando {}", m.instancia),
-        &format!("Revisión {} de {}", m.revision, m.anfitrion),
+        &if m.revision == 0 {
+            m.anfitrion.clone()
+        } else {
+            format!("Revisión {} de {}", m.revision, m.anfitrion)
+        },
         c,
         acciones,
     )
@@ -331,9 +354,10 @@ pub fn error_compartir<'a>(p: Paleta, m: &ErrorCompartir) -> Element<'a, Accion>
 }
 
 /// Barra adicional para Servidores; la lista existente se compone debajo.
+/// Repite la misma tarjeta por cada publicación guardada.
 pub fn accesos_servidores<'a>(
     p: Paleta,
-    publicacion: Option<&ResumenPublicacion>,
+    publicaciones: &[ResumenPublicacion],
 ) -> Element<'a, Accion> {
     let mut c = column![row![
         boton(
@@ -358,7 +382,7 @@ pub fn accesos_servidores<'a>(
     ]
     .spacing(12)]
     .spacing(20);
-    if let Some(m) = publicacion {
+    for m in publicaciones {
         c = c.push(
             container(
                 row![
@@ -380,7 +404,7 @@ pub fn accesos_servidores<'a>(
                         p,
                         "Ver publicación",
                         Variante::Secundario,
-                        Some(Accion::VerPublicacion)
+                        Some(Accion::VerPublicacionDe(m.id.clone()))
                     )
                 ]
                 .spacing(16)

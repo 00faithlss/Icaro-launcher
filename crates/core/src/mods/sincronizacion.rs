@@ -18,6 +18,7 @@ const MAX_INDEX: usize = 1024 * 1024;
 pub const RUTA: &str = "/icaro/v1/mods";
 pub mod dedicado;
 mod inventario;
+mod registro_seguro;
 use inventario::Inventario;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -351,9 +352,10 @@ pub fn activar_registro(root: &Path) {
 }
 /// Una línea `evento clave=valor`. Un fallo al escribir nunca interrumpe la sincronización.
 fn registrar(mensaje: impl AsRef<str>) {
+    let mensaje = registro_seguro::linea(mensaje.as_ref());
     if let Some(root) = BITACORA.get() {
         let _guardia = ESCRITURA.lock();
-        let _ = crate::almacenamiento::registrar_en(root, "sincronizacion", mensaje.as_ref());
+        let _ = crate::almacenamiento::registrar_en(root, "sincronizacion", &mensaje);
     }
 }
 /// Evento que solo conoce la interfaz, como un límite de tiempo o un índice

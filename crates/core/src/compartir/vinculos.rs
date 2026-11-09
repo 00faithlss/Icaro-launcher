@@ -9,7 +9,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{fs, io::Read, path::Path};
 
 const VINCULO: &str = ".icaro-compartir-vinculo.json";
-const PUBLICACION: &str = ".icaro-compartir-publicacion.json";
+pub(crate) const PUBLICACION: &str = ".icaro-compartir-publicacion.json";
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Vinculo {
@@ -65,6 +65,40 @@ pub fn leer(juego: &Path) -> Result<Option<Vinculo>, Error> {
     Ok(vinculo)
 }
 
+/// Perfil actual de la instancia, sin escribir nada.
+pub(crate) fn perfil_de(store: &Almacen, instancia: &Instancia) -> Perfil {
+    Perfil {
+        minecraft: instancia.minecraft.clone(),
+        loader: instancia.loader.clone(),
+        loader_version: crate::versiones_instancia::leer_loader(store, instancia),
+    }
+}
+/// Origen ya persistido de una publicación propia; nunca lo crea.
+pub(crate) fn origen_guardado(juego: &Path) -> Result<Option<Origen>, Error> {
+    carpeta(juego)?;
+    let origen: Option<Origen> = leer_json(&juego.join(PUBLICACION))?;
+    if let Some(o) = &origen {
+        o.validar()?;
+    }
+    Ok(origen)
+}
+pub(crate) fn contexto(
+    raiz: &Path,
+    juego: std::path::PathBuf,
+    origen: Origen,
+    perfil: Perfil,
+) -> ContextoPublicacion {
+    ContextoPublicacion {
+        juego,
+        almacen: raiz
+            .join("compartir/publicaciones")
+            .join(&origen.publicacion),
+        origen,
+        perfil,
+        limites: Limites::default(),
+    }
+}
+
 /// Ejecutar fuera del hilo de iced. Reabrir conserva el origen de esta instancia.
 pub fn publicacion(
     raiz: &Path,
@@ -75,19 +109,14 @@ pub fn publicacion(
     if !hexadecimal(anfitrion, 64) {
         return Err(Error::Datos("identidad del anfitrión"));
     }
-    let perfil = Perfil {
-        minecraft: instancia.minecraft.clone(),
-        loader: instancia.loader.clone(),
-        loader_version: crate::versiones_instancia::leer_loader(store, instancia),
-    };
+    let perfil = perfil_de(store, instancia);
     perfil.validar()?;
     let juego = store.juego(&instancia.id).map_err(|_| Error::Disco)?;
     carpeta(&juego)?;
     let _bloqueo = crate::mods::guardia(&juego).map_err(|_| Error::Datos("instancia ocupada"))?;
     let path = juego.join(PUBLICACION);
-    let origen = match leer_json::<Origen>(&path)? {
+    let origen = match origen_guardado(&juego)? {
         Some(origen) => {
-            origen.validar()?;
             if origen.anfitrion != anfitrion {
                 return Err(Error::Datos("la publicación pertenece a otra identidad"));
             }
@@ -104,15 +133,7 @@ pub fn publicacion(
             origen
         }
     };
-    Ok(ContextoPublicacion {
-        juego,
-        almacen: raiz
-            .join("compartir/publicaciones")
-            .join(&origen.publicacion),
-        origen,
-        perfil,
-        limites: Limites::default(),
-    })
+    Ok(contexto(raiz, juego, origen, perfil))
 }
 
 /// Siempre crea una instancia nueva. El vínculo no acredita una revisión aplicada:

@@ -259,8 +259,82 @@ async fn dos_endpoints_revision_offset_integridad_y_revocacion() {
             .unwrap(),
         Respuesta::Archivo { .. }
     ));
+    let limite = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        let activas = nodo.transferencias_activas();
+        if let Some(t) = activas
+            .iter()
+            .find(|t| t.archivo == "a.toml" && t.total == contenido.len() as u64)
+        {
+            assert_eq!(t.invitado, guest.clave_publica());
+            assert!(t.enviados <= t.total);
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < limite,
+            "la transferencia debe exponer progreso real"
+        );
+        tokio::task::yield_now().await;
+    }
+    // Dos cuerpos sin consumir mantienen ocupados ambos cupos de archivos por
+    // contrapresión QUIC; el control de revisión debe continuar disponible.
+    let (mut send2, mut recv2) = conn.open_bi().await.unwrap();
+    protocolo::escribir(
+        &mut send2,
+        &Solicitud::Archivo {
+            origen: m.origen.clone(),
+            revision: 1,
+            sha512: m.archivos[0].sha512.clone(),
+            offset: 0,
+        },
+        CONTROL_BYTES,
+    )
+    .await
+    .unwrap();
+    send2.finish().unwrap();
+    assert!(matches!(
+        protocolo::leer::<Respuesta>(&mut recv2, CONTROL_BYTES)
+            .await
+            .unwrap(),
+        Respuesta::Archivo { .. }
+    ));
+    assert_eq!(nodo.transferencias_activas().len(), 2);
+    assert_eq!(
+        cliente.consultar().await.unwrap(),
+        m,
+        "consultar la revisión no debe competir con los cupos de descarga"
+    );
+    let drenaje = nodo.drenar();
+    tokio::pin!(drenaje);
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(20), &mut drenaje)
+            .await
+            .is_err(),
+        "espera la transferencia admitida"
+    );
+    assert!(
+        tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            cliente.descargar(
+                &m,
+                &m.archivos[0],
+                &root.join("nuevo-durante-drenaje"),
+                &CancellationToken::new(),
+            ),
+        )
+        .await
+        .expect("rechaza sin esperar un cupo de archivo")
+        .is_err(),
+        "no admite otra transferencia"
+    );
     nodo.revocar(&guest.clave_publica()).await.unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(3), &mut drenaje)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(nodo.transferencias_activas().is_empty());
     assert!(recv.read_to_end(contenido.len() + 1).await.is_err());
+    assert!(recv2.read_to_end(contenido.len() + 1).await.is_err());
     assert!(cliente.consultar().await.is_err());
     cliente.cerrar().await;
     raw.close().await;

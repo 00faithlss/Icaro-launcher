@@ -10,7 +10,7 @@ pub use autoridad::AutoridadServicio;
 pub use cliente::ClienteInvitaciones;
 pub use codigo::Codigo;
 pub use encuentro::{DatosEncuentro, EncuentroFirmado};
-pub use modelos::{Caducidad, InvitacionCreada, InvitacionResuelta};
+pub use modelos::{Caducidad, InvitacionCreada, InvitacionResuelta, Reencuentro};
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 

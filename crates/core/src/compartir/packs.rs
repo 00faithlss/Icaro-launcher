@@ -3,6 +3,111 @@
 use super::Error;
 use std::collections::BTreeSet;
 
+/// Elección revisada de selección y orden, ligada a la lectura local original.
+#[derive(Debug, Clone)]
+pub struct RevisionOrden {
+    actual: Vec<String>,
+    anterior: Vec<String>,
+    nuevo: Vec<String>,
+    salida: Option<Vec<String>>,
+}
+impl RevisionOrden {
+    pub fn nueva(actual: &[String], anterior: &[String], nuevo: &[String]) -> Result<Self, Error> {
+        if !unicos(actual) || !unicos(anterior) || !unicos(nuevo) {
+            return Err(Error::Datos("selección de packs duplicada o inválida"));
+        }
+        Ok(Self {
+            actual: actual.to_vec(),
+            anterior: anterior.to_vec(),
+            nuevo: nuevo.to_vec(),
+            salida: combinar_orden(actual, anterior, nuevo).ok(),
+        })
+    }
+    pub fn pendiente(&self) -> bool {
+        self.salida.is_none()
+    }
+    pub fn actual(&self) -> &[String] {
+        &self.actual
+    }
+    pub fn nuevo(&self) -> &[String] {
+        &self.nuevo
+    }
+    pub(crate) fn corresponde(&self, anterior: &[String], nuevo: &[String]) -> bool {
+        self.anterior == anterior && self.nuevo == nuevo
+    }
+    pub fn resolver(&mut self, resolucion: super::plan::Resolucion) -> Result<(), Error> {
+        let antiguos: BTreeSet<_> = self.anterior.iter().map(|p| p.to_lowercase()).collect();
+        let nuevos: BTreeSet<_> = self.nuevo.iter().map(|p| p.to_lowercase()).collect();
+        let salida = match resolucion {
+            super::plan::Resolucion::ConservarMia => self
+                .actual
+                .iter()
+                .filter(|p| {
+                    !antiguos.contains(&p.to_lowercase())
+                        || nuevos.contains(&p.to_lowercase())
+                        || p.as_str() == "vanilla"
+                })
+                .cloned()
+                .collect(),
+            super::plan::Resolucion::DelAnfitrion => {
+                let primero = self
+                    .actual
+                    .iter()
+                    .position(|p| {
+                        p != "vanilla"
+                            && (antiguos.contains(&p.to_lowercase())
+                                || nuevos.contains(&p.to_lowercase()))
+                    })
+                    .unwrap_or(self.actual.len());
+                let mut salida = Vec::new();
+                for (i, p) in self.actual.iter().enumerate() {
+                    if i == primero {
+                        salida.extend(
+                            self.nuevo
+                                .iter()
+                                .filter(|p| p.as_str() != "vanilla")
+                                .cloned(),
+                        );
+                    }
+                    if p != "vanilla"
+                        && !antiguos.contains(&p.to_lowercase())
+                        && !nuevos.contains(&p.to_lowercase())
+                    {
+                        salida.push(p.clone());
+                    }
+                }
+                if primero == self.actual.len() {
+                    salida.extend(
+                        self.nuevo
+                            .iter()
+                            .filter(|p| p.as_str() != "vanilla")
+                            .cloned(),
+                    );
+                }
+                if self
+                    .actual
+                    .iter()
+                    .chain(&self.nuevo)
+                    .any(|p| p == "vanilla")
+                {
+                    salida.insert(0, "vanilla".into());
+                }
+                salida
+            }
+        };
+        self.salida = Some(salida);
+        Ok(())
+    }
+    pub fn aplicar(&self, actual: &[String]) -> Result<Vec<String>, Error> {
+        if actual != self.actual {
+            return Err(Error::CambioExterno);
+        }
+        self.salida
+            .clone()
+            .ok_or(Error::Datos("conflicto en la selección de resourcepacks"))
+    }
+}
+
 fn unicos(packs: &[String]) -> bool {
     let mut vistos = BTreeSet::new();
     packs.len() <= 20_000

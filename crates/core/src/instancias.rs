@@ -64,7 +64,7 @@ fn id_valido(id: &str) -> bool {
 }
 fn id_nuevo() -> Result<String, Error> {
     let mut bytes = [0u8; 16];
-    getrandom::fill(&mut bytes).map_err(|_| Error::Disco)?;
+    getrandom::fill(&mut bytes).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 fn validar(i: &Instancia) -> Result<(), Error> {
@@ -128,7 +128,7 @@ fn nombre_carpeta(nombre: &str) -> String {
 }
 
 fn regular(path: &Path, dir: bool) -> Result<(), Error> {
-    let m = fs::symlink_metadata(path).map_err(|_| Error::Disco)?;
+    let m = fs::symlink_metadata(path).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
     if enlace(&m) || (dir && !m.is_dir()) || (!dir && (!m.is_file() || m.len() > MAX_METADATA)) {
         return Err(Error::Datos);
     }
@@ -142,10 +142,10 @@ fn leer_en(path: &Path) -> Result<Instancia, Error> {
         regular(&json, false)?;
         let mut bytes = Vec::new();
         fs::File::open(json)
-            .map_err(|_| Error::Disco)?
+            .map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?
             .take(MAX_METADATA + 1)
             .read_to_end(&mut bytes)
-            .map_err(|_| Error::Disco)?;
+            .map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
         if bytes.len() > MAX_METADATA as usize {
             return Err(Error::Datos);
         }
@@ -153,7 +153,7 @@ fn leer_en(path: &Path) -> Result<Instancia, Error> {
     } else {
         let cfg = path.join("instance.cfg");
         regular(&cfg, false)?;
-        let text = fs::read_to_string(cfg).map_err(|_| Error::Disco)?;
+        let text = fs::read_to_string(cfg).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
         let mut valores = BTreeMap::new();
         for line in text.lines() {
             if let Some((key, value)) = line.split_once('=') {
@@ -209,12 +209,12 @@ fn escribir(path: &Path, bytes: &[u8]) -> Result<(), Error> {
             .write(true)
             .create_new(true)
             .open(&temp)
-            .map_err(|_| Error::Disco)?;
+            .map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
         file.write_all(bytes)
             .and_then(|_| file.sync_all())
-            .map_err(|_| Error::Disco)?;
+            .map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
         drop(file);
-        fs::rename(&temp, path).map_err(|_| Error::Disco)
+        fs::rename(&temp, path).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })
     })();
     if result.is_err() {
         let _ = fs::remove_file(temp);
@@ -226,11 +226,11 @@ fn documento(path: &Path) -> Result<serde_json::Value, Error> {
     let json = path.join("instance.json");
     if json.exists() {
         regular(&json, false)?;
-        if fs::metadata(&json).map_err(|_| Error::Disco)?.len() > MAX_METADATA {
+        if fs::metadata(&json).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?.len() > MAX_METADATA {
             return Err(Error::Datos);
         }
         let value: serde_json::Value =
-            serde_json::from_slice(&fs::read(json).map_err(|_| Error::Disco)?)
+            serde_json::from_slice(&fs::read(json).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?)
                 .map_err(|_| Error::Datos)?;
         if !value.is_object() {
             return Err(Error::Datos);
@@ -244,7 +244,7 @@ fn documento(path: &Path) -> Result<serde_json::Value, Error> {
 static CONFIG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn guardar_en(path: &Path, i: &Instancia) -> Result<(), Error> {
-    let _guard = CONFIG_LOCK.lock().map_err(|_| Error::Disco)?;
+    let _guard = CONFIG_LOCK.lock().map_err(|_| { crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::Interno); Error::Disco })?;
     let mut value = documento(path)?;
     let object = value.as_object_mut().ok_or(Error::Datos)?;
     if object
@@ -265,14 +265,14 @@ fn guardar_en(path: &Path, i: &Instancia) -> Result<(), Error> {
     let config = path.join("instance.cfg");
     if config.exists() {
         regular(&config, false)?;
-        if fs::metadata(&config).map_err(|_| Error::Disco)?.len() > MAX_METADATA {
+        if fs::metadata(&config).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?.len() > MAX_METADATA {
             return Err(Error::Datos);
         }
         // Conserva todas las claves desconocidas del formato anterior como texto.
         object
             .entry("legacy_cfg")
             .or_insert(serde_json::Value::String(
-                fs::read_to_string(&config).map_err(|_| Error::Disco)?,
+                fs::read_to_string(&config).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?,
             ));
     }
     let bytes = serde_json::to_vec_pretty(&value).map_err(|_| Error::Datos)?;
@@ -283,7 +283,7 @@ fn guardar_en(path: &Path, i: &Instancia) -> Result<(), Error> {
         escribir(&path.join("instance.json"), &bytes)?;
     }
     if config.exists() {
-        fs::remove_file(config).map_err(|_| Error::Disco)?;
+        fs::remove_file(config).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
     }
     Ok(())
 }
@@ -292,8 +292,8 @@ impl Almacen {
     fn destino(&self, nombre: &str, actual: Option<&Path>) -> Result<PathBuf, Error> {
         let base = nombre_carpeta(nombre);
         let ocupados: Vec<PathBuf> = fs::read_dir(&self.raiz)
-            .map_err(|_| Error::Disco)?
-            .map(|e| e.map(|e| e.path()).map_err(|_| Error::Disco))
+            .map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?
+            .map(|e| e.map(|e| e.path()).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco }))
             .collect::<Result<_, _>>()?;
         for n in 1..=10_000 {
             let name = if n == 1 {
@@ -326,7 +326,7 @@ impl Almacen {
     }
     /// Raíz de datos compartidos, hermana del directorio de instancias.
     pub(crate) fn datos(&self) -> Result<PathBuf, Error> {
-        let instances = self.raiz.canonicalize().map_err(|_| Error::Disco)?;
+        let instances = self.raiz.canonicalize().map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
         instances.parent().map(Path::to_owned).ok_or(Error::Datos)
     }
     pub fn configuracion(&self, id: &str) -> Result<Option<serde_json::Value>, Error> {
@@ -338,7 +338,7 @@ impl Almacen {
         settings: &serde_json::Value,
     ) -> Result<(), Error> {
         let path = self.carpeta(id)?;
-        let _guard = CONFIG_LOCK.lock().map_err(|_| Error::Disco)?;
+        let _guard = CONFIG_LOCK.lock().map_err(|_| { crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::Interno); Error::Disco })?;
         let mut value = documento(&path)?;
         if value
             .get("schema")
@@ -369,7 +369,7 @@ impl Almacen {
         if let Some(path) = self
             .rutas
             .lock()
-            .map_err(|_| Error::Disco)?
+            .map_err(|_| { crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::Interno); Error::Disco })?
             .get(id)
             .cloned()
         {
@@ -378,8 +378,8 @@ impl Almacen {
             }
         }
         let mut encontrada = None;
-        for entry in fs::read_dir(&self.raiz).map_err(|_| Error::Disco)? {
-            let entry = entry.map_err(|_| Error::Disco)?;
+        for entry in fs::read_dir(&self.raiz).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })? {
+            let entry = entry.map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
             if entry.file_name().to_string_lossy().starts_with('.') {
                 continue;
             }
@@ -393,13 +393,13 @@ impl Almacen {
         let path = encontrada.ok_or(Error::Disco)?;
         self.rutas
             .lock()
-            .map_err(|_| Error::Disco)?
+            .map_err(|_| { crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::Interno); Error::Disco })?
             .insert(id.into(), path.clone());
         Ok(path)
     }
     pub fn juego(&self, id: &str) -> Result<PathBuf, Error> {
         let path = self.carpeta(id)?.join("minecraft");
-        let metadata = fs::symlink_metadata(&path).map_err(|_| Error::Disco)?;
+        let metadata = fs::symlink_metadata(&path).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
         if !metadata.is_dir() || enlace(&metadata) {
             return Err(Error::Datos);
         }
@@ -430,7 +430,7 @@ impl Almacen {
         let mut registros = Vec::new();
         let mut ids = std::collections::BTreeSet::new();
         for entry in entries {
-            let entry = entry.map_err(|_| Error::Disco)?;
+            let entry = entry.map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
             let name = entry.file_name().to_string_lossy().into_owned();
             if name.starts_with('.')
                 || (!id_valido(&name)
@@ -460,7 +460,7 @@ impl Almacen {
             rutas.insert(i.id.clone(), path);
             informe.instancias.push(i);
         }
-        *self.rutas.lock().map_err(|_| Error::Disco)? = rutas;
+        *self.rutas.lock().map_err(|_| { crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::Interno); Error::Disco })? = rutas;
         informe
             .instancias
             .sort_by(|a, b| a.creada.cmp(&b.creada).then_with(|| a.id.cmp(&b.id)));
@@ -498,11 +498,11 @@ impl Almacen {
         {
             return Err(Error::Repetida);
         }
-        fs::create_dir_all(&self.raiz).map_err(|_| Error::Disco)?;
+        fs::create_dir_all(&self.raiz).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
         let path = self.destino(&i.nombre, None)?;
-        fs::create_dir(&path).map_err(|_| Error::Disco)?;
+        fs::create_dir(&path).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
         let result = fs::create_dir(path.join("minecraft"))
-            .map_err(|_| Error::Disco)
+            .map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })
             .and_then(|_| guardar_en(&path, &i));
         if let Err(error) = result {
             // La carpeta acaba de ser creada por esta operación y aún no contiene datos de juego.
@@ -514,7 +514,7 @@ impl Almacen {
         }
         self.rutas
             .lock()
-            .map_err(|_| Error::Disco)?
+            .map_err(|_| { crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::Interno); Error::Disco })?
             .insert(i.id.clone(), path);
         Ok(i)
     }
@@ -536,7 +536,7 @@ impl Almacen {
             path.clone()
         };
         if destino != path {
-            fs::rename(&path, &destino).map_err(|_| Error::Disco)?;
+            fs::rename(&path, &destino).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
         }
         if let Err(error) = guardar_en(&destino, i) {
             if destino != path {
@@ -546,24 +546,24 @@ impl Almacen {
         }
         self.rutas
             .lock()
-            .map_err(|_| Error::Disco)?
+            .map_err(|_| { crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::Interno); Error::Disco })?
             .insert(i.id.clone(), destino);
         Ok(())
     }
 
     fn papelera(&self) -> Result<PathBuf, Error> {
-        let root = fs::canonicalize(&self.raiz).map_err(|_| Error::Disco)?;
+        let root = fs::canonicalize(&self.raiz).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
         let path = root.join(".papelera");
         match fs::create_dir(&path) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(_) => return Err(Error::Disco),
         }
-        let metadata = fs::symlink_metadata(&path).map_err(|_| Error::Disco)?;
+        let metadata = fs::symlink_metadata(&path).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
         if !metadata.is_dir() || enlace(&metadata) {
             return Err(Error::Datos);
         }
-        let resolved = fs::canonicalize(&path).map_err(|_| Error::Disco)?;
+        let resolved = fs::canonicalize(&path).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
         if resolved.parent() != Some(root.as_path()) {
             return Err(Error::Datos);
         }
@@ -573,17 +573,17 @@ impl Almacen {
     /// Envía la instancia a la papelera del sistema; nunca usa borrado permanente.
     pub fn eliminar(&self, id: &str) -> Result<(), Error> {
         let record = self.leer(id)?;
-        let root = fs::canonicalize(&self.raiz).map_err(|_| Error::Disco)?;
-        let source = fs::canonicalize(self.carpeta(id)?).map_err(|_| Error::Disco)?;
+        let root = fs::canonicalize(&self.raiz).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
+        let source = fs::canonicalize(self.carpeta(id)?).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
         if source.parent() != Some(root.as_path()) {
             return Err(Error::Datos);
         }
         let ticket = crate::papelera::enviar(&source).map_err(Error::Papelera)?;
         self.eliminadas
             .lock()
-            .map_err(|_| Error::Disco)?
+            .map_err(|_| { crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::Interno); Error::Disco })?
             .insert(id.into(), (ticket, record));
-        self.rutas.lock().map_err(|_| Error::Disco)?.remove(id);
+        self.rutas.lock().map_err(|_| { crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::Interno); Error::Disco })?.remove(id);
         Ok(())
     }
 
@@ -594,7 +594,7 @@ impl Almacen {
         let ticket = self
             .eliminadas
             .lock()
-            .map_err(|_| Error::Disco)?
+            .map_err(|_| { crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::Interno); Error::Disco })?
             .get(id)
             .cloned();
         if let Some((ticket, record)) = ticket {
@@ -608,9 +608,9 @@ impl Almacen {
             }
             self.rutas
                 .lock()
-                .map_err(|_| Error::Disco)?
+                .map_err(|_| { crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::Interno); Error::Disco })?
                 .insert(id.into(), ticket.original);
-            self.eliminadas.lock().map_err(|_| Error::Disco)?.remove(id);
+            self.eliminadas.lock().map_err(|_| { crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::Interno); Error::Disco })?.remove(id);
             return Ok(record);
         }
         let trash = self.papelera()?;
@@ -626,7 +626,7 @@ impl Almacen {
         {
             return Err(Error::Repetida);
         }
-        let source = fs::canonicalize(trash.join(id)).map_err(|_| Error::Disco)?;
+        let source = fs::canonicalize(trash.join(id)).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
         if source.parent() != Some(trash.as_path()) {
             return Err(Error::Datos);
         }
@@ -634,10 +634,10 @@ impl Almacen {
         if fs::symlink_metadata(&target).is_ok() {
             return Err(Error::Repetida);
         }
-        fs::rename(source, &target).map_err(|_| Error::Disco)?;
+        fs::rename(source, &target).map_err(|error| { crate::diagnostico_contexto::registrar_error(&error); Error::Disco })?;
         self.rutas
             .lock()
-            .map_err(|_| Error::Disco)?
+            .map_err(|_| { crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::Interno); Error::Disco })?
             .insert(id.into(), target);
         Ok(record)
     }

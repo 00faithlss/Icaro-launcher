@@ -44,7 +44,7 @@ pub fn aplicar(
             }
             if op.antes.is_some() {
                 fs::rename(&destino, rutas::slot(&tx, "anteriores", i)?)
-                    .map_err(|_| Error::Disco)?;
+                    .map_err(|e| crate::compartir::diagnostico::disco(e))?;
                 hechos += 1;
                 progreso(EventoAplicacion::Movimiento { hechos, total });
             }
@@ -57,7 +57,7 @@ pub fn aplicar(
                 if fs::symlink_metadata(&destino).is_ok() {
                     return Err(Error::CambioExterno);
                 }
-                fs::rename(rutas::slot(&tx, "nuevos", i)?, &destino).map_err(|_| Error::Disco)?;
+                fs::rename(rutas::slot(&tx, "nuevos", i)?, &destino).map_err(|e| crate::compartir::diagnostico::disco(e))?;
                 hechos += 1;
                 progreso(EventoAplicacion::Movimiento { hechos, total });
             }

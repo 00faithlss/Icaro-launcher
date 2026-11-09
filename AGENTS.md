@@ -87,14 +87,19 @@ Reglas acordadas con el usuario; prevalecen sobre costumbres de otros proyectos.
 
 ## Estado y fuentes de referencia
 
-Estado comprobado el 07-11-2026: trabajo de Compartir instancias en `v0.4.x`,
+Estado comprobado el 08-11-2026: trabajo de Compartir instancias en `v0.4.x`,
 versión `0.3.4` sin bump. El plan está en `d78e628`; el núcleo/servicio se registran
 en `d48181f` y la interfaz experimental en `f4fbf08`. El usuario autorizó registrar
 y subir este bloque a `v0.4.x`; eso no autoriza publicaciones ni futuros cambios.
 Núcleo, Worker/D1 local y componentes iced implementados;
 hay un controlador experimental del publicador en `launcher_aux/compartir_real/`,
-protegido por `ICARO_COMPARTIR_DESARROLLO=1`. Faltan aceptación/instalación del
-invitado, Sincronizar/Jugar, cierre/bandeja y validación del controlador con red.
+protegido por `ICARO_COMPARTIR_DESARROLLO=1`. Invitado, Sincronizar/Jugar, orden de
+packs, biblioteca, reconexión, diagnóstico, cierre/bandeja Windows y caché de
+contenido verificado conectados en `v0.4.x`. Servicio gratuito
+desplegado con autorización del usuario el 08-11-2026; HTTP remoto probado con
+identidades efímeras. Faltan perfil/partida reales, validación entre equipos,
+bandeja nativa Linux y mediciones completas de rendimiento. La prueba compuesta
+Worker/iroh usa una pila propia de 8 MiB en Windows debug; no modifica el launcher.
 Consultar [progreso y siguientes pasos](docs/superpowers/progreso/2026-11-07-compartir-instancias.md)
 y [guía técnica](docs/compartir-instancias.md) antes de continuar. No confundir
 escenas de diseño ni pruebas locales con una función habilitada o desplegada.

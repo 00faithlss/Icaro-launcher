@@ -67,19 +67,19 @@ pub fn revision<'a>(p: Paleta, s: &Estado) -> Option<Element<'a, v::Accion>> {
 }
 pub fn progreso<'a>(p: Paleta, s: &Estado) -> Option<Element<'a, v::Accion>> {
     let m = &s.invitado.visita.as_ref()?.manifiesto;
-    if let Some(error) = &s.invitado.error {
-        return Some(v::error_compartir(p,&v::ErrorCompartir {
+    let error = s.invitado.error.as_ref().map(|error| v::EstadoProgreso::Error(Box::new(v::ErrorCompartir {
             tipo:if s.invitado.revisar_nueva {v::TipoError::RevisionNueva}else{v::TipoError::Hash},titulo:"No se completó la instalación compartida".into(),
             explicacion:error.clone(),conservacion:"El destino y los archivos verificados se conservan para reintentar. El contenido solo se marca aplicado después de verificar y guardar la transacción.".into(),detalle:s.invitado.ver_detalle.then(||format!("Minecraft {} · {} · revisión {}",m.perfil.minecraft,m.perfil.loader,m.revision)),
-        }));
-    }
+        })));
     Some(v::progreso_sincronizacion(
         p,
         &v::ProgresoSincronizacion {
             instancia: s.invitado.nombre.clone(),
             anfitrion: "Equipo anfitrión".into(),
             revision: m.revision,
-            estado: if s.invitado.completada {
+            estado: if let Some(error) = error {
+                error
+            } else if s.invitado.completada {
                 v::EstadoProgreso::Completado {
                     resumen: "Perfil instalado y contenido verificado; no se ha iniciado el juego."
                         .into(),

@@ -73,13 +73,7 @@ pub fn vista(app: &App) -> Option<Element<'_, Mensaje>> {
             &v::CierreTransferencias {
                 cerrar_icaro: false,
                 instancia: s.panel.as_ref()?.instancia.nombre.clone(),
-                transferencias: (0..s.anfitrion.as_ref().map_or(0, |h| h.transferencias()))
-                    .map(|n| v::Transferencia {
-                        nombre: format!("Transferencia {}", n + 1),
-                        fase: "En curso".into(),
-                        porcentaje: 0.,
-                    })
-                    .collect(),
+                transferencias: transferencias(s),
                 accesos: s.panel.as_ref()?.accesos.personas.len(),
                 opcion: s.opcion_cierre,
             },
@@ -97,6 +91,10 @@ pub fn vista(app: &App) -> Option<Element<'_, Mensaje>> {
         Etapa::InstalandoInvitado | Etapa::ResultadoInvitado => {
             super::invitado_vistas::progreso(p, s)?
         }
+        Etapa::ConsultandoVinculo
+        | Etapa::RevisionVinculo
+        | Etapa::AplicandoVinculo
+        | Etapa::ErrorVinculo => super::sync_vistas::vista(p, s)?,
     };
     let ancho: f32 = match s.etapa {
         Etapa::Selector | Etapa::Analizando => 900.,
@@ -118,13 +116,38 @@ pub fn vista(app: &App) -> Option<Element<'_, Mensaje>> {
 }
 
 pub fn accesos(app: &App) -> Element<'_, Mensaje> {
-    let s = &app.servicios.compartir;
-    let resumen = s.panel.as_ref().map(|p| v::ResumenPublicacion {
-        instancia: p.instancia.nombre.clone(),
-        revision: p.revision,
-        sesiones: p.accesos.personas.len(),
-        transferencias: s.anfitrion.as_ref().map_or(0, |h| h.transferencias()),
-    });
-    v::accesos_servidores(app.paleta(), resumen.as_ref())
-        .map(|a| Mensaje::Compartir(Accion::Vista(a)))
+    let resumen = super::biblioteca::resumenes(
+        &app.servicios.compartir,
+        &app.servicios.instancias.registros,
+    );
+    v::accesos_servidores(app.paleta(), &resumen).map(|a| Mensaje::Compartir(Accion::Vista(a)))
+}
+
+pub fn transferencias(s: &super::Estado) -> Vec<v::Transferencia> {
+    s.anfitrion.as_ref().map_or_else(Vec::new, |h| {
+        h.transferencias_activas()
+            .into_iter()
+            .map(|t| v::Transferencia {
+                nombre: format!(
+                    "Equipo {} · {}",
+                    t.invitado.chars().take(8).collect::<String>(),
+                    if t.archivo.is_empty() {
+                        "Archivo"
+                    } else {
+                        &t.archivo
+                    }
+                ),
+                fase: if t.total == 0 {
+                    "Preparando".into()
+                } else {
+                    format!("{} / {} bytes", t.enviados, t.total)
+                },
+                porcentaje: if t.total == 0 {
+                    0.
+                } else {
+                    (t.enviados as f64 / t.total as f64 * 100.).clamp(0., 100.) as f32
+                },
+            })
+            .collect()
+    })
 }

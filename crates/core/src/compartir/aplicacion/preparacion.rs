@@ -9,7 +9,11 @@ use crate::compartir::{
     plan::{BaseAplicada, PlanCompartido},
     Artefacto,
 };
-use std::{collections::BTreeSet, fs, io::Cursor};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    io::Cursor,
+};
 use tokio_util::sync::CancellationToken;
 
 enum Contenido {
@@ -42,19 +46,34 @@ pub fn preparar(
     if aplicada != plan.base {
         return Err(Error::CambioExterno);
     }
+    crate::compartir::espacio::comprobar(
+        &ctx.juego,
+        &plan
+            .cambios
+            .iter()
+            .filter_map(|c| c.despues.as_ref().map(|a| a.bytes))
+            .collect::<Vec<_>>(),
+    )?;
     let mut operaciones = Vec::new();
     let mut contenidos = Vec::new();
     let mut vistos = BTreeSet::new();
+    let publicados: BTreeMap<_, _> = plan
+        .revision
+        .archivos
+        .iter()
+        .map(|a| (&a.ruta, a))
+        .collect();
     for cambio in &plan.cambios {
         let destino = cambio.ruta.as_str();
         if !vistos.insert(destino.to_lowercase()) {
             return Err(Error::Datos("cambio duplicado"));
         }
         if let Some(archivo) = &cambio.despues {
-            if archivo.ruta != cambio.ruta || !plan.revision.archivos.contains(archivo) {
+            if archivo.ruta != cambio.ruta || publicados.get(&cambio.ruta).copied() != Some(archivo)
+            {
                 return Err(Error::Datos("archivo ajeno a la revisión"));
             }
-        } else if plan.revision.archivos.iter().any(|a| a.ruta == cambio.ruta) {
+        } else if publicados.contains_key(&cambio.ruta) {
             return Err(Error::Datos("retirada contraria a la revisión"));
         }
         let antes = match (&cambio.antes, cambio.antes_bytes) {
@@ -89,8 +108,13 @@ pub fn preparar(
         .manifiesto
         .as_ref()
         .map_or(&[][..], |m| m.packs.as_slice());
-    if let Some((antes, bytes)) = opciones::preparar(&ctx.juego, anteriores, &plan.revision.packs)?
-    {
+    if let Some((antes, bytes)) = opciones::preparar(
+        &ctx.juego,
+        anteriores,
+        &plan.revision.packs,
+        plan.orden_packs.as_ref(),
+        &plan,
+    )? {
         agregar_bytes(
             "options.txt",
             bytes,

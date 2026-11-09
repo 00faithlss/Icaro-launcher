@@ -2,9 +2,9 @@
 use super::{
     modelos::{Confirmacion, PaginaAccesos},
     Caducidad, Codigo, EncuentroFirmado, Error, Identidad, InvitacionCreada, InvitacionResuelta,
-    SobreFirmado,
+    Reencuentro, SobreFirmado,
 };
-use crate::compartir::manifiesto::hexadecimal;
+use crate::compartir::manifiesto::{hexadecimal, Origen};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{collections::BTreeSet, time::Duration};
 
@@ -58,6 +58,7 @@ impl ClienteInvitaciones {
         if bytes.len() > 16384 {
             return Err(Error::Limite("solicitud de invitación"));
         }
+        crate::diagnostico_contexto::nuevo_intento();
         let mut response = self
             .http
             .post(
@@ -69,7 +70,7 @@ impl ClienteInvitaciones {
             .body(bytes)
             .send()
             .await
-            .map_err(|_| Error::Conexion)?;
+            .map_err(|e| super::super::diagnostico::red(e))?;
         let estado = response.status().as_u16();
         let espera = response
             .headers()
@@ -81,7 +82,7 @@ impl ClienteInvitaciones {
             return Err(Error::Limite("respuesta del servicio"));
         }
         let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(|_| Error::Conexion)? {
+        while let Some(chunk) = response.chunk().await.map_err(|e| super::super::diagnostico::red(e))? {
             if bytes.len().saturating_add(chunk.len()) > 65536 {
                 return Err(Error::Limite("respuesta del servicio"));
             }
@@ -95,11 +96,13 @@ impl ClienteInvitaciones {
                 .filter(|v| v.len() <= 80 && v.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'))
                 .unwrap_or("temporarily_unavailable")
                 .to_owned();
-            return Err(Error::Servicio {
+            let error = Error::Servicio {
                 estado,
                 codigo,
                 espera_segundos: espera,
-            });
+            };
+            crate::diagnostico_contexto::fallo(super::super::diagnostico::causa(&error));
+            return Err(error);
         }
         serde_json::from_slice(&bytes).map_err(|_| Error::Datos("respuesta del servicio"))
     }
@@ -142,6 +145,24 @@ impl ClienteInvitaciones {
         if !r.authorized {
             return Err(Error::Datos("acceso no autorizado"));
         }
+        Ok(r)
+    }
+    /// Recupera el encuentro vigente de una publicación ya aceptada, sin código.
+    /// Solo acepta una respuesta del mismo anfitrión y publicación cuyo encuentro,
+    /// firmado por ese anfitrión, contenga un endpoint con su identidad.
+    pub async fn reencontrar(&self, origen: &Origen) -> Result<Reencuentro, Error> {
+        origen.validar()?;
+        let r: Reencuentro = self
+            .pedir(
+                "/v1/reconnect",
+                serde_json::json!({"host":origen.anfitrion,"publication":origen.publicacion}),
+            )
+            .await?;
+        if r.host != origen.anfitrion || r.publication != origen.publicacion {
+            return Err(Error::Datos("origen del reencuentro"));
+        }
+        r.meeting
+            .direccion(&origen.anfitrion, &origen.publicacion)?;
         Ok(r)
     }
     pub async fn actualizar(

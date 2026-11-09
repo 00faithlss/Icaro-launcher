@@ -65,6 +65,13 @@ pub enum EventoAplicacion {
 pub fn cargar_base(ctx: &ContextoDestino) -> Result<BaseAplicada, Error> {
     leer_base(ctx).map(|(base, _)| base)
 }
+
+/// Revalidar la elección antes de descargar; preparar la comprueba otra vez bajo
+/// bloqueo y el diario protege la huella completa de options.txt al aplicar.
+pub fn comprobar_opciones(ctx: &ContextoDestino, plan: &PlanCompartido) -> Result<(), Error> {
+    let anteriores = plan.base.manifiesto.as_ref().map_or(&[][..], |m| m.packs.as_slice());
+    opciones::preparar(&ctx.juego, anteriores, &plan.revision.packs, plan.orden_packs.as_ref(), plan).map(|_| ())
+}
 fn leer_base(ctx: &ContextoDestino) -> Result<(BaseAplicada, Option<diario::Huella>), Error> {
     let path = rutas::resolver(&ctx.juego, BASE, false)?;
     let Some(bytes) = estado::leer_acotado(

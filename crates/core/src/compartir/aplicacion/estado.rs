@@ -22,12 +22,12 @@ pub(super) fn abrir(path: &Path) -> Result<fs::File, Error> {
         use std::os::windows::fs::OpenOptionsExt;
         opciones.share_mode(1).custom_flags(0x00200000);
     }
-    opciones.open(path).map_err(|_| Error::Disco)
+    opciones.open(path).map_err(|e| crate::compartir::diagnostico::disco(e))
 }
 pub(super) fn leer_acotado(path: &Path, max: u64) -> Result<Option<Vec<u8>>, Error> {
     let meta = match fs::symlink_metadata(path) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err(Error::Disco),
+        Err(e) => return Err(crate::compartir::diagnostico::disco(e)),
         Ok(_) => {
             crate::almacenamiento::regular(path).map_err(|_| Error::Datos("archivo no regular"))?
         }
@@ -39,7 +39,7 @@ pub(super) fn leer_acotado(path: &Path, max: u64) -> Result<Option<Vec<u8>>, Err
     abrir(path)?
         .take(max.saturating_add(1))
         .read_to_end(&mut bytes)
-        .map_err(|_| Error::Disco)?;
+        .map_err(|e| crate::compartir::diagnostico::disco(e))?;
     if bytes.len() as u64 > max {
         return Err(Error::Limite("archivo de metadatos"));
     }
@@ -48,7 +48,7 @@ pub(super) fn leer_acotado(path: &Path, max: u64) -> Result<Option<Vec<u8>>, Err
 pub(super) fn huella(path: &Path, cancel: &CancellationToken) -> Result<Option<Huella>, Error> {
     match fs::symlink_metadata(path) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err(Error::Disco),
+        Err(e) => return Err(crate::compartir::diagnostico::disco(e)),
         Ok(_) => (),
     }
     let meta =
@@ -62,7 +62,7 @@ pub(super) fn huella(path: &Path, cancel: &CancellationToken) -> Result<Option<H
     let mut buf = [0u8; 64 * 1024];
     loop {
         comprobar_cancelacion(cancel)?;
-        let n = entrada.read(&mut buf).map_err(|_| Error::Disco)?;
+        let n = entrada.read(&mut buf).map_err(|e| crate::compartir::diagnostico::disco(e))?;
         if n == 0 {
             break;
         }
@@ -90,13 +90,13 @@ pub(super) fn copiar(
         .write(true)
         .create_new(true)
         .open(path)
-        .map_err(|_| Error::Disco)?;
+        .map_err(|e| crate::compartir::diagnostico::disco(e))?;
     let mut hash = Sha512::new();
     let mut bytes = 0u64;
     let mut buf = [0u8; 64 * 1024];
     loop {
         comprobar_cancelacion(cancel)?;
-        let n = entrada.read(&mut buf).map_err(|_| Error::Disco)?;
+        let n = entrada.read(&mut buf).map_err(|e| crate::compartir::diagnostico::disco(e))?;
         if n == 0 {
             break;
         }
@@ -105,10 +105,10 @@ pub(super) fn copiar(
             return Err(Error::CambioExterno);
         }
         hash.update(&buf[..n]);
-        salida.write_all(&buf[..n]).map_err(|_| Error::Disco)?;
+        salida.write_all(&buf[..n]).map_err(|e| crate::compartir::diagnostico::disco(e))?;
     }
     if bytes != esperada.bytes || format!("{:x}", hash.finalize()) != esperada.sha512 {
         return Err(Error::CambioExterno);
     }
-    salida.sync_all().map_err(|_| Error::Disco)
+    salida.sync_all().map_err(|e| crate::compartir::diagnostico::disco(e))
 }

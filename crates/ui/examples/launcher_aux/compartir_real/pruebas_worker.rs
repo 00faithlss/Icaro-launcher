@@ -20,6 +20,8 @@ use std::{
     path::PathBuf,
     sync::Mutex,
 };
+#[path = "pruebas_biblioteca_worker.rs"]
+mod biblioteca;
 #[path = "pruebas_invitado_worker.rs"]
 mod invitado;
 
@@ -72,9 +74,27 @@ impl Drop for Carpeta {
     }
 }
 
-#[tokio::test]
+#[test]
 #[ignore = "requiere el Worker/D1 local y ICARO_PRUEBA_WORKER_URL (loopback)"]
-async fn publicador_real_publica_seleccion_y_el_invitado_resuelve_el_codigo() {
+fn publicador_real_publica_seleccion_y_el_invitado_resuelve_el_codigo() {
+    // Este fixture encadena las tareas que iced despacha por separado. En debug
+    // su poll anidado supera la pila de 2 MiB del harness Windows; 8 MiB se
+    // verificaron suficientes sin cambiar la pila ni el ejecutor del launcher.
+    std::thread::Builder::new()
+        .name("icaro-e2e-worker".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(recorrer_publicador())
+        })
+        .unwrap()
+        .join()
+        .expect("recorrido Worker/iroh");
+}
+async fn recorrer_publicador() {
     let url = url_worker();
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -232,7 +252,8 @@ async fn publicador_real_publica_seleccion_y_el_invitado_resuelve_el_codigo() {
     );
 
     // Invitado: otra identidad resuelve el código mostrado sin aceptarlo.
-    let invitado = ClienteInvitaciones::nuevo(&url, identidad()).unwrap();
+    let identidad_invitado = identidad();
+    let invitado = ClienteInvitaciones::nuevo(&url, identidad_invitado.clone()).unwrap();
     let resuelta = invitado
         .resolver(&codigo)
         .await
@@ -273,6 +294,21 @@ async fn publicador_real_publica_seleccion_y_el_invitado_resuelve_el_codigo() {
     );
     assert_eq!(invitado.resolver(&codigo).await.unwrap().capacity, 3);
 
+    // Reiniciar el publicador conserva autorizaciones y sirve el mismo snapshot
+    // desde un nodo nuevo; la revocación posterior también se prueba en transporte.
+    let h = s.anfitrion.take().unwrap();
+    s.anfitrion = Some(
+        Box::pin(biblioteca::comprobar_reconexion(
+            &url,
+            &carpeta.0,
+            &local,
+            h,
+            &identidad_invitado,
+            &codigo,
+        ))
+        .await,
+    );
+
     // Detener y reabrir conserva origen/revisión, pero exige nueva aceptación.
     let h = s.anfitrion.take().unwrap();
     h.detener()
@@ -309,7 +345,16 @@ async fn publicador_real_publica_seleccion_y_el_invitado_resuelve_el_codigo() {
             .manifiesto,
         revision.manifiesto
     );
-    invitado::comprobar(&url, &codigo_nuevo, &carpeta.0).await;
+    // El fixture compone instalación y sincronización en un solo futuro debug;
+    // iced ejecuta estas tareas por separado. Mantenerlo fuera de la pila de test.
+    let recorrido = Box::pin(invitado::comprobar(
+        &url,
+        &codigo_nuevo,
+        &carpeta.0,
+        &nuevo,
+        &local.contexto,
+    ));
+    recorrido.await;
     nuevo.detener().await.unwrap();
     drop(nuevo);
     drop(s);

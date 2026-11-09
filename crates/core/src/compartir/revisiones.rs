@@ -29,12 +29,17 @@ pub struct Revision {
 impl Revision {
     /// Solo permite archivos enumerados por esta revisión, nunca rutas libres.
     pub fn archivo(&self, ruta: &RutaCompartida) -> Result<PathBuf, Error> {
-        let artefacto = self
+        let indice = self
             .manifiesto
             .archivos
             .iter()
-            .find(|a| &a.ruta == ruta)
+            .position(|a| &a.ruta == ruta)
             .ok_or(Error::Datos("archivo no publicado"))?;
+        self.archivo_en(indice)
+    }
+    /// El transporte obtiene el índice de su instantánea de esta misma revisión.
+    pub(crate) fn archivo_en(&self, indice: usize) -> Result<PathBuf, Error> {
+        let artefacto = self.manifiesto.archivos.get(indice).ok_or(Error::Datos("archivo no publicado"))?;
         let path = self.almacen.join("contenido").join(&artefacto.sha512);
         let meta = crate::almacenamiento::regular(&path).map_err(|_| Error::Disco)?;
         if !meta.is_file() || meta.len() != artefacto.bytes {
@@ -131,6 +136,7 @@ pub fn preparar_revision(
         return Err(Error::Datos("no hay contenido seleccionado"));
     }
     let contenido = ctx.almacen.join("contenido");
+    super::espacio::comprobar(&ctx.almacen, &manifiesto.archivos.iter().map(|a| a.bytes).collect::<Vec<_>>())?;
     directorio(&contenido)?;
     for archivo in &manifiesto.archivos {
         comprobar_cancelacion(cancel)?;

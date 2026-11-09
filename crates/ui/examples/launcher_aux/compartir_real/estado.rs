@@ -23,8 +23,14 @@ pub enum Etapa {
     RevisionInvitado,
     InstalandoInvitado,
     ResultadoInvitado,
+    ConsultandoVinculo,
+    RevisionVinculo,
+    AplicandoVinculo,
+    ErrorVinculo,
 }
 pub struct Estado {
+    pub biblioteca: super::biblioteca::Biblioteca,
+    pub sincronizar: super::sincronizar::Estado,
     pub invitado: super::invitado::Invitado,
     pub habilitado: bool,
     pub etapa: Etapa,
@@ -48,6 +54,8 @@ pub struct Estado {
 impl Default for Estado {
     fn default() -> Self {
         Self {
+            biblioteca: Default::default(),
+            sincronizar: Default::default(),
             invitado: Default::default(),
             habilitado: std::env::var("ICARO_COMPARTIR_DESARROLLO").as_deref() == Ok("1"),
             etapa: Etapa::Cerrada,
@@ -99,6 +107,8 @@ impl Estado {
         }
         self.solicitud = self.solicitud.wrapping_add(1);
         self.etapa = Etapa::Cerrada;
+        self.biblioteca.cancel_contadores.cancel();
+        self.sincronizar = Default::default();
         self.invitado = Default::default();
         self.trabajo = None;
         self.revision = None;

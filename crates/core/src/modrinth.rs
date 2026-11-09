@@ -17,6 +17,16 @@ mod cache_tests;
 pub(crate) mod presupuesto;
 
 const API: &str = "https://api.modrinth.com/v2/";
+fn error_red_descarga(e: reqwest::Error) -> Error {
+    crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::de_red(&e));
+    Error::Network("el archivo del mod")
+}
+fn error_escritor_descarga(e: crate::descarga_archivo::Error) -> Error {
+    if let crate::descarga_archivo::Error::Disco(e) = e {
+        crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::de_io(&e));
+    }
+    Error::Response("el archivo del mod")
+}
 const BODY_LIMIT: usize = 4 * 1024 * 1024;
 pub const PAGE_SIZE: u32 = 20;
 
@@ -541,42 +551,39 @@ impl Catalog {
         }
         http::body_bytes(response, "el archivo del mod", file.size as usize).await
     }
-    /// Descarga a `destino` por bloques, sin cargar el JAR en memoria. Devuelve
-    /// el SHA-512 calculado mientras llegaban los datos; el llamador lo compara.
+    /// Descarga por bloques acotados; el escritor verifica tamaño y hash oficial.
     pub async fn download_mod_to(&self, file: &File, destino: &std::path::Path) -> Result<String, Error> {
-        use sha2::{Digest, Sha512};
-        use tokio::io::AsyncWriteExt;
         let url = image_url(&file.url)?;
         if !url.path().starts_with("/data/") || file.size == 0 || file.size > 128 * 1024 * 1024 {
             return Err(Error::Response("el archivo del mod"));
         }
-        let mut response = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(|_| Error::Network("el archivo del mod"))?;
+        static CUPOS: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
+        let _permiso = CUPOS.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(4)))
+            .clone().acquire_owned().await.map_err(|_| Error::Response("el archivo del mod"))?;
+        let mut response = http::cliente_descargas()?
+            .get(url).send().await.map_err(error_red_descarga)?;
         if !response.status().is_success() {
             return Err(Error::Status { service: "el archivo del mod", status: response.status().as_u16() });
         }
         if response.content_length().is_some_and(|n| n != file.size) {
             return Err(Error::Response("el archivo del mod"));
         }
-        let mut salida = tokio::fs::File::create(destino).await.map_err(|_| Error::Response("el archivo del mod"))?;
-        let (mut hasher, mut total) = (Sha512::new(), 0u64);
-        while let Some(bloque) = response.chunk().await.map_err(|_| Error::Network("el archivo del mod"))? {
-            total = total.saturating_add(bloque.len() as u64);
-            if total > file.size {
-                return Err(Error::Response("el archivo del mod"));
+        let hash = (!file.hashes.sha512.is_empty()).then(|| file.hashes.sha512.clone());
+        let mut salida = crate::descarga_archivo::Escritor::iniciar(
+            destino.to_owned(), file.size, hash, false, tokio_util::sync::CancellationToken::new(),
+        ).await.map_err(error_escritor_descarga)?;
+        let mut total = 0u64;
+        let r = async {
+            while let Some(bloque) = response.chunk().await.map_err(error_red_descarga)? {
+                total = total.checked_add(bloque.len() as u64).ok_or(Error::Response("el archivo del mod"))?;
+                if total > file.size { return Err(Error::Response("el archivo del mod")); }
+                salida.escribir(&bloque).await.map_err(error_escritor_descarga)?;
             }
-            hasher.update(&bloque);
-            salida.write_all(&bloque).await.map_err(|_| Error::Response("el archivo del mod"))?;
-        }
-        salida.sync_all().await.map_err(|_| Error::Response("el archivo del mod"))?;
-        if total != file.size {
-            return Err(Error::Response("el archivo del mod"));
-        }
-        Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+            if total != file.size { return Err(Error::Response("el archivo del mod")); }
+            Ok(())
+        }.await;
+        if let Err(e) = r { salida.cancelar().await; return Err(e); }
+        salida.finalizar().await.map_err(error_escritor_descarga)
     }
     pub fn new() -> Result<Self, Error> {
         Ok(Self {

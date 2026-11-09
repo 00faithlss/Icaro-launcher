@@ -4,17 +4,22 @@ Actualizado el **07-11-2026** para Compartir instancias; los demás apartados co
 
 ## Prioridad actual: Compartir instancias en v0.4.x
 
+Diagnóstico local implementado el 08-11-2026: operaciones, etapas, causas tipadas,
+rotación y emergencia ante panic; ver [cobertura y límites](diagnostico.md).
+Falta validarlo en los recorridos reales enumerados abajo. El bloque posterior
+conecta orden de packs, biblioteca, contadores y cierre con bandeja Windows.
+
 El núcleo, las invitaciones Workers/D1 y las quince vistas existen y tienen pruebas
 locales. **El recorrido normal de Servidores/Jugar todavía no los conecta.**
 La sincronización HTTP del servidor dedicado es un recorrido distinto que se conserva.
 Ver [progreso y evidencias](superpowers/progreso/2026-11-07-compartir-instancias.md).
 
-- [ ] Validar/completar el publicador experimental bajo `ICARO_COMPARTIR_DESARROLLO=1`: ya hay recorrido del controlador con Worker/D1 local; faltan acciones completas desde ventana, contadores y biblioteca.
+- [ ] Validar el publicador experimental desde la ventana bajo `ICARO_COMPARTIR_DESARROLLO=1`: biblioteca, recuperación sin otra identidad y contadores cancelables ya conectados.
 - [ ] Validar el invitado experimental con descarga real de Minecraft y ampliar cortes/disco lleno. Ya conecta confianza, destino/revisión, progreso por etapa y recuperación tras reinicio al reintroducir la invitación. La prueba del coordinador todavía inyecta el perfil; bloquea Jugar si no se aplicó la base.
-- [ ] Conectar Sincronizar/Jugar, resolución de archivos y orden de packs, y exclusión real frente a una partida.
-- [ ] Integrar accesos, reconexión, cierre y bandeja restaurable con drenaje de transferencias.
-- [ ] Completar precomprobación de espacio, limpieza de staging/contenido y caché/concurrencia; medir los recorridos nuevos.
-- [ ] Configurar/desplegar el servicio gratuito con autorización y validar entre dos equipos, directo/relé, Windows/Linux y partida real.
+- [ ] Validar Sincronizar/Jugar con una partida real. La revisión ya incluye elección de orden de packs, conservación de personales y rechazo de cambios externos.
+- [ ] Validar cierre con transferencias entre equipos y reinicio real de Explorer; completar bandeja nativa Linux. Windows conecta bandeja restaurable y drenaje; Linux conserva la ventana minimizada.
+- [ ] Medir en release y redes reales. La caché del invitado, descargas concurrentes y limpieza de staging ya están conectadas. Quedan la limpieza de contenido publicado según revisiones retenidas y las pruebas de disco lleno y cortes nativos.
+- [ ] Validar el servicio gratuito desplegado entre dos equipos, directo/relé, Windows/Linux y partida real. El HTTP remoto ya se comprobó con identidades efímeras; no acredita esos recorridos.
 
 La base conserva origen estable, crea otra instancia al aceptar y aplica una revisión
 como transacción recuperable. Eso no completa las tareas de integración enumeradas.

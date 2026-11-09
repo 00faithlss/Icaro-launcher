@@ -2,9 +2,17 @@
 
 ## [Sin publicar]
 
+- Compartir experimental reutiliza contenido verificado entre instancias, deduplica por SHA-512 y descarga en paralelo con cupos por origen. Los archivos conservan su verificación y se aplican mediante la transacción recuperable.
+
+- Compartir experimental: conflictos de selección/orden de packs revisables, biblioteca de publicaciones persistidas y reconexión sin revocar accesos; contadores cancelables, precomprobación de disco y limpieza conservadora del staging. Cierre con drenaje y bandeja Windows restaurable usando el icono propio; conserva la ventana minimizada si la bandeja falla. Servicio gratuito de invitaciones desplegado con prueba HTTP remota. Sigue bajo bandera; no acredita una partida ni sincronización entre dos equipos.
+
+- Diagnóstico automático local con operaciones y etapas correlacionadas, causas tipadas, rotación, estado de salud y registro de emergencia ante panic. Se instrumentan Compartir, preparación/ejecución del juego, autenticación y actualizador sin copiar secretos ni mensajes dinámicos; ver [guía y límites](docs/diagnostico.md).
+
+- Compartir experimental: Sincronizar publicación y comprobación remota previa a Jugar, sin consumir otra invitación; conflictos de archivo revisables y reserva de actividad por ID compartida con instalación/Java. Error de red o acceso revocado no inicia una partida automáticamente. Falta validarlo con Minecraft real y completar orden de packs y cierre/bandeja.
+
 - Se añade el controlador experimental del publicador de instancias, deshabilitado por defecto: revisión y consentimiento, guardado de privados mediante tareas, publicación e invitaciones/accesos. Incluye cancelación y separación del panel publicado frente a otros borradores; ver el registro de progreso para las validaciones pendientes.
 
-- En desarrollo en `v0.4.x`: Compartir instancias con publicador e invitado experimentales, revisiones seleccionadas, confianza persistente, invitaciones Workers/D1, transporte iroh y aplicación recuperable. El invitado muestra progreso por etapa y recupera su destino incompleto al reintroducir la invitación tras reiniciar, sin duplicarlo. El coordinador tiene pruebas con perfil inyectado; faltan validarlo con Minecraft real, Sincronizar/Jugar posterior y cierre/bandeja. Sigue deshabilitado por defecto y sin despliegue. Ver [progreso](docs/superpowers/progreso/2026-11-07-compartir-instancias.md).
+- En desarrollo en `v0.4.x`: Compartir instancias con publicador e invitado experimentales, revisiones seleccionadas, confianza persistente, invitaciones Workers/D1, transporte iroh y aplicación recuperable. El invitado muestra progreso por etapa y recupera su destino incompleto al reintroducir la invitación tras reiniciar, sin duplicarlo. El coordinador tiene pruebas con perfil inyectado; faltan validarlo con Minecraft real, orden de packs y cierre/bandeja. Sigue deshabilitado por defecto y sin despliegue. Ver [progreso](docs/superpowers/progreso/2026-11-07-compartir-instancias.md).
 - Los botones comunes centran icono/texto con padding simétrico; los controles segmentados y resúmenes de compartir conservan alineación y medidas uniformes. Se corrigen el pie recortado y las dimensiones de las invitaciones dentro de paneles desplazables, con pruebas y capturas en ambos temas.
 
 - Actualizar o instalar varios mods a la vez ya no descarta todos cuando uno falla: los que se pueden guardar se guardan, cada uno en su propia transacción, y el aviso nombra el mod que falló con su motivo.
