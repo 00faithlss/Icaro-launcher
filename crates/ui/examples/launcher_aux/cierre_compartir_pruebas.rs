@@ -57,3 +57,31 @@ fn error_de_bandeja_no_autoriza_ocultar_ventana() {
     assert!(!e.oculta);
     assert!(!e.aprobado);
 }
+
+#[test]
+fn sin_partida_cerrar_no_espera_en_la_bandeja() {
+    let mut app = app();
+    assert!(ocultar_por_juego(&mut app).is_none());
+    assert!(!app.cierre.por_juego);
+}
+
+#[test]
+fn al_terminar_la_partida_en_la_bandeja_se_completa_el_cierre() {
+    let mut app = app();
+    // Ícaro esperaba en la bandeja y Minecraft ya se cerró.
+    app.cierre.por_juego = true;
+    let _ = actualizar(&mut app, Accion::Tic);
+    assert!(!app.cierre.por_juego);
+    assert!(app.cierre.forzar, "el cierre siguiente no vuelve a esperar");
+    // Con `forzar`, otra solicitud no vuelve a ocultar la ventana.
+    assert!(ocultar_por_juego(&mut app).is_none());
+}
+
+#[test]
+fn sin_bandeja_se_minimiza_y_no_se_cierra_sola_despues() {
+    let mut app = app();
+    app.cierre.por_juego = true;
+    let _ = actualizar(&mut app, Accion::Bandeja(Err("sin bandeja".into())));
+    assert!(!app.cierre.por_juego);
+    assert!(!app.cierre.forzar);
+}

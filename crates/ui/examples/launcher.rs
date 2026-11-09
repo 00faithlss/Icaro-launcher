@@ -1311,6 +1311,8 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
         Mensaje::Maximizar => return window::get_oldest().and_then(window::toggle_maximize),
         Mensaje::Cerrar => {
             if !actualizacion_real::al_cerrar(app) { return Task::none(); }
+            // Con Minecraft abierto, cerrar oculta Ícaro en la bandeja y la partida sigue.
+            if let Some(tarea) = cierre_compartir::ocultar_por_juego(app) { return tarea; }
             if let Some(tarea) = cierre_compartir::solicitar(app) { return tarea; }
             if !app.servicios.demo && app.editor.is_some() {
                 let nombre = app.general.nombre.clone();
@@ -3742,7 +3744,7 @@ fn main() -> iced::Result {
                 }));
             }
             subs.push(servicios::suscripcion(app));
-            if app.cierre.solicitado || app.cierre.esperando || app.cierre.bandeja.is_some() {
+            if app.cierre.solicitado || app.cierre.esperando || app.cierre.bandeja.is_some() || app.cierre.por_juego {
                 subs.push(iced::time::every(std::time::Duration::from_millis(250)).map(|_| Mensaje::CierreCompartir(cierre_compartir::Accion::Tic)));
             }
             if !app.servicios.demo && diagnostico_real::activo() {
