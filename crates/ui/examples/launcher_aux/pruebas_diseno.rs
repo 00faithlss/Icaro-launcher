@@ -105,6 +105,15 @@ pub fn iniciar(piedra: bool) -> (App, Task<Mensaje>) {
         }
     }
     crate::componentes_nuevos_qa::preparar(&mut a,&scene);
+    // Cuadrícula de Instancias con la frase de bienvenida; `-nombre` simula una cuenta.
+    if scene.starts_with("instancias-inicio") {
+        a.editor = None;
+        a.seccion = Seccion::Instancias;
+        if scene.ends_with("-nombre") {
+            a.servicios.demo = true;
+            a.sesion.estado = icaro_ui::cuenta::EstadoSesion::Activa;
+        }
+    }
     if scene == "capturas-instancia-vacia" {
         a.editor = Some(5);
         a.capt.capturas.clear();

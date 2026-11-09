@@ -40,6 +40,8 @@ mod almacenamiento_real;
 mod estadisticas_reales;
 #[path = "launcher_aux/hora_local.rs"]
 mod hora_local;
+#[path = "launcher_aux/saludo.rs"]
+mod saludo;
 #[path = "launcher_aux/java_real.rs"]
 mod java_real;
 #[path = "launcher_aux/capt.rs"]
@@ -1583,8 +1585,21 @@ fn pantalla_instancias(app: &App) -> Element<'_, Mensaje> {
     let cuerpo = cuerpo_col
         .spacing(espacio::S6)
         .padding(Padding::from([espacio::S6, espacio::S12]));
+    // Frase de bienvenida: cambia en cada inicio y saluda según la hora.
+    let nombre = app.servicios.nombre(app.sesion.estado.nombre());
+    let nombre = (!["Sin cuenta", "Invitado", "Recuperando sesión…", ""].contains(&nombre))
+        .then_some(nombre);
+    let frase = saludo::frase(nombre);
     column![
-        banda(p, Lamina::CaidaCielo, "Instancias", Some(todas.len())),
+        banda_completa(
+            p,
+            Lamina::CaidaCielo,
+            None,
+            "Instancias",
+            DatoBanda::Nota(&frase),
+            ALTO_BANDA,
+            texto::DISPLAY_XL,
+        ),
         suave(app, cuerpo)
     ]
     .into()
