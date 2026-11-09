@@ -608,7 +608,7 @@ fn revision_local(s: &mut Estado, a: &v::Accion) -> Option<Task<Mensaje>> {
         }
         v::Accion::IrATipo(t) => {
             vista.abiertos.insert(*t);
-            return Some(v::llevar_a_tipo(*t));
+            return Some(v::llevar_a_tipo(*t, Mensaje::Nada));
         }
         v::Accion::VerTodosPublicacion(t, g) => {
             vista.ver_todos.insert((*t, *g));

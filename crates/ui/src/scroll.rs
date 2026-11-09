@@ -38,16 +38,132 @@ pub fn desplazable_con_clave<'a, M: 'a>(
     suave(contenido, Some(clave))
 }
 
+/// Como [`desplazable`], con un identificador para llevar a la vista una parte
+/// del contenido con el mismo movimiento suave (ver [`llevar_a`]).
+pub fn desplazable_con_id<'a, M: 'a>(
+    contenido: impl Into<Element<'a, M>>,
+    id: &'static str,
+) -> Element<'a, M> {
+    let mut e = suave_widget(contenido, None);
+    e.id = Some(iced::advanced::widget::Id::new(id));
+    Element::new(e)
+}
+
 fn suave<'a, M: 'a>(contenido: impl Into<Element<'a, M>>, clave: Option<u64>) -> Element<'a, M> {
+    Element::new(suave_widget(contenido, clave))
+}
+
+fn suave_widget<'a, M: 'a>(
+    contenido: impl Into<Element<'a, M>>,
+    clave: Option<u64>,
+) -> Suave<'a, M> {
     let lista = scrollable::Scrollable::with_direction(
         contenido,
         Direction::Vertical(Scrollbar::new().width(0).scroller_width(0).margin(0)),
     )
     .height(Length::Fill);
-    Element::new(Suave {
+    Suave {
         contenido: lista.into(),
         clave,
+        id: None,
+    }
+}
+
+/// Lleva a la vista el contenedor `objetivo` dentro del desplazable `id`, con
+/// `margen` píxeles por encima. Mide su posición y mueve el objetivo de la
+/// animación: la posición real lo persigue como con la rueda. `avisar` se
+/// emite al terminar para que la ventana vuelva a dibujarse y arranque el
+/// movimiento.
+pub fn llevar_a<M: Clone + Send + 'static>(
+    id: &'static str,
+    objetivo: impl Into<std::borrow::Cow<'static, str>>,
+    margen: f32,
+    avisar: M,
+) -> iced::Task<M> {
+    use iced::advanced::widget::{operate, operation::Outcome, operation::Scrollable, Id};
+    struct Medir {
+        desplazable: Id,
+        objetivo: Id,
+        margen: f32,
+        dentro: bool,
+        inicio: Option<f32>,
+        y: Option<f32>,
+    }
+    impl Operation<()> for Medir {
+        fn container(
+            &mut self,
+            id: Option<&Id>,
+            bounds: Rectangle,
+            hijos: &mut dyn FnMut(&mut dyn Operation<()>),
+        ) {
+            let entra = id == Some(&self.desplazable);
+            if entra {
+                self.dentro = true;
+            }
+            if self.dentro && id == Some(&self.objetivo) {
+                self.y = Some(bounds.y);
+            }
+            hijos(self);
+            if entra {
+                self.dentro = false;
+            }
+        }
+        fn scrollable(
+            &mut self,
+            _: &mut dyn Scrollable,
+            _: Option<&Id>,
+            _: Rectangle,
+            contenido: Rectangle,
+            _: Vector,
+        ) {
+            if self.dentro && self.inicio.is_none() {
+                self.inicio = Some(contenido.y);
+            }
+        }
+        fn finish(&self) -> Outcome<()> {
+            match self.y.zip(self.inicio) {
+                Some((y, inicio)) => Outcome::Chain(Box::new(Mover {
+                    desplazable: self.desplazable.clone(),
+                    valor: (y - inicio - self.margen).max(0.0),
+                })),
+                None => Outcome::None,
+            }
+        }
+    }
+    struct Mover {
+        desplazable: Id,
+        valor: f32,
+    }
+    impl Operation<()> for Mover {
+        fn container(
+            &mut self,
+            _: Option<&Id>,
+            _: Rectangle,
+            hijos: &mut dyn FnMut(&mut dyn Operation<()>),
+        ) {
+            hijos(self);
+        }
+        fn custom(&mut self, estado: &mut dyn std::any::Any, id: Option<&Id>) {
+            if id == Some(&self.desplazable) {
+                if let Some(estado) = estado.downcast_mut::<Estado>() {
+                    estado.objetivo = self.valor;
+                    estado.ultimo = None;
+                }
+            }
+        }
+        fn finish(&self) -> Outcome<()> {
+            Outcome::Some(())
+        }
+    }
+    operate(Medir {
+        desplazable: Id::new(id),
+        objetivo: Id::new(objetivo),
+        margen,
+        dentro: false,
+        inicio: None,
+        y: None,
     })
+    .map(move |()| avisar.clone())
 }
 
 #[derive(Debug, Default)]
@@ -74,6 +190,8 @@ impl Estado {
 struct Suave<'a, M> {
     contenido: Element<'a, M>,
     clave: Option<u64>,
+    /// Permite que [`llevar_a`] encuentre este desplazable.
+    id: Option<iced::advanced::widget::Id>,
 }
 
 impl<'a, M> Widget<M, Theme, Renderer> for Suave<'a, M> {
@@ -139,11 +257,23 @@ impl<'a, M> Widget<M, Theme, Renderer> for Suave<'a, M> {
         renderer: &Renderer,
         operacion: &mut dyn Operation,
     ) {
-        if let Some(hijo) = layout.children().next() {
+        let Some(hijo) = layout.children().next() else {
+            return;
+        };
+        if self.id.is_none() {
             self.contenido
                 .as_widget()
                 .operate(&mut arbol.children[0], hijo, renderer, operacion);
+            return;
         }
+        operacion.custom(arbol.state.downcast_mut::<Estado>(), self.id.as_ref());
+        let contenido = &self.contenido;
+        let hijos = &mut arbol.children;
+        operacion.container(self.id.as_ref(), layout.bounds(), &mut |op| {
+            contenido
+                .as_widget()
+                .operate(&mut hijos[0], hijo, renderer, op);
+        });
     }
 
     fn on_event(

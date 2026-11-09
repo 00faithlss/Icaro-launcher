@@ -13,9 +13,7 @@ use crate::{
     tema::Paleta,
 };
 use iced::{
-    widget::{
-        button, column, container, rich_text, row, scrollable, span, stack, text, Column, Space,
-    },
+    widget::{button, column, container, rich_text, row, span, stack, text, Column, Space},
     Alignment, Background, Border, Color, Element, Font, Length, Padding,
 };
 
@@ -26,63 +24,10 @@ fn id_seccion(t: TipoContenido) -> String {
     format!("revision-publicacion-{t:?}")
 }
 
-/// Abre la sección del tipo en la vista: mide su posición en el contenido y desplaza.
-pub fn llevar_a_tipo<M: Send + 'static>(tipo: TipoContenido) -> iced::Task<M> {
-    use iced::advanced::widget::{
-        operate,
-        operation::{Operation, Outcome, Scrollable},
-        Id,
-    };
-    struct Busca {
-        objetivo: Id,
-        desplazable: Id,
-        inicio: Option<f32>,
-        y: Option<f32>,
-    }
-    impl Operation<Option<f32>> for Busca {
-        fn container(
-            &mut self,
-            id: Option<&Id>,
-            bounds: iced::Rectangle,
-            hijos: &mut dyn FnMut(&mut dyn Operation<Option<f32>>),
-        ) {
-            if id == Some(&self.objetivo) {
-                self.y = Some(bounds.y);
-            }
-            hijos(self);
-        }
-        fn scrollable(
-            &mut self,
-            _: &mut dyn Scrollable,
-            id: Option<&Id>,
-            _: iced::Rectangle,
-            contenido: iced::Rectangle,
-            _: iced::Vector,
-        ) {
-            if id == Some(&self.desplazable) {
-                self.inicio = Some(contenido.y);
-            }
-        }
-        fn finish(&self) -> Outcome<Option<f32>> {
-            Outcome::Some(self.y.zip(self.inicio).map(|(y, inicio)| y - inicio))
-        }
-    }
-    operate(Busca {
-        objetivo: Id::new(id_seccion(tipo)),
-        desplazable: Id::new(ID_DESPLAZABLE),
-        inicio: None,
-        y: None,
-    })
-    .then(|y| match y {
-        Some(y) => scrollable::scroll_to(
-            scrollable::Id::new(ID_DESPLAZABLE),
-            scrollable::AbsoluteOffset {
-                x: 0.,
-                y: (y - 28.).max(0.),
-            },
-        ),
-        None => iced::Task::none(),
-    })
+/// Abre la sección del tipo en la vista con el desplazamiento suave del launcher.
+/// `avisar` se emite al medir para que la ventana redibuje y arranque el movimiento.
+pub fn llevar_a_tipo<M: Clone + Send + 'static>(tipo: TipoContenido, avisar: M) -> iced::Task<M> {
+    crate::scroll::llevar_a(ID_DESPLAZABLE, id_seccion(tipo), 28., avisar)
 }
 
 // --- Cálculo ---------------------------------------------------------------
@@ -1659,14 +1604,15 @@ pub fn revision_publicacion<'a>(p: Paleta, m: &RevisionPublicacion) -> Element<'
     let cuerpo = cuerpo_rp(p, m, &r);
     let contenido = column![
         cabecera_rp(p, m),
-        scrollable(container(cuerpo).padding(Padding {
-            top: 28.,
-            right: 32.,
-            bottom: 32.,
-            left: 32.,
-        }))
-        .id(scrollable::Id::new(ID_DESPLAZABLE))
-        .height(Length::Fill),
+        crate::scroll::desplazable_con_id(
+            container(cuerpo).padding(Padding {
+                top: 28.,
+                right: 32.,
+                bottom: 32.,
+                left: 32.,
+            }),
+            ID_DESPLAZABLE,
+        ),
         pie_rp(p, m, &r),
     ]
     .width(Length::Fill);

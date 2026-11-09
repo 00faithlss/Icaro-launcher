@@ -489,7 +489,5 @@ pub fn panel_publicacion<'a>(p: Paleta, m: &PanelPublicacion) -> Element<'a, Acc
         }
         c = c.push(accesos(p, &m.accesos));
     }
-    iced::widget::scrollable(container(c).padding(28).width(Length::Fill).style(marco(p)))
-        .height(Length::Fill)
-        .into()
+    crate::scroll::desplazable(container(c).padding(28).width(Length::Fill).style(marco(p)))
 }

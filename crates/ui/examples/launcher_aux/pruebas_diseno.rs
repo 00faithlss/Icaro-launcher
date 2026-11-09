@@ -125,7 +125,7 @@ pub fn iniciar(piedra: bool) -> (App, Task<Mensaje>) {
     };
     let desplazar = seccion.map_or_else(Task::none, |t| {
         Task::perform(async {tokio::time::sleep(std::time::Duration::from_millis(300)).await;}, |_| ())
-            .then(move |_| icaro_ui::compartir::llevar_a_tipo(t))
+            .then(move |_| icaro_ui::compartir::llevar_a_tipo(t, Mensaje::Nada))
     });
     let transicion = if cambiar_versiones {Task::perform(async {tokio::time::sleep(std::time::Duration::from_millis(200)).await;}, |_|Mensaje::Servicio(crate::servicios::Accion::FichaPestana(crate::ficha::Pestana::Versiones)))} else {Task::none()};
     (

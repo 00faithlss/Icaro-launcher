@@ -10,7 +10,7 @@ use crate::{
     tema::Paleta,
 };
 use iced::{
-    widget::{button, column, container, row, scrollable, text, Column, Row, Space},
+    widget::{button, column, container, row, text, Column, Row, Space},
     Alignment, Border, Color, Element, Length, Padding,
 };
 
@@ -161,13 +161,13 @@ pub(super) fn interior_dialogo<'a>(
 ) -> Element<'a, Accion> {
     column![
         cabecera(p, nombre, subtitulo),
-        scrollable(container(contenido.spacing(24)).padding(Padding {
+        // Mismo desplazamiento suave que el resto del launcher.
+        crate::scroll::desplazable(container(contenido.spacing(24)).padding(Padding {
             top: 24.,
             right: 32.,
             bottom: 28.,
             left: 32.
-        }))
-        .height(Length::Fill),
+        })),
         pie(p, acciones)
     ]
     .width(Length::Fill)
