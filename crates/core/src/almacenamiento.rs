@@ -12,7 +12,7 @@ pub struct Informe {
     pub papeleras: Vec<PathBuf>,
 }
 pub fn regular(path: &Path) -> Result<fs::Metadata, String> {
-    let meta = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    let meta = fs::symlink_metadata(path).map_err(crate::diagnostico_contexto::texto)?;
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
@@ -46,9 +46,9 @@ fn recorrer(
         ) {
             trash.push(path.to_owned());
         }
-        for entry in fs::read_dir(path).map_err(|e| e.to_string())? {
+        for entry in fs::read_dir(path).map_err(crate::diagnostico_contexto::texto)? {
             recorrer(
-                &entry.map_err(|e| e.to_string())?.path(),
+                &entry.map_err(crate::diagnostico_contexto::texto)?.path(),
                 depth + 1,
                 count,
                 files,
@@ -66,8 +66,8 @@ pub fn medir(root: &Path) -> Result<Informe, String> {
     regular(root)?;
     let mut count = 0;
     let mut categories = std::collections::BTreeMap::<String, u64>::new();
-    for entry in fs::read_dir(root).map_err(|e| e.to_string())? {
-        let path = entry.map_err(|e| e.to_string())?.path();
+    for entry in fs::read_dir(root).map_err(crate::diagnostico_contexto::texto)? {
+        let path = entry.map_err(crate::diagnostico_contexto::texto)?.path();
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         let label = match name {
             "instances" => "Instancias",
@@ -99,7 +99,7 @@ pub fn limpiar_cache(root: &Path) -> Result<u64, String> {
     let mut removed = 0;
     for (path, size) in files {
         regular(&path)?;
-        fs::remove_file(path).map_err(|e| e.to_string())?;
+        fs::remove_file(path).map_err(crate::diagnostico_contexto::texto)?;
         removed += size;
     }
     Ok(removed)
@@ -109,41 +109,41 @@ pub fn trasladar_papeleras(root: &Path) -> Result<usize, String> {
     let mut count = 0;
     for path in report.papeleras.iter().rev() {
         regular(path)?;
-        for entry in fs::read_dir(path).map_err(|e| e.to_string())? {
-            let child = entry.map_err(|e| e.to_string())?.path();
+        for entry in fs::read_dir(path).map_err(crate::diagnostico_contexto::texto)? {
+            let child = entry.map_err(crate::diagnostico_contexto::texto)?.path();
             regular(&child)?;
             crate::papelera::enviar(&child)?;
             count += 1;
         }
-        fs::remove_dir(path).map_err(|e| e.to_string())?;
+        fs::remove_dir(path).map_err(crate::diagnostico_contexto::texto)?;
     }
     Ok(count)
 }
 pub fn escribir_json(path: &Path, value: &serde_json::Value) -> Result<(), String> {
     let parent = path.parent().ok_or("Ruta inválida")?;
-    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    fs::create_dir_all(parent).map_err(crate::diagnostico_contexto::texto)?;
     regular(parent)?;
     if path.exists() {
         regular(path)?;
     }
-    let bytes = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
+    let bytes = serde_json::to_vec_pretty(value).map_err(crate::diagnostico_contexto::texto)?;
     if fs::read(path).ok().as_deref() == Some(bytes.as_slice()) {
         return Ok(());
     }
     let mut nonce = [0u8; 8];
-    getrandom::fill(&mut nonce).map_err(|e| e.to_string())?;
+    getrandom::fill(&mut nonce).map_err(crate::diagnostico_contexto::texto)?;
     let temp = parent.join(format!(".icaro-state-{}.tmp", u64::from_le_bytes(nonce)));
     let result = (|| {
         let mut f = fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&temp)
-            .map_err(|e| e.to_string())?;
+            .map_err(crate::diagnostico_contexto::texto)?;
         f.write_all(&bytes)
             .and_then(|_| f.sync_all())
-            .map_err(|e| e.to_string())?;
+            .map_err(crate::diagnostico_contexto::texto)?;
         drop(f);
-        fs::rename(&temp, path).map_err(|e| e.to_string())
+        fs::rename(&temp, path).map_err(crate::diagnostico_contexto::texto)
     })();
     if result.is_err() {
         let _ = fs::remove_file(temp);
@@ -153,7 +153,7 @@ pub fn escribir_json(path: &Path, value: &serde_json::Value) -> Result<(), Strin
 pub fn registrar(root: &Path, message: &str) -> Result<(), String> {
     let time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| e.to_string())?
+        .map_err(crate::diagnostico_contexto::texto)?
         .as_secs();
     anexar(root, "launcher", &format!("{time} {}", linea(message)))
 }
@@ -166,7 +166,7 @@ pub fn registrar_en(root: &Path, nombre: &str, message: &str) -> Result<(), Stri
     }
     let ahora = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| e.to_string())?;
+        .map_err(crate::diagnostico_contexto::texto)?;
     anexar(root, nombre, &format!("{} {}", fecha_utc(ahora), linea(message)))
 }
 
@@ -202,27 +202,27 @@ fn fecha_utc(desde_epoch: std::time::Duration) -> String {
 }
 
 fn anexar(root: &Path, nombre: &str, linea: &str) -> Result<(), String> {
-    fs::create_dir_all(root).map_err(|e| e.to_string())?;
+    fs::create_dir_all(root).map_err(crate::diagnostico_contexto::texto)?;
     regular(root)?;
     let logs = root.join("logs");
-    fs::create_dir_all(&logs).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&logs).map_err(crate::diagnostico_contexto::texto)?;
     regular(&logs)?;
     let path = logs.join(format!("{nombre}.log"));
     if path.exists() && regular(&path)?.len() > 1024 * 1024 {
         let oldest = logs.join(format!("{nombre}.3.log"));
         if oldest.exists() {
             regular(&oldest)?;
-            fs::remove_file(oldest).map_err(|e| e.to_string())?;
+            fs::remove_file(oldest).map_err(crate::diagnostico_contexto::texto)?;
         }
         for n in (1..3).rev() {
             let src = logs.join(format!("{nombre}.{n}.log"));
             if src.exists() {
                 regular(&src)?;
                 fs::rename(src, logs.join(format!("{nombre}.{}.log", n + 1)))
-                    .map_err(|e| e.to_string())?;
+                    .map_err(crate::diagnostico_contexto::texto)?;
             }
         }
-        fs::rename(&path, logs.join(format!("{nombre}.1.log"))).map_err(|e| e.to_string())?;
+        fs::rename(&path, logs.join(format!("{nombre}.1.log"))).map_err(crate::diagnostico_contexto::texto)?;
     }
     if path.exists() {
         regular(&path)?;
@@ -231,28 +231,28 @@ fn anexar(root: &Path, nombre: &str, linea: &str) -> Result<(), String> {
         .create(true)
         .append(true)
         .open(path)
-        .map_err(|e| e.to_string())?;
-    writeln!(file, "{linea}").map_err(|e| e.to_string())
+        .map_err(crate::diagnostico_contexto::texto)?;
+    writeln!(file, "{linea}").map_err(crate::diagnostico_contexto::texto)
 }
 
 /// Traslada ajustes existentes a la instancia antes de retirar la copia global.
 pub fn migrar_configuraciones(root: &Path) -> Result<(), String> {
     let store = crate::instancias::Almacen::nuevo(root.join("instances"));
-    let instances = store.cargar().map_err(|e| e.to_string())?.instancias;
+    let instances = store.cargar().map_err(crate::diagnostico_contexto::texto)?.instancias;
     for instance in &instances {
-        crate::minecraft::migrar_directorio(&store, instance).map_err(|e| e.to_string())?;
+        crate::minecraft::migrar_directorio(&store, instance).map_err(crate::diagnostico_contexto::texto)?;
     }
     let path = root.join("estado.json");
     if !path.exists() {
         return Ok(());
     }
     regular(&path)?;
-    if fs::metadata(&path).map_err(|e| e.to_string())?.len() > 8 * 1024 * 1024 {
+    if fs::metadata(&path).map_err(crate::diagnostico_contexto::texto)?.len() > 8 * 1024 * 1024 {
         return Err("Estado demasiado grande".into());
     }
     let mut state: serde_json::Value =
-        serde_json::from_slice(&fs::read(&path).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
+        serde_json::from_slice(&fs::read(&path).map_err(crate::diagnostico_contexto::texto)?)
+            .map_err(crate::diagnostico_contexto::texto)?;
     if let Some(configs) = state.get("configs").and_then(|v| v.as_array()) {
         let mut unassigned = Vec::new();
         for (n, config) in configs.iter().enumerate() {
@@ -265,12 +265,12 @@ pub fn migrar_configuraciones(root: &Path) -> Result<(), String> {
             if let Some(id) = id.filter(|id| instances.iter().any(|i| i.id == *id)) {
                 if store
                     .configuracion(id)
-                    .map_err(|e| e.to_string())?
+                    .map_err(crate::diagnostico_contexto::texto)?
                     .is_none()
                 {
                     store
                         .guardar_configuracion(id, config)
-                        .map_err(|e| e.to_string())?;
+                        .map_err(crate::diagnostico_contexto::texto)?;
                 }
             } else {
                 unassigned.push(serde_json::json!({"id":id,"configuracion":config}));
@@ -291,10 +291,10 @@ pub fn migrar_configuraciones(root: &Path) -> Result<(), String> {
 
 pub fn recuperar_operaciones(root: &Path) -> Result<usize, String> {
     let store = crate::instancias::Almacen::nuevo(root.join("instances"));
-    let instances = store.cargar().map_err(|e| e.to_string())?.instancias;
+    let instances = store.cargar().map_err(crate::diagnostico_contexto::texto)?.instancias;
     let mut count = 0;
     for i in instances {
-        count += crate::mods::recuperar_operaciones(&store, &i.id).map_err(|e| e.to_string())?;
+        count += crate::mods::recuperar_operaciones(&store, &i.id).map_err(crate::diagnostico_contexto::texto)?;
     }
     Ok(count)
 }

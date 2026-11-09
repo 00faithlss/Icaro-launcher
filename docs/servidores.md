@@ -1,10 +1,17 @@
 # Servidores y ZeroTier
 
+**Compartir instancias** está en fase experimental en `v0.4.x`. Pulsa
+**Activar Compartir experimental** en Servidores para mostrar **Compartir instancia**
+y **Aceptar invitación**. [Guía de Compartir](compartir-instancias.md)
+
+La flecha al pie de la barra lateral permite plegarla o desplegarla. El cambio
+manual se mantiene mientras Ícaro está abierto.
+
 La sección Servidores usa las tarjetas existentes con datos guardados y consultas reales. La demostración sigue separada mediante ICARO_DEMO=1.
 
 ## Guardar y conectar
 
-1. Abre Servidores y pulsa **Agregar servidor**.
+1. Abre Servidores y pulsa **Agregar servidor** o **Agregar servidor por dirección**.
 2. Escribe un nombre y una dirección: play.example.net, 127.0.0.1:25566 o [::1]:25565. Sin puerto se usa 25565.
 3. Vincula la instancia con la versión de Minecraft y loader que necesite el servidor.
 4. Guarda y pulsa **Jugar**. Se utiliza la sesión de Microsoft, Java, memoria y argumentos de esa instancia.

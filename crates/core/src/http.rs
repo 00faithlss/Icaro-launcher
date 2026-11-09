@@ -51,6 +51,71 @@ fn construir_cliente() -> Result<reqwest::Client, Error> {
         .map_err(|_| Error::Network("el servicio"))
 }
 
+/// Pool exclusivo de cuerpos grandes: el límite se aplica a inactividad, no
+/// al tiempo total necesario para transferir un archivo válido.
+pub(crate) fn cliente_descargas() -> Result<reqwest::Client, Error> {
+    static CLIENTE: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    let construir = || construir_cliente_descargas(Duration::from_secs(120), true);
+    if cfg!(test) { return construir(); }
+    if let Some(c) = CLIENTE.get() { return Ok(c.clone()); }
+    let cliente = construir()?;
+    Ok(CLIENTE.get_or_init(|| cliente).clone())
+}
+
+fn construir_cliente_descargas(inactividad: Duration, solo_https: bool) -> Result<reqwest::Client, Error> {
+    reqwest::Client::builder()
+        .https_only(solo_https)
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(10))
+        .read_timeout(inactividad)
+        .user_agent(USER_AGENT)
+        .build()
+        .map_err(|_| Error::Network("el servicio"))
+}
+
+#[cfg(test)]
+mod pruebas_descargas {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn descargas_limitan_inactividad_sin_limitar_duracion_total() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut s, _) = listener.accept().await.unwrap();
+            let mut request = [0; 4096];
+            s.read(&mut request).await.unwrap();
+            s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\n").await.unwrap();
+            for _ in 0..6 {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                s.write_all(b"a").await.unwrap();
+            }
+        });
+        let client = construir_cliente_descargas(Duration::from_millis(300), false).unwrap();
+        let response = client.get(format!("http://{address}/")).send().await.unwrap();
+        assert_eq!(response.bytes().await.unwrap().as_ref(), b"aaaaaa");
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn descargas_interrumpen_cuerpo_inactivo() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut s, _) = listener.accept().await.unwrap();
+            let mut request = [0; 4096];
+            s.read(&mut request).await.unwrap();
+            s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\n").await.unwrap();
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        });
+        let client = construir_cliente_descargas(Duration::from_millis(50), false).unwrap();
+        let response = client.get(format!("http://{address}/")).send().await.unwrap();
+        assert!(response.bytes().await.unwrap_err().is_timeout());
+        server.await.unwrap();
+    }
+}
+
 pub(crate) async fn json<T: DeserializeOwned>(
     request: reqwest::RequestBuilder,
     service: &'static str,
@@ -66,12 +131,30 @@ pub(crate) async fn json_con_cuota<T: DeserializeOwned>(
     service: &'static str,
     limit: usize,
 ) -> Result<(T, Option<crate::modrinth::presupuesto::Cuota>), Error> {
-    let response = request.send().await.map_err(|_| Error::Network(service))?;
+    crate::diagnostico_contexto::observar("http", service, None, &tokio_util::sync::CancellationToken::new(), async {
+        json_con_cuota_interno(request, service, limit).await.map_err(|error| {
+            crate::diagnostico_contexto::registrar_error(&error); error
+        })
+    }).await
+}
+
+async fn json_con_cuota_interno<T: DeserializeOwned>(
+    request: reqwest::RequestBuilder,
+    service: &'static str,
+    limit: usize,
+) -> Result<(T, Option<crate::modrinth::presupuesto::Cuota>), Error> {
+    crate::diagnostico_contexto::nuevo_intento();
+    let response = request.send().await.map_err(|e| {
+        crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::de_red(&e));
+        Error::Network(service)
+    })?;
     if response.status().as_u16() == 429 {
+        crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::Red {timeout:false,conexion:false,estado:Some(429)});
         let delay = retry_after(response.headers(), std::time::SystemTime::now());
         return Err(Error::RateLimited(delay));
     }
     if !response.status().is_success() {
+        crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::Red {timeout:false,conexion:false,estado:Some(response.status().as_u16())});
         return Err(Error::Status {
             service,
             status: response.status().as_u16(),
@@ -115,7 +198,10 @@ pub(crate) async fn body_bytes(
     while let Some(chunk) = response
         .chunk()
         .await
-        .map_err(|_| Error::Network(service))?
+        .map_err(|e| {
+            crate::diagnostico_contexto::fallo(crate::diagnostico::Causa::de_red(&e));
+            Error::Network(service)
+        })?
     {
         if bytes.len().saturating_add(chunk.len()) > limit {
             return Err(Error::Response(service));

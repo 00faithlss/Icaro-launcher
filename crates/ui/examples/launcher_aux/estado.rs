@@ -51,6 +51,9 @@ pub struct Guardado {
     /// Canal elegido en Ajustes; sin valor se usa el de la compilación.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub canal: Option<icaro_core::actualizacion::Canal>,
+    /// Activación explícita en Servidores, independiente de la variable de pruebas.
+    #[serde(default)]
+    pub compartir_experimental: bool,
 }
 
 /// Preferencias de Apariencia compatibles con estados anteriores.
@@ -122,6 +125,7 @@ impl Guardado {
                 })
                 .collect(),
             canal: None,
+            compartir_experimental: false,
         }
     }
 
@@ -259,6 +263,7 @@ mod tests {
     #[test]
     fn estados_anteriores_restauran_apariencia_por_defecto() {
         let a: Guardado = serde_json::from_str(r#"{"lista_grupos":[],"grupos":[],"cerrados":[],"configs":[]}"#).unwrap();
+        assert!(!a.compartir_experimental);
         assert_eq!(a.apariencia.escala, 100);
         assert_eq!(a.apariencia.tema, 0);
         assert_eq!(a.apariencia.metal, 0);

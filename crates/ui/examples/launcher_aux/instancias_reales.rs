@@ -1140,6 +1140,79 @@ pub fn renombrar(app: &mut App, nombre: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(windows, debug_assertions))]
+    #[test]
+    fn crear_instancia_prepara_con_pila_acotada() {
+        const HIJO: &str = "ICARO_PRUEBA_CREACION_PILA";
+        if std::env::var_os(HIJO).is_none() {
+            let nonce = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let raiz = std::env::temp_dir()
+                .join(format!("icaro-prueba-creacion-{}-{nonce}", std::process::id()));
+            let salida = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "instancias_reales::tests::crear_instancia_prepara_con_pila_acotada",
+                    "--nocapture",
+                ])
+                .env(HIJO, "1")
+                .env("APPDATA", raiz)
+                .output()
+                .unwrap();
+            assert!(
+                salida.status.success(),
+                "{}\n{}\n{}",
+                salida.status,
+                String::from_utf8_lossy(&salida.stdout),
+                String::from_utf8_lossy(&salida.stderr)
+            );
+            return;
+        }
+        let (mut app, _) = crate::iniciar_con_guardado(
+            icaro_ui::shell::Seccion::Instancias,
+            false,
+            None,
+            false,
+            crate::servicios::Estado::nuevo(true),
+            None,
+        );
+        app.servicios.demo = false;
+        *crate::lista_instancias().lock().unwrap() = Vec::new();
+        app.grupos.clear();
+        app.configs.clear();
+        let almacen = Almacen::nuevo(crate::estado::directorio(false).join("instances"));
+        let nueva = almacen.crear("Prueba de creación", "26.3", 0).unwrap();
+        app.servicios.instancias.almacen = almacen;
+        let id = nueva.id.clone();
+        std::thread::scope(|scope| {
+            std::thread::Builder::new()
+                .name("creacion-ventana".into())
+                // La pila del hilo principal también contiene el bucle de ventana.
+                .stack_size(256 * 1024)
+                .spawn_scoped(scope, || {
+                    eprintln!("instancia guardada, preparando el juego");
+                    let _ = crate::actualizar(
+                        &mut app,
+                        Mensaje::Instancias(Accion::Creada(Ok(nueva))),
+                    );
+                    assert!(app.servicios.juego.ocupada(&id));
+                    assert!(app
+                        .servicios
+                        .instancias
+                        .almacen
+                        .configuracion(&id)
+                        .unwrap()
+                        .is_some());
+                })
+                .unwrap()
+                .join()
+                .unwrap();
+        });
+    }
+
     fn selector() -> App {
         let (mut app, _) = crate::iniciar_con_guardado(
             icaro_ui::shell::Seccion::Instancias,

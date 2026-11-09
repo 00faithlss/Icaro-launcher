@@ -147,7 +147,7 @@ fn cliente() -> Result<reqwest::Client, Error> {
         .redirect(reqwest::redirect::Policy::limited(5))
         .user_agent(crate::http::USER_AGENT)
         .build()
-        .map_err(|_| Error::Red)
+        .map_err(|e| registro::red(e))
 }
 fn numeros(v: &str) -> Option<[u64; 3]> {
     let partes: Vec<_> = v.strip_prefix('v').unwrap_or(v).split('.').collect();
@@ -196,6 +196,8 @@ fn elegir(releases: Vec<Release>, canal: Canal) -> Option<Release> {
         .max_by_key(|(orden, _)| *orden)
         .map(|(_, r)| r)
 }
+
+mod registro;
 
 /// Una instalación registrada solo se actualiza con su instalador completo.
 pub fn instalada() -> bool {
@@ -301,13 +303,21 @@ pub async fn comprobar_canal(
     compilacion_actual: u64,
     canal: Canal,
 ) -> Result<Option<Disponible>, Error> {
+    registro::medir("comprobar", comprobar_canal_interno(actual, compilacion_actual, canal)).await
+}
+
+async fn comprobar_canal_interno(
+    actual: &str,
+    compilacion_actual: u64,
+    canal: Canal,
+) -> Result<Option<Disponible>, Error> {
     let client = cliente()?;
     let respuesta = client
         .get(if canal == Canal::Beta { RELEASES } else { RELEASE })
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
-        .map_err(|_| Error::Red)?;
+        .map_err(|e| registro::red(e))?;
     if respuesta.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None);
     }
@@ -346,7 +356,7 @@ pub async fn comprobar_canal(
         .get(&asset.browser_download_url)
         .send()
         .await
-        .map_err(|_| Error::Red)?;
+        .map_err(|e| registro::red(e))?;
     if !respuesta.status().is_success() {
         return Err(Error::Red);
     }
@@ -464,6 +474,10 @@ fn recuperar_descarga(raiz: &Path, disponible: &Disponible) -> Option<Preparada>
 
 /// Reutiliza una descarga íntegra o descarga a un temporal antes de preparar el reemplazo.
 pub async fn descargar<F: Fn(u64, u64)>(d: Disponible, progreso: F) -> Result<Preparada, Error> {
+    registro::medir("descargar_verificar", descargar_interno(d, progreso)).await
+}
+
+async fn descargar_interno<F: Fn(u64, u64)>(d: Disponible, progreso: F) -> Result<Preparada, Error> {
     validar_descarga(&d)?;
     if !cfg!(all(windows, target_arch = "x86_64")) {
         return Err(Error::Plataforma);
@@ -485,7 +499,7 @@ pub async fn descargar<F: Fn(u64, u64)>(d: Disponible, progreso: F) -> Result<Pr
             .get(&d.url)
             .send()
             .await
-            .map_err(|_| Error::Red)?;
+            .map_err(|e| registro::red(e))?;
         if !respuesta.status().is_success() {
             return Err(Error::Red);
         }
@@ -501,7 +515,7 @@ pub async fn descargar<F: Fn(u64, u64)>(d: Disponible, progreso: F) -> Result<Pr
             .map_err(|_| Error::Disco)?;
         let mut hash = Sha256::new();
         let mut recibidos = 0u64;
-        while let Some(chunk) = respuesta.chunk().await.map_err(|_| Error::Red)? {
+        while let Some(chunk) = respuesta.chunk().await.map_err(|e| registro::red(e))? {
             recibidos += chunk.len() as u64;
             if recibidos > d.bytes || recibidos > MAX_ARCHIVO {
                 return Err(Error::Integridad);

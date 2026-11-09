@@ -1174,6 +1174,10 @@ pub fn loader_instalable(loader: &str) -> bool {
     matches!(loader, "vanilla" | "forge" | "neoforge") || Familia::de(loader).is_some()
 }
 
+fn sugerir_fabric_api(loader: &str, instalada: bool, modpack: bool, vinculada: bool) -> bool {
+    loader == "fabric" && !instalada && !modpack && !vinculada
+}
+
 /// Instala o repara todos los archivos necesarios y publica el marcador al final.
 pub async fn instalar(
     store: &Almacen,
@@ -1232,9 +1236,15 @@ pub async fn instalar_con_java(
     let marker_path = private.join(MARKER);
     // Solo la primera instalación normal añade el mod sugerido. Las reparaciones
     // y los modpacks conservan el conjunto que eligió el usuario o el autor.
-    let default_fabric_api = instance.loader == "fabric"
-        && !marker_path.exists()
-        && !folder.join("modpack.json").exists();
+    let vinculada = crate::compartir::vinculos::leer(&game)
+        .map_err(|_| Error::Datos)?
+        .is_some();
+    let default_fabric_api = sugerir_fabric_api(
+        &instance.loader,
+        marker_path.exists(),
+        folder.join("modpack.json").exists(),
+        vinculada,
+    );
     let loader_selected = if instance.loader != "vanilla" {
         Some(
             crate::versiones_instancia::leer_loader(store, instance).ok_or_else(|| {

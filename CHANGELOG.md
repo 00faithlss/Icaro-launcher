@@ -1,5 +1,29 @@
 # Changelog
 
+## [Sin publicar]
+
+- Compartir instancia enmarca también el grabado y permite seleccionar de una vez los mods elegibles en la revisión. La autorización de archivos propios se conserva.
+- La preparación automática de Minecraft tras crear una instancia usa un estado de instalación alojado en el heap. Evita el desbordamiento de pila observado en el launcher de desarrollo de Windows.
+
+- Compartir experimental reutiliza contenido verificado entre instancias, deduplica por SHA-512 y descarga en paralelo con cupos por origen. Los archivos conservan su verificación y se aplican mediante la transacción recuperable.
+
+- Compartir experimental: conflictos de selección/orden de packs revisables, biblioteca de publicaciones persistidas y reconexión sin revocar accesos; contadores cancelables, precomprobación de disco y limpieza conservadora del staging. Cierre con drenaje y bandeja Windows restaurable usando el icono propio; conserva la ventana minimizada si la bandeja falla. Servicio gratuito de invitaciones desplegado con prueba HTTP remota. Sigue bajo bandera; no acredita una partida ni sincronización entre dos equipos.
+
+- Diagnóstico automático local con operaciones y etapas correlacionadas, causas tipadas, rotación, estado de salud y registro de emergencia ante panic. Se instrumentan Compartir, preparación/ejecución del juego, autenticación y actualizador sin copiar secretos ni mensajes dinámicos; ver [guía y límites](docs/diagnostico.md).
+
+- Compartir experimental: Sincronizar publicación y comprobación remota previa a Jugar, sin consumir otra invitación; conflictos de archivo revisables y reserva de actividad por ID compartida con instalación/Java. Error de red o acceso revocado no inicia una partida automáticamente. Falta validarlo con Minecraft real y completar orden de packs y cierre/bandeja.
+
+- Se añade el controlador experimental del publicador de instancias, deshabilitado por defecto: revisión y consentimiento, guardado de privados mediante tareas, publicación e invitaciones/accesos. Incluye cancelación y separación del panel publicado frente a otros borradores; ver el registro de progreso para las validaciones pendientes.
+
+- En desarrollo en `v0.4.x`: Compartir instancias con publicador e invitado experimentales, revisiones seleccionadas, confianza persistente, invitaciones Workers/D1, transporte iroh y aplicación recuperable. El invitado muestra progreso por etapa y recupera su destino incompleto al reintroducir la invitación tras reiniciar, sin duplicarlo. El coordinador tiene pruebas con perfil inyectado; faltan validarlo con Minecraft real, orden de packs y cierre/bandeja. Sigue deshabilitado por defecto y sin despliegue. Ver [progreso](docs/superpowers/progreso/2026-11-07-compartir-instancias.md).
+- Los botones comunes centran icono/texto con padding simétrico; los controles segmentados y resúmenes de compartir conservan alineación y medidas uniformes. Se corrigen el pie recortado y las dimensiones de las invitaciones dentro de paneles desplazables, con pruebas y capturas en ambos temas.
+
+- Actualizar o instalar varios mods a la vez ya no descarta todos cuando uno falla: los que se pueden guardar se guardan, cada uno en su propia transacción, y el aviso nombra el mod que falló con su motivo.
+- En la tienda de mods, al pasar de página la lista vuelve arriba con el desplazamiento suave y los botones de página quedan enteros. La rueda ya no se desfasa cuando la lista cambia de alto, lo que antes dejaba los botones fuera de vista al subir y volver a bajar.
+- La tienda permite mostrar 20, 30, 50 o 100 resultados por página.
+- La cuenta y el estudio de skin siguen el System Design actualizado, con un visor 3D compartido que gira de a 90° (Frente, Lado derecho, Espalda, Lado izquierdo). La cuenta muestra el tiempo jugado total y la instancia más jugada en lugar de UUID, correo o sesión; permite elegir la capa de la cuenta, previsualizar una skin del historial y descargar la skin. El estudio añade vista plana, encuadre de busto, caminata, la textura plana con la zona de cada capa, biblioteca y descarga. Se admiten skins antiguas de 64 × 32.
+- Los iconos de los botones de solo icono quedan centrados en ambos ejes.
+
 ## [0.3.4] - 2026-10-27
 
 - El editor de una instancia muestra el tiempo jugado y el espacio que ocupa, en lugar de «—». El tiempo se acumula al cerrar cada partida en `estadisticas.json` de la instancia y empieza en cero; las partidas anteriores a esta versión no se cuentan. Ambos datos se calculan en segundo plano al abrir la instancia.

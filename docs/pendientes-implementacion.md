@@ -1,6 +1,28 @@
 # Implementación pendiente
 
-Actualizado el **22-10-2026**. Este documento describe el trabajo que falta; no presenta estas funciones como disponibles. El [roadmap del System Design](roadmap-system-design.md) detalla los componentes y sus diferencias visuales.
+Actualizado el **07-11-2026** para Compartir instancias; los demás apartados conservan sus validaciones previas. Este documento describe el trabajo que falta; no presenta estas funciones como disponibles. El [roadmap del System Design](roadmap-system-design.md) detalla los componentes y sus diferencias visuales.
+
+## Prioridad actual: Compartir instancias en v0.4.x
+
+Diagnóstico local implementado el 08-11-2026: operaciones, etapas, causas tipadas,
+rotación y emergencia ante panic; ver [cobertura y límites](diagnostico.md).
+Falta validarlo en los recorridos reales enumerados abajo. El bloque posterior
+conecta orden de packs, biblioteca, contadores y cierre con bandeja Windows.
+
+El núcleo, las invitaciones Workers/D1 y las quince vistas existen y tienen pruebas
+locales. **El recorrido normal de Servidores/Jugar todavía no los conecta.**
+La sincronización HTTP del servidor dedicado es un recorrido distinto que se conserva.
+Ver [progreso y evidencias](superpowers/progreso/2026-11-07-compartir-instancias.md).
+
+- [ ] Validar el publicador tras activarlo en Servidores. Ya están conectadas la biblioteca, la recuperación sin otra identidad y los contadores cancelables.
+- [ ] Validar el invitado experimental con descarga real de Minecraft y ampliar cortes/disco lleno. Ya conecta confianza, destino/revisión, progreso por etapa y recuperación tras reinicio al reintroducir la invitación. La prueba del coordinador todavía inyecta el perfil; bloquea Jugar si no se aplicó la base.
+- [ ] Validar Sincronizar/Jugar con una partida real. La revisión ya incluye elección de orden de packs, conservación de personales y rechazo de cambios externos.
+- [ ] Validar cierre con transferencias entre equipos y reinicio real de Explorer; completar bandeja nativa Linux. Windows conecta bandeja restaurable y drenaje; Linux conserva la ventana minimizada.
+- [ ] Medir en release y redes reales. La caché del invitado, descargas concurrentes y limpieza de staging ya están conectadas. Quedan la limpieza de contenido publicado según revisiones retenidas y las pruebas de disco lleno y cortes nativos.
+- [ ] Validar el servicio gratuito desplegado entre dos equipos, directo/relé, Windows/Linux y partida real. El HTTP remoto ya se comprobó con identidades efímeras; no acredita esos recorridos.
+
+La base conserva origen estable, crea otra instancia al aceptar y aplica una revisión
+como transacción recuperable. Eso no completa las tareas de integración enumeradas.
 
 ## 1. Instalación y ejecución de loaders oficiales
 
@@ -62,6 +84,10 @@ Las tareas pendientes de este apartado corresponden a Quilt y a la validación c
 - [ ] Publicar el ejecutable y los metadatos de actualización y probar una actualización completa. La comprobación y descarga del actualizador ya están conectadas; ver el [contrato de publicación](actualizaciones-launcher.md).
 
 ### Alcance de Servidores, ZeroTier y sincronización
+
+Este apartado describe el recorrido HTTP existente y sus mediciones anteriores;
+no mide el sistema de invitaciones de `v0.4.x`. Para este último, las vistas del
+publicador ya existen; su conexión funcional sigue pendiente en la prioridad actual.
 
 El [roadmap general](../README.md#servidores-zerotier-y-sincronización) cuenta ocho tareas separadas. Las pantallas originales de lista, PanelLateral, RedPrivada y SincronizarMods usan datos reales; los ejemplos quedan en la maqueta aislada. Ver [servidores](servidores.md) y [servicio del anfitrión](sincronizacion-servidores.md).
 

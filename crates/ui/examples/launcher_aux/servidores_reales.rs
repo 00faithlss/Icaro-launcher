@@ -11,6 +11,7 @@ use icaro_ui::{
     iconos::Icono,
     laminas::{banda_completa, DatoBanda, Lamina, ALTO_BANDA},
     servidores::{AccionesLista, EstadoServidor},
+    tema::medida,
 };
 use iced::{
     widget::{column, container, pick_list, row, text, text_input, Space},
@@ -467,9 +468,10 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
     Task::none()
 }
 pub fn vista(app: &App) -> Element<'_, Mensaje> {
+    const MARGEN: f32 = icaro_ui::tema::espacio::S8;
     let p = app.paleta();
     let s = &app.servicios.servidores;
-    let mut body = column![row![
+    let acciones_guardados = row![
         text("Arrastra para ordenar").size(13).color(p.text_muted),
         Space::with_width(Length::Fill),
         componentes::boton_con_icono(
@@ -482,8 +484,7 @@ pub fn vista(app: &App) -> Element<'_, Mensaje> {
         )
     ]
     .spacing(12)
-    .align_y(Alignment::Center)]
-    .spacing(24);
+    .align_y(Alignment::Center);
     let (connected, name, ip) = match &s.zero {
         Some(zerotier::Estado::Disponible { redes, .. }) => redes
             .iter()
@@ -525,7 +526,16 @@ pub fn vista(app: &App) -> Element<'_, Mensaje> {
         (0, 0),
         m(Accion::GestionarRed),
     );
-    body = column![network, body].spacing(24);
+    let ancho_barra = if app.barra_colapsada() {
+        medida::BARRA_LATERAL_COLAPSADA
+    } else {
+        medida::BARRA_LATERAL
+    };
+    let ancho = app.ventana.width - ancho_barra - 2.0 * MARGEN;
+    let mut body = column![crate::compartir_real::accesos(app, ancho), network].spacing(24);
+    if !app.servicios.compartir.habilitado {
+        body = body.push(acciones_guardados);
+    }
     if let Some(error) = &s.error {
         body = body.push(
             column![
@@ -616,7 +626,7 @@ pub fn vista(app: &App) -> Element<'_, Mensaje> {
             ALTO_BANDA,
             icaro_ui::tema::texto::DISPLAY_XL
         ),
-        crate::suave(app, body.padding(32))
+        crate::suave(app, body.padding(MARGEN))
     ]
     .into()
 }
@@ -801,6 +811,10 @@ pub fn suscripcion(app: &App) -> iced::Subscription<Mensaje> {
     }
 }
 pub fn preparar_diseno(app: &mut App, scene: &str) {
+    app.servicios.compartir.habilitado = scene.starts_with("servidores-compartir");
+    if scene == "servidores-compartir-desplegado-angosto" {
+        app.colapsada = Some(false);
+    }
     if scene.ends_with("angosto") {
         app.ventana = iced::Size::new(940., 720.);
     }
@@ -928,6 +942,17 @@ mod tests {
         assert!(a.servicios.servidores.zero.is_some());
         assert!(!a.servicios.servidores.loading);
     }
+    #[test]
+    fn la_barra_se_puede_plegar_y_desplegar_en_ventana_angosta() {
+        let mut a = app();
+        let _ = crate::actualizar_estado(&mut a, Mensaje::Tamano(iced::Size::new(940.0, 720.0)));
+        assert!(a.barra_colapsada());
+        let _ = crate::actualizar_estado(&mut a, Mensaje::AlternarBarra);
+        assert!(!a.barra_colapsada());
+        let _ = crate::actualizar_estado(&mut a, Mensaje::AlternarBarra);
+        assert!(a.barra_colapsada());
+    }
+
     #[test]
     fn al_reabrir_se_relee_la_lista_y_se_descarta_el_estado_antiguo_de_zerotier() {
         let mut a = app();

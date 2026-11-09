@@ -39,7 +39,18 @@ pub struct Sesion {
     pub elegida: usize,
     pub modelo: usize,
     pub capas: [bool; 4],
-    pub giro: u8,
+    /// Giro de a 90° del visor de cuenta y estudio.
+    pub giro: icaro_ui::visor_skin::Giro,
+    /// Estudio: vista plana, encuadre de busto y caminata desde cuándo.
+    pub plano: bool,
+    pub busto: bool,
+    pub caminar: Option<Instant>,
+    /// Capa visible cuya zona se marca en la textura plana.
+    pub zona: Option<usize>,
+    /// Capa de la maqueta puesta (`None`: ninguna).
+    pub capa_demo: Option<usize>,
+    /// Cuándo se aplicó la última skin, para confirmarlo unos segundos.
+    pub aplicada: Option<Instant>,
     pub subiendo: Option<Instant>,
     pub textura: Option<String>,
     pub error: Option<String>,
@@ -58,7 +69,13 @@ impl Sesion {
             elegida: 0,
             modelo: 0,
             capas: [true, true, false, true],
-            giro: 0,
+            giro: Default::default(),
+            plano: false,
+            busto: false,
+            caminar: None,
+            zona: None,
+            capa_demo: Some(0),
+            aplicada: None,
             subiendo: None,
             textura: None,
             error: None,
@@ -77,7 +94,9 @@ impl Sesion {
         });
         s.menu = std::env::var_os("ICARO_MENU_CUENTA").is_some();
         s.banner_jugar = std::env::var_os("ICARO_BANNER_JUGAR").is_some();
-        s.giro = std::env::var("ICARO_GIRO").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+        if let Some(n) = std::env::var("ICARO_GIRO").ok().and_then(|v| v.parse::<i32>().ok()) {
+            s.giro.girar(n, Instant::now(), true);
+        }
         s.modelo = usize::from(std::env::var("ICARO_MODELO").is_ok());
         if let Ok(c) = std::env::var("ICARO_CAPAS") {
             for (i, ch) in c.chars().take(4).enumerate() {
@@ -111,6 +130,16 @@ pub enum Accion {
     Modelo(usize),
     Capa(usize, bool),
     Girar(i32),
+    IrCara(i32),
+    Descartar,
+    Vista(usize),
+    Encuadre(usize),
+    Caminar(bool),
+    Zona(Option<usize>),
+    ElegirCapa(Option<usize>),
+    ElegirBiblioteca(usize),
+    GuardarBiblioteca,
+    Descargar,
     Cargar,
     Soltando(bool),
     Soltar(PathBuf),
@@ -162,6 +191,10 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             Accion::AbrirEstudio => return crate::cuenta_real::actualizar(app,crate::cuenta_real::Accion::Abrir(true)),
             Accion::Aplicar | Accion::UsarDeNuevo => return crate::cuenta_real::actualizar(app,crate::cuenta_real::Accion::Aplicar(matches!(a,Accion::UsarDeNuevo))),
             Accion::Cargar => return crate::cuenta_real::actualizar(app,crate::cuenta_real::Accion::ElegirArchivo),
+            Accion::ElegirCapa(c) => return crate::cuenta_real::actualizar(app,crate::cuenta_real::Accion::ElegirCapa(*c)),
+            Accion::ElegirBiblioteca(i) => return crate::cuenta_real::actualizar(app,crate::cuenta_real::Accion::ElegirBiblioteca(*i)),
+            Accion::GuardarBiblioteca => return crate::cuenta_real::actualizar(app,crate::cuenta_real::Accion::GuardarBiblioteca),
+            Accion::Descargar => return crate::cuenta_real::actualizar(app,crate::cuenta_real::Accion::Descargar),
             Accion::Soltar(path) => return crate::cuenta_real::actualizar(app,crate::cuenta_real::Accion::Archivo(Some(path.clone()))),
             Accion::ElegirSkin(i) => return crate::cuenta_real::actualizar(app,crate::cuenta_real::Accion::Elegir(*i)),
             _ => {}
@@ -225,7 +258,7 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             }
         }
         Accion::AbrirEstudio => {
-            app.sesion.giro = 0;
+            app.sesion.giro = Default::default();
             pant(app, pantallas::Pantalla::Estudio);
         }
         Accion::VolverCuenta => pant(app, pantallas::Pantalla::Cuenta),
@@ -240,7 +273,33 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                 *c = v;
             }
         }
-        Accion::Girar(n) => app.sesion.giro = (i32::from(app.sesion.giro) + n).rem_euclid(8) as u8,
+        Accion::Girar(n) => {
+            app.ahora = Instant::now();
+            app.sesion.giro.girar(n, app.ahora, app.reducir);
+        }
+        Accion::IrCara(g) => {
+            app.ahora = Instant::now();
+            app.sesion.giro.ir(g, app.ahora, app.reducir);
+        }
+        Accion::Descartar => app.sesion.elegida = app.sesion.en_uso,
+        Accion::Vista(i) => app.sesion.plano = i == 1,
+        Accion::Encuadre(i) => app.sesion.busto = i == 1,
+        Accion::Caminar(v) => {
+            app.ahora = Instant::now();
+            app.sesion.caminar = v.then_some(app.ahora);
+        }
+        Accion::Zona(z) => app.sesion.zona = z,
+        Accion::ElegirCapa(c) => {
+            app.sesion.capa_demo = c;
+            // Al elegir una capa, el visor gira a la espalda para mostrarla.
+            if c.is_some() {
+                app.ahora = Instant::now();
+                app.sesion.giro.ir(180, app.ahora, app.reducir);
+            }
+        }
+        Accion::ElegirBiblioteca(_) | Accion::GuardarBiblioteca | Accion::Descargar => {
+            app.avisar("En la maqueta no se guardan ni descargan skins.".into());
+        }
         Accion::Cargar => {
             // La maqueta no abre un selector de archivos: simula una skin válida.
             app.sesion.textura = Some("mi-skin.png".into());
@@ -269,11 +328,15 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
 
 /// Termina la subida simulada cuando pasa su tiempo.
 pub fn avanzar(app: &mut App) {
+    if app.sesion.aplicada.is_some_and(|i| app.ahora.saturating_duration_since(i).as_millis() >= MS_APLICADA) {
+        app.sesion.aplicada = None;
+    }
     if !app.servicios.demo {return;}
     if let Some(inicio) = app.sesion.subiendo {
         if app.ahora.saturating_duration_since(inicio).as_millis() >= MS_SUBIDA {
             app.sesion.subiendo = None;
             app.sesion.textura = None;
+            app.sesion.aplicada = Some(app.ahora);
             app.avisar(format!("Skin aplicada a {}.", app.sesion.estado.nombre()));
         }
     }
@@ -281,8 +344,16 @@ pub fn avanzar(app: &mut App) {
 
 /// Hay algo animándose que pide cuadros.
 pub fn animando(app: &App) -> bool {
-    app.sesion.subiendo.is_some() || (app.sesion.menu && progreso_menu(app) < 1.0)
+    let visor = matches!(app.pantalla, Some(pantallas::Pantalla::Cuenta | pantallas::Pantalla::Estudio));
+    app.sesion.subiendo.is_some()
+        || (app.sesion.menu && progreso_menu(app) < 1.0)
+        || (visor && app.sesion.giro.animando(app.ahora))
+        || (app.pantalla == Some(pantallas::Pantalla::Estudio) && app.sesion.caminar.is_some() && !app.reducir)
+        || app.sesion.aplicada.is_some()
 }
+
+/// «Skin aplicada» se muestra durante este tiempo.
+pub const MS_APLICADA: u128 = 3000;
 
 fn progreso_menu(app: &App) -> f32 {
     app.sesion.menu_desde.map_or(1.0, |i| {
@@ -290,28 +361,70 @@ fn progreso_menu(app: &App) -> f32 {
     })
 }
 
+/// Skins y capas de ejemplo de la maqueta, generadas una sola vez.
+fn muestras() -> &'static (Vec<Vec<u8>>, Vec<Vec<u8>>) {
+    static MUESTRAS: std::sync::OnceLock<(Vec<Vec<u8>>, Vec<Vec<u8>>)> = std::sync::OnceLock::new();
+    MUESTRAS.get_or_init(|| {
+        let skins = (0..4).map(icaro_ui::visor_skin::muestra).collect();
+        // Capas de 64 × 32 con tres dibujos: líneas, damero y borde.
+        let capas = (0..3u8)
+            .map(|k| {
+                let mut rgba = vec![0u8; 64 * 32 * 4];
+                for y in 0..32 {
+                    for x in 0..64 {
+                        let claro = match k {
+                            0 => y % 4 < 2,
+                            1 => (x / 2 + y / 2) % 2 == 0,
+                            _ => x % 11 <= 1 || y % 17 <= 1,
+                        };
+                        let c: [u8; 3] = if claro { [0xec, 0xec, 0xe8] } else { [0x3a, 0x3a, 0x37] };
+                        let i = (y * 64 + x) * 4;
+                        rgba[i..i + 4].copy_from_slice(&[c[0], c[1], c[2], 255]);
+                    }
+                }
+                rgba
+            })
+            .collect();
+        (skins, capas)
+    })
+}
+
+const CAPAS_DEMO: [&str; 3] = ["Migración", "Aniversario", "Fundador"];
+
 pub fn vista_cuenta(app: &App) -> Element<'_, Mensaje> {
     if !app.servicios.demo { return crate::servicios::account_view(app); }
     let p = app.paleta();
     let s = &app.sesion;
-    let nombre = s.estado.nombre();
-    let correo = if s.estado == EstadoSesion::Activa { "mineral7@outlook.com" } else { "forjador@outlook.com" };
+    let (skins, capas) = muestras();
+    let textura = skins.get(s.elegida.min(skins.len() - 1)).map(Vec::as_slice);
     cuenta::pantalla_cuenta(
         p,
         DatosCuenta {
             estado: s.estado,
-            nombre,
-            correo,
+            nombre: s.estado.nombre(),
             proximo_cambio: "22-10-2026",
-            historial: HISTORIAL.to_vec(),
+            historial: HISTORIAL[..skins.len()].to_vec(),
             en_uso: s.en_uso,
             elegida: s.elegida,
-            textura: None, historial_real: vec![], delgado: false,
+            textura,
+            historial_real: skins.iter().map(|t| std::sync::Arc::from(t.as_slice())).collect(),
+            delgado: s.modelo == 1,
+            angulo: s.giro.angulo(app.ahora),
+            grados: s.giro.grados(),
+            capas: CAPAS_DEMO.iter().zip(capas).map(|(n, c)| cuenta::CapaCuenta { nombre: n, rgba: Some(c) }).collect(),
+            capa_puesta: s.capa_demo,
+            capa_cambiando: None,
+            tiempo_total: "41 h".into(),
+            mas_jugada: Some(("Survival con amigos".into(), "28 h".into())),
         },
         MensajesCuenta {
             abrir_estudio: m(Accion::AbrirEstudio),
             elegir_skin: Box::new(|i| m(Accion::ElegirSkin(i))),
             usar_de_nuevo: m(Accion::UsarDeNuevo),
+            descartar: m(Accion::Descartar),
+            girar: |n| m(Accion::Girar(n)),
+            elegir_capa: Box::new(|c| m(Accion::ElegirCapa(c))),
+            descargar: Some(m(Accion::Descargar)),
             cerrar_sesion: m(Accion::CerrarSesion),
             iniciar_sesion: m(Accion::IniciarSesion),
             volver_a_entrar: m(Accion::VolverAEntrar),
@@ -328,25 +441,74 @@ pub fn vista_estudio(app: &App) -> Element<'_, Mensaje> {
     let subiendo = s
         .subiendo
         .map(|i| app.ahora.saturating_duration_since(i).as_millis() as u64);
-    cuenta::estudio_skin(
-        p,
+    let caminar = s.caminar.filter(|_| !app.reducir).map(|i| app.ahora.saturating_duration_since(i).as_secs_f32());
+    let datos = if app.servicios.demo {
+        let (skins, capas) = muestras();
         DatosEstudio {
             modelo: s.modelo,
             capas: s.capas,
-            giro: s.giro,
+            angulo: s.giro.angulo(app.ahora),
+            grados: s.giro.grados(),
+            plano: s.plano,
+            busto: s.busto,
+            caminar,
             subiendo,
             textura: s.textura.as_deref(),
             error: s.error.as_deref(),
             soltando: s.soltando,
-            rgba: s.cuenta.seleccion.as_ref().or(s.cuenta.actual.as_ref()).map(|t|t.rgba.as_ref()),
-            puede_aplicar: app.servicios.demo || s.cuenta.seleccion.is_some() || s.cuenta.actual.is_some(),
-        },
+            rgba: skins.get(s.elegida.min(skins.len() - 1)).map(Vec::as_slice),
+            puede_aplicar: s.textura.is_some(),
+            aplicada: s.aplicada.is_some(),
+            capas_cuenta: CAPAS_DEMO.iter().zip(capas).map(|(n, c)| cuenta::CapaCuenta { nombre: n, rgba: Some(c) }).collect(),
+            capa_puesta: s.capa_demo,
+            capa_cambiando: None,
+            biblioteca: skins.iter().map(|t| std::sync::Arc::from(t.as_slice())).collect(),
+            biblioteca_elegida: Some(s.elegida),
+            zona: s.zona,
+        }
+    } else {
+        let real = crate::cuenta_real::datos_estudio(app);
+        DatosEstudio {
+            modelo: s.modelo,
+            capas: s.capas,
+            angulo: s.giro.angulo(app.ahora),
+            grados: s.giro.grados(),
+            plano: s.plano,
+            busto: s.busto,
+            caminar,
+            subiendo,
+            textura: s.textura.as_deref(),
+            error: s.error.as_deref(),
+            soltando: s.soltando,
+            rgba: s.cuenta.seleccion.as_ref().or(s.cuenta.actual.as_ref()).map(|t| t.rgba.as_ref()),
+            puede_aplicar: s.cuenta.seleccion.is_some() || s.cuenta.actual.is_some(),
+            aplicada: s.aplicada.is_some(),
+            capas_cuenta: real.capas,
+            capa_puesta: real.capa_puesta,
+            capa_cambiando: real.capa_cambiando,
+            biblioteca: real.biblioteca,
+            biblioteca_elegida: real.biblioteca_elegida,
+            zona: s.zona,
+        }
+    };
+    cuenta::estudio_skin(
+        p,
+        datos,
         MensajesEstudio {
             volver: m(Accion::VolverCuenta),
             modelo: |i| m(Accion::Modelo(i)),
             capa: |i, v| m(Accion::Capa(i, v)),
             girar: |n| m(Accion::Girar(n)),
+            ir: |g| m(Accion::IrCara(g)),
+            vista: |i| m(Accion::Vista(i)),
+            encuadre: |i| m(Accion::Encuadre(i)),
+            caminar: |v| m(Accion::Caminar(v)),
+            zona: |z| m(Accion::Zona(z)),
+            elegir_capa: |c| m(Accion::ElegirCapa(c)),
+            elegir_biblioteca: |i| m(Accion::ElegirBiblioteca(i)),
+            guardar_biblioteca: Some(m(Accion::GuardarBiblioteca)),
             cargar: m(Accion::Cargar),
+            descargar: Some(m(Accion::Descargar)),
             aplicar: m(Accion::Aplicar),
         },
     )

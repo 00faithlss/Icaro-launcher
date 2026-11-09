@@ -19,6 +19,7 @@ use zeroize::Zeroizing;
 mod device;
 mod browser;
 mod app_return;
+mod registro;
 pub use device::{begin_device, complete_device, open_device_page, DeviceGrant, DeviceInfo};
 pub use app_return::{forward_app_return, register_app_return, APP_REDIRECT};
 
@@ -464,6 +465,14 @@ pub async fn login_with_progress(
     method: ReturnMethod,
     progress: impl Fn(Stage) + Send + Sync,
 ) -> Result<Session, Error> {
+    registro::medir("iniciar_sesion", cancel.clone(), login_with_progress_interno(cancel, method, |etapa| registro::progreso(etapa, &progress))).await
+}
+
+async fn login_with_progress_interno(
+    cancel: CancellationToken,
+    method: ReturnMethod,
+    progress: impl Fn(Stage) + Send + Sync,
+) -> Result<Session, Error> {
     tokio::select! {
         biased;
         _ = cancel.cancelled() => Err(Error::Cancelled),
@@ -499,6 +508,14 @@ pub async fn refresh(
 }
 
 pub async fn refresh_with_progress(
+    refresh_token: Zeroizing<String>,
+    cancel: CancellationToken,
+    progress: impl Fn(Stage) + Send + Sync,
+) -> Result<Session, Error> {
+    registro::medir("renovar_sesion", cancel.clone(), refresh_with_progress_interno(refresh_token, cancel, |etapa| registro::progreso(etapa, &progress))).await
+}
+
+async fn refresh_with_progress_interno(
     refresh_token: Zeroizing<String>,
     cancel: CancellationToken,
     progress: impl Fn(Stage) + Send + Sync,

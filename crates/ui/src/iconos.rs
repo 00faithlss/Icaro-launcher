@@ -85,6 +85,8 @@ iconos! {
     Notas => "notes",
     Usuarios => "users",
     Documento => "file-text",
+    Fichero => "file",
+    Mando => "gamepad",
     Corazon => "heart",
     Calendario => "calendar",
     Paquete => "package",

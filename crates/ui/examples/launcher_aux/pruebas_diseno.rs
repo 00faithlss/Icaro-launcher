@@ -18,6 +18,13 @@ pub fn iniciar(piedra: bool) -> (App, Task<Mensaje>) {
     a.umbral = None;
     let scene = std::env::var("ICARO_VISTA_DISENO").unwrap_or_else(|_| "asistente".into());
     match scene.as_str() {
+        "compartir-cierre-real" | "compartir-cierre-real-angosto" => {
+            crate::servidores_reales::preparar_diseno(&mut a, "servidores");
+            a.cierre.solicitado = true;
+            a.cierre.transferencias = 2;
+        },
+        s if s.starts_with("compartir-controlador-invitado")=>crate::compartir_real::preparar_invitado_diseno(&mut a,s),
+        s if s.starts_with("compartir-controlador")=>crate::compartir_diseno::preparar_controlador(&mut a),
         s if s.starts_with("skin-local")=>crate::skin_sin_conexion::preparar_diseno(&mut a,s),
         s if s.starts_with("cuenta-local") => crate::cuenta_sin_conexion::preparar_diseno(&mut a,s),
         s if s.starts_with("importar-local") => crate::modpacks_reales::preparar_diseno(&mut a,s),
@@ -109,10 +116,21 @@ pub fn iniciar(piedra: bool) -> (App, Task<Mensaje>) {
             a.servicios.mods.diseno.seleccion.insert(id, std::collections::BTreeSet::from(["sodium.jar".into()]));
         }
     }
+    // Las escenas de la revisión llevan a la vista su sección, como al tocar la tarjeta del tipo.
+    let seccion = match scene.trim_end_matches("-angosto") {
+        "compartir-publicacion-filas" => Some(icaro_ui::compartir::TipoContenido::Mod),
+        "compartir-publicacion-configuraciones" => Some(icaro_ui::compartir::TipoContenido::Config),
+        "compartir-packs" => Some(icaro_ui::compartir::TipoContenido::Resourcepack),
+        _ => None,
+    };
+    let desplazar = seccion.map_or_else(Task::none, |t| {
+        Task::perform(async {tokio::time::sleep(std::time::Duration::from_millis(300)).await;}, |_| ())
+            .then(move |_| icaro_ui::compartir::llevar_a_tipo(t, Mensaje::Nada))
+    });
     let transicion = if cambiar_versiones {Task::perform(async {tokio::time::sleep(std::time::Duration::from_millis(200)).await;}, |_|Mensaje::Servicio(crate::servicios::Accion::FichaPestana(crate::ficha::Pestana::Versiones)))} else {Task::none()};
     (
         a,
-        Task::batch([transicion,
+        Task::batch([transicion, desplazar,
         if scene == "mods-menu-maximizar" {
             Task::perform(async {tokio::time::sleep(std::time::Duration::from_millis(200)).await;}, |_| ())
                 .then(|_| iced::window::get_latest().and_then(|id| iced::window::resize(id, Size::new(1920., 1000.))))

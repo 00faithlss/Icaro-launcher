@@ -134,6 +134,7 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
             ir_a: Box::new(Mensaje::Ir),
             arrastrar: Mensaje::Arrastrar,
             buscar: Mensaje::Nada,
+            alternar_barra: Mensaje::Colapsar,
             cuenta: Mensaje::Nada,
             minimizar: Mensaje::Minimizar,
             maximizar: Mensaje::Maximizar,

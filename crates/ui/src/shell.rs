@@ -87,6 +87,7 @@ pub struct MensajesShell<'a, M> {
     pub ir_a: Box<dyn Fn(Seccion) -> M + 'a>,
     pub arrastrar: M,
     pub buscar: M,
+    pub alternar_barra: M,
     /// Abre el menú de cuentas desde el bloque de la barra lateral.
     pub cuenta: M,
     pub minimizar: M,
@@ -268,10 +269,16 @@ fn item_nav<'a, M: Clone + 'a>(
     } else {
         Length::Fill
     };
-    button(container(fila).center_y(Length::Fill))
+    let contenido = container(fila).center_y(Length::Fill);
+    let (contenido, padding) = if colapsada {
+        (contenido.center_x(Length::Fill), Padding::ZERO)
+    } else {
+        (contenido, Padding::from([0.0, espacio::S3]))
+    };
+    button(contenido)
         .width(ancho)
         .height(medida::CONTROL_LG)
-        .padding(Padding::from([0.0, espacio::S3]))
+        .padding(padding)
         .on_press(mensaje)
         .style(move |_, estado| {
             let fondo = if activa {
@@ -351,7 +358,28 @@ fn barra_lateral<'a, M: Clone + 'a>(
     for s in Seccion::TODAS {
         items = items.push(item_nav(p, s, Some(s) == activa, colapsada, (m.ir_a)(s)));
     }
-    let mut pie = column![].spacing(espacio::S3);
+    let (icono, etiqueta, alineacion) = if colapsada {
+        (
+            Icono::ChevronDerecha,
+            "Desplegar barra lateral",
+            iced::alignment::Horizontal::Center,
+        )
+    } else {
+        (
+            Icono::ChevronIzquierda,
+            "Plegar barra lateral",
+            iced::alignment::Horizontal::Right,
+        )
+    };
+    let control = crate::botones::boton_icono_estilo(
+        p,
+        icono,
+        etiqueta,
+        crate::estilo::boton_fantasma(p),
+        m.alternar_barra.clone(),
+    );
+    let mut pie =
+        column![container(control).width(Length::Fill).align_x(alineacion)].spacing(espacio::S3);
     if !colapsada {
         if let Some(d) = descargas {
             pie = pie.push(indicador_descargas(p, d));

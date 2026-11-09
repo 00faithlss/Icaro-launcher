@@ -864,7 +864,7 @@ fn mensajes() -> MensajesCapturas<Mensaje> {
 
 /// Ancho que queda para el contenido de una sección.
 fn ancho_contenido(app: &App) -> f32 {
-    let barra = if app.colapsada { 64.0 } else { 232.0 };
+    let barra = if app.barra_colapsada() { 64.0 } else { 232.0 };
     app.ventana.width - barra - 2.0 * espacio::S12
 }
 

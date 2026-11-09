@@ -1,5 +1,16 @@
 # Desarrollo
 
+Para investigar errores, consultar [Registros de diagnóstico](diagnostico.md):
+ubicación, correlación de operaciones, causas y límites de captura.
+
+Comprobación aislada de bandeja Windows (crea el icono unos instantes, sin cuentas
+ni red): `cargo run --locked -j 2 -p icaro-ui --example probar_bandeja`.
+Las escenas `compartir-cierre-real` y `compartir-cierre-real-angosto` capturan el
+controlador de cierre con fixtures en Tinta/Piedra. El recorrido ignorado
+`publicador_real_publica_seleccion_y_el_invitado_resuelve_el_codigo` requiere
+`ICARO_PRUEBA_WORKER_URL=http://127.0.0.1:8787`, Worker local y APPDATA temporal;
+su hilo reserva 8 MiB de pila para componer las tareas en debug de Windows.
+
 ## Requisitos
 
 Rust estable, instalado con [rustup](https://rustup.rs), en Windows o Arch Linux.
@@ -7,10 +18,66 @@ En Arch Linux, el backend de credenciales requiere `libdbus` para compilar y un 
 
 ## Compilar y probar
 
+En Windows, usar como máximo dos procesos de Cargo y aislar `APPDATA` antes de
+ejecutar pruebas que guardan estado. No usar los datos reales de una instancia.
+
+```powershell
+$env:APPDATA = "$PWD/target/pruebas-appdata"
+cargo build --locked -j 2 --workspace
+cargo test --locked -j 2 -p icaro-core --lib --test actualizacion_local
+cargo test --locked -j 2 -p icaro-ui --lib --example launcher -- --test-threads=1
+git diff --check
 ```
-cargo run -p icaro-cli
-cargo test --workspace
-```
+
+La asignación de `APPDATA` afecta a esa consola; restaurarla o cerrar la consola
+antes de iniciar el launcher con datos normales. En Linux, aislar también la raíz
+de datos según las pruebas que se ejecuten; esta asignación es específica de Windows.
+
+### Desarrollo de Compartir instancias (v0.4.x)
+
+Tras la limpieza solicitada el 07-11-2026, usar `CARGO_INCREMENTAL=0` en las
+consolas de validación de este trabajo limita el crecimiento de la caché incremental;
+las recompilaciones pueden tardar más. No cambia la configuración global de Cargo.
+`cargo clean` elimina también evidencias guardadas en `target`: el registro y las
+capturas se conservaron en `%TEMP%/icaro-compartir-desarrollo-20261107/`.
+
+El publicador experimental se activa en Servidores o para pruebas con
+`ICARO_COMPARTIR_DESARROLLO=1`. Su configuración y alcance están en la guía técnica.
+La activación explícita se conserva hasta validar el instalador del invitado con
+perfil real, Jugar y cierre/bandeja.
+El invitado ya tiene controlador experimental de código, huella, destino, revisión y
+aplicación; la prueba de integración inyecta el perfil de Minecraft.
+El intento incompleto persiste en la instancia y se recupera al reintroducir la
+invitación tras reiniciar. Los contadores de progreso representan la etapa actual;
+las descargas avanzan por archivo verificado, sin estimar un total global.
+El menú «Sincronizar publicación» y Jugar consultan el origen vinculado mediante
+reconexión autorizada. Sin anfitrión/servicio se muestra error y no se lanza el juego.
+La reserva por ID vive fuera de la carpeta renombrable, en `.icaro-actividades` del
+almacén. La escena `compartir-controlador-invitado-sync-error` muestra el diagnóstico
+real con fixture, sin red, y admite `-angosto` y ambos temas.
+
+El [registro de progreso](superpowers/progreso/2026-11-07-compartir-instancias.md)
+indica evidencia y pendientes. La [guía técnica](compartir-instancias.md) contiene
+los binarios de pruebas de compartir, la interoperabilidad con Worker local y las escenas
+`compartir-*`; el [README del servicio](../services/invitaciones/README.md) explica
+D1/Miniflare/Wrangler. No levantar producción para las pruebas locales.
+Las escenas `compartir-controlador-invitado-identidad`,
+`compartir-controlador-invitado-destino` y `compartir-controlador-invitado-revision`
+recorren los modelos reales con claves solo en memoria y acciones de demo.
+`compartir-controlador-invitado-recuperacion` y
+`compartir-controlador-invitado-progreso` añaden los estados de este bloque.
+
+Para capturar, compilar el ejemplo launcher y establecer `ICARO_DEMO=1`,
+`ICARO_VISTA_DISENO=compartir-publicacion`, `ICARO_TEMA_DISENO=tinta` o `piedra`
+y `ICARO_CAPTURA_DISENO` con una ruta PNG propia. El sufijo de escena `-angosto`
+usa 940×720. Comprobar salida correcta y fecha del archivo: un PNG de una ejecución
+anterior no demuestra que la nueva vista haya arrancado. Las capturas son fixtures.
+
+Regla de interfaz: centrar icono/texto en ambos ejes, padding simétrico y alturas
+iguales en controles equivalentes y celdas de resumen. En iced, `center(Fill)`
+redefine también el tamaño del contenedor: para conservar medidas fijas ya
+establecidas, usar `align_x/align_y`. El contenido de un scroll vertical no puede
+pedir `Fill` en ese eje. Las regresiones de construcción cubren esos casos.
 
 Ejemplos de la interfaz:
 

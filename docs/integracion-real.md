@@ -1,5 +1,37 @@
 # Integración del launcher
 
+## Actualización de Compartir instancias — 08-11-2026
+
+En `v0.4.x` existen el núcleo `compartir`, los componentes iced y el servicio local
+Workers/D1. Una prueba Rust recorre aceptación, transporte iroh autenticado,
+descarga y aplicación de configuración/texturas y revocación. El servicio gratuito
+ya está desplegado y pasó la prueba HTTP remota con identidades efímeras. En
+Servidores, **Activar Compartir experimental** habilita el publicador y el invitado.
+El modo experimental incluye Sincronizar y la consulta remota previa a Jugar con
+confirmación de cambios.
+
+El controlador tiene tareas, consentimiento y privados persistentes, y un recorrido
+con Worker local. El invitado experimental conecta código, confianza persistente,
+destino nuevo, revisión y coordinador de instalación exacta. La prueba de este último
+inyecta el perfil de Minecraft, pero transfiere/aplica los archivos reales. Faltan
+validar el perfil descargado, ampliar cortes/disco lleno y comprobar la reserva con
+una partida real y el cierre con transferencias entre equipos. La revisión ya
+resuelve el orden de packs y el cierre conecta bandeja Windows; en Linux conserva
+la ventana minimizada y queda pendiente su bandeja nativa.
+El progreso por etapa y la recuperación tras reinicio al reintroducir la invitación
+ya están conectados. La reconexión usa la identidad autorizada sin otro código/cupo;
+los conflictos de archivo se resuelven explícitamente y la reserva por ID se comparte
+con preparación y Java. El recorrido Worker/D1/iroh prueba ambas elecciones y revocación,
+con perfil inyectado; la biblioteca de publicaciones propias recupera origen y
+revisión y reconecta sin revocar accesos. Los contadores se actualizan mediante
+tareas cancelables. La comprobación de espacio y limpieza conservadora de staging
+están conectadas; optimización de caché/concurrencia y limpieza de CAS siguen pendientes.
+Las escenas del launcher usan fixtures: no acreditan esos recorridos. Consultar
+[guía técnica](compartir-instancias.md) y
+[progreso con evidencias](superpowers/progreso/2026-11-07-compartir-instancias.md).
+
+## Integraciones existentes
+
 Estado y plan de implementación de la autenticación, la instalación del juego y las tiendas de mods. La guía de [inicio de sesión y catálogo](login-y-catalogo.md) describe cómo probar los servicios conectados.
 
 Actualizado el **22-10-2026**. El [roadmap general](../README.md#roadmap) y el [roadmap del diseño](roadmap-system-design.md) distinguen los recorridos conectados de las maquetas y pendientes.

@@ -631,37 +631,54 @@ pub fn tienda(app: &App) -> Element<'_, Mensaje> {
                 Mensaje::Servicio(servicios::Accion::Consulta(String::new())),
             ));
         }
+        let por_pagina = r.limit.max(1);
+        let mut cantidades = row![text("Mostrar").size(texto::BODY_SM.0).color(p.text_muted)]
+            .spacing(icaro_ui::tema::espacio::S2)
+            .align_y(Alignment::Center);
+        for n in servicios::POR_PAGINA {
+            cantidades = cantidades.push(componentes::chip(
+                p,
+                &n.to_string(),
+                s.por_pagina == n,
+                Mensaje::Servicio(servicios::Accion::PorPagina(n)),
+            ));
+        }
         results = results.push(
-            row![
-                componentes::boton_compacto(
-                    p,
-                    "Anterior",
-                    Variante::Secundario,
-                    (r.offset > 0).then(|| Mensaje::Servicio(servicios::Accion::Pagina(
-                        r.offset.saturating_sub(icaro_core::modrinth::PAGE_SIZE)
-                    )))
-                ),
-                container(
-                    text(format!(
-                        "{} / {}",
-                        r.offset / icaro_core::modrinth::PAGE_SIZE + 1,
-                        r.total_hits
-                            .div_ceil(icaro_core::modrinth::PAGE_SIZE)
-                            .max(1)
-                    ))
-                    .font(fuentes::MONO)
-                    .color(p.text_muted)
-                )
-                .center_x(Length::Fill),
-                componentes::boton_compacto(
-                    p,
-                    "Siguiente",
-                    Variante::Secundario,
-                    (r.offset + r.limit < r.total_hits)
-                        .then(|| Mensaje::Servicio(servicios::Accion::Pagina(r.offset + r.limit)))
-                )
-            ]
-            .align_y(Alignment::Center),
+            // Margen inferior: los botones quedan enteros al final de la lista.
+            container(
+                row![
+                    componentes::boton_compacto(
+                        p,
+                        "Anterior",
+                        Variante::Secundario,
+                        (r.offset > 0).then(|| Mensaje::Servicio(servicios::Accion::Pagina(
+                            r.offset.saturating_sub(por_pagina)
+                        )))
+                    ),
+                    column![
+                        text(format!(
+                            "{} / {}",
+                            r.offset / por_pagina + 1,
+                            r.total_hits.div_ceil(por_pagina).max(1)
+                        ))
+                        .font(fuentes::MONO)
+                        .color(p.text_muted),
+                        cantidades,
+                    ]
+                    .spacing(icaro_ui::tema::espacio::S2)
+                    .align_x(Alignment::Center)
+                    .width(Length::Fill),
+                    componentes::boton_compacto(
+                        p,
+                        "Siguiente",
+                        Variante::Secundario,
+                        (r.offset + r.limit < r.total_hits)
+                            .then(|| Mensaje::Servicio(servicios::Accion::Pagina(r.offset + r.limit)))
+                    )
+                ]
+                .align_y(Alignment::Center),
+            )
+            .padding(iced::Padding { bottom: 32.0, ..iced::Padding::ZERO }),
         );
     }
     if let Some(e) = &s.error {
@@ -685,9 +702,11 @@ pub fn tienda(app: &App) -> Element<'_, Mensaje> {
     } else {
         main = main.push(mods_reales::estado_operacion(app));
     }
+    // Cambiar de página o de cantidad vuelve arriba suavemente.
+    let pagina = s.results.as_ref().map_or(0, |r| (u64::from(r.offset) << 32) | u64::from(r.limit));
     main = main.push(row![
             crate::desplazable_pub(filters.into()),
-            crate::desplazable_pub(results.into())
+            icaro_ui::scroll::desplazable_con_clave(results, pagina)
         ]
         .spacing(32)
         .height(Length::Fill));

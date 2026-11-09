@@ -124,9 +124,10 @@ pub fn vista<'a, M: Clone + 'a>(
                     Variante::Fantasma,
                     accion(Accion::Confiar(i))
                 ),
-                iced::widget::button(icono(Icono::Papelera, Tam::Sm, p.text_muted))
+                iced::widget::button(container(icono(Icono::Papelera, Tam::Sm, p.text_muted)).center(Length::Fill))
+                    .width(28)
                     .height(28)
-                    .padding(6)
+                    .padding(0)
                     .on_press_maybe(accion(Accion::Quitar(i)))
                     .style(estilo::boton_fantasma(p))
             ]

@@ -1,0 +1,10 @@
+CREATE TABLE publications (publication TEXT PRIMARY KEY, host TEXT NOT NULL, meeting TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1);
+CREATE INDEX publications_host ON publications(host);
+CREATE TABLE invitations (code_hash TEXT PRIMARY KEY, publication TEXT NOT NULL REFERENCES publications(publication), created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, capacity INTEGER NOT NULL CHECK(capacity BETWEEN 1 AND 4294967295), used INTEGER NOT NULL DEFAULT 0, revoked INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX invitations_publication ON invitations(publication);
+CREATE TABLE authorizations (publication TEXT NOT NULL REFERENCES publications(publication), guest TEXT NOT NULL, code_hash TEXT NOT NULL REFERENCES invitations(code_hash), accepted_at INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(publication,guest));
+CREATE TRIGGER consume_slot AFTER INSERT ON authorizations WHEN NEW.revoked=0 BEGIN UPDATE invitations SET used=used+1 WHERE code_hash=NEW.code_hash; END;
+CREATE TABLE nonces (identity TEXT NOT NULL, nonce TEXT NOT NULL, expires_at INTEGER NOT NULL, PRIMARY KEY(identity,nonce));
+CREATE INDEX nonces_expiry ON nonces(expires_at);
+CREATE TABLE rate_limits (bucket TEXT PRIMARY KEY, n INTEGER NOT NULL, expires_at INTEGER NOT NULL);
+CREATE INDEX rates_expiry ON rate_limits(expires_at);

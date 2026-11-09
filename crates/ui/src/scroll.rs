@@ -26,14 +26,144 @@ const UMBRAL: f32 = 0.3;
 
 /// Lista desplazable sin barra y con rueda suave.
 pub fn desplazable<'a, M: 'a>(contenido: impl Into<Element<'a, M>>) -> Element<'a, M> {
+    suave(contenido, None)
+}
+
+/// Como [`desplazable`], pero vuelve arriba con el mismo movimiento suave
+/// cada vez que cambia `clave`, por ejemplo al pasar de página.
+pub fn desplazable_con_clave<'a, M: 'a>(
+    contenido: impl Into<Element<'a, M>>,
+    clave: u64,
+) -> Element<'a, M> {
+    suave(contenido, Some(clave))
+}
+
+/// Como [`desplazable`], con un identificador para llevar a la vista una parte
+/// del contenido con el mismo movimiento suave (ver [`llevar_a`]).
+pub fn desplazable_con_id<'a, M: 'a>(
+    contenido: impl Into<Element<'a, M>>,
+    id: &'static str,
+) -> Element<'a, M> {
+    let mut e = suave_widget(contenido, None);
+    e.id = Some(iced::advanced::widget::Id::new(id));
+    Element::new(e)
+}
+
+fn suave<'a, M: 'a>(contenido: impl Into<Element<'a, M>>, clave: Option<u64>) -> Element<'a, M> {
+    Element::new(suave_widget(contenido, clave))
+}
+
+fn suave_widget<'a, M: 'a>(
+    contenido: impl Into<Element<'a, M>>,
+    clave: Option<u64>,
+) -> Suave<'a, M> {
     let lista = scrollable::Scrollable::with_direction(
         contenido,
         Direction::Vertical(Scrollbar::new().width(0).scroller_width(0).margin(0)),
     )
     .height(Length::Fill);
-    Element::new(Suave {
+    Suave {
         contenido: lista.into(),
+        clave,
+        id: None,
+    }
+}
+
+/// Lleva a la vista el contenedor `objetivo` dentro del desplazable `id`, con
+/// `margen` píxeles por encima. Mide su posición y mueve el objetivo de la
+/// animación: la posición real lo persigue como con la rueda. `avisar` se
+/// emite al terminar para que la ventana vuelva a dibujarse y arranque el
+/// movimiento.
+pub fn llevar_a<M: Clone + Send + 'static>(
+    id: &'static str,
+    objetivo: impl Into<std::borrow::Cow<'static, str>>,
+    margen: f32,
+    avisar: M,
+) -> iced::Task<M> {
+    use iced::advanced::widget::{operate, operation::Outcome, operation::Scrollable, Id};
+    struct Medir {
+        desplazable: Id,
+        objetivo: Id,
+        margen: f32,
+        dentro: bool,
+        inicio: Option<f32>,
+        y: Option<f32>,
+    }
+    impl Operation<()> for Medir {
+        fn container(
+            &mut self,
+            id: Option<&Id>,
+            bounds: Rectangle,
+            hijos: &mut dyn FnMut(&mut dyn Operation<()>),
+        ) {
+            let entra = id == Some(&self.desplazable);
+            if entra {
+                self.dentro = true;
+            }
+            if self.dentro && id == Some(&self.objetivo) {
+                self.y = Some(bounds.y);
+            }
+            hijos(self);
+            if entra {
+                self.dentro = false;
+            }
+        }
+        fn scrollable(
+            &mut self,
+            _: &mut dyn Scrollable,
+            _: Option<&Id>,
+            _: Rectangle,
+            contenido: Rectangle,
+            _: Vector,
+        ) {
+            if self.dentro && self.inicio.is_none() {
+                self.inicio = Some(contenido.y);
+            }
+        }
+        fn finish(&self) -> Outcome<()> {
+            match self.y.zip(self.inicio) {
+                Some((y, inicio)) => Outcome::Chain(Box::new(Mover {
+                    desplazable: self.desplazable.clone(),
+                    valor: (y - inicio - self.margen).max(0.0),
+                })),
+                None => Outcome::None,
+            }
+        }
+    }
+    struct Mover {
+        desplazable: Id,
+        valor: f32,
+    }
+    impl Operation<()> for Mover {
+        fn container(
+            &mut self,
+            _: Option<&Id>,
+            _: Rectangle,
+            hijos: &mut dyn FnMut(&mut dyn Operation<()>),
+        ) {
+            hijos(self);
+        }
+        fn custom(&mut self, estado: &mut dyn std::any::Any, id: Option<&Id>) {
+            if id == Some(&self.desplazable) {
+                if let Some(estado) = estado.downcast_mut::<Estado>() {
+                    estado.objetivo = self.valor;
+                    estado.ultimo = None;
+                }
+            }
+        }
+        fn finish(&self) -> Outcome<()> {
+            Outcome::Some(())
+        }
+    }
+    operate(Medir {
+        desplazable: Id::new(id),
+        objetivo: Id::new(objetivo),
+        margen,
+        dentro: false,
+        inicio: None,
+        y: None,
     })
+    .map(move |()| avisar.clone())
 }
 
 #[derive(Debug, Default)]
@@ -41,6 +171,17 @@ struct Estado {
     objetivo: f32,
     actual: f32,
     ultimo: Option<Instant>,
+    clave: Option<u64>,
+}
+
+impl Estado {
+    /// Ajusta la posición al recorrido disponible. Si el contenido se acorta,
+    /// el `scrollable` limita su desplazamiento; sin este ajuste la rueda
+    /// partiría de una posición que ya no existe y movería en sentido contrario.
+    fn limitar(&mut self, maximo: f32) {
+        self.objetivo = self.objetivo.clamp(0.0, maximo);
+        self.actual = self.actual.clamp(0.0, maximo);
+    }
 }
 
 /// Envoltura que convierte la rueda en un movimiento interpolado: captura la
@@ -48,6 +189,9 @@ struct Estado {
 /// tramo que corresponde como un desplazamiento en píxeles.
 struct Suave<'a, M> {
     contenido: Element<'a, M>,
+    clave: Option<u64>,
+    /// Permite que [`llevar_a`] encuentre este desplazable.
+    id: Option<iced::advanced::widget::Id>,
 }
 
 impl<'a, M> Widget<M, Theme, Renderer> for Suave<'a, M> {
@@ -56,7 +200,10 @@ impl<'a, M> Widget<M, Theme, Renderer> for Suave<'a, M> {
     }
 
     fn state(&self) -> tree::State {
-        tree::State::new(Estado::default())
+        tree::State::new(Estado {
+            clave: self.clave,
+            ..Estado::default()
+        })
     }
 
     fn children(&self) -> Vec<Tree> {
@@ -64,6 +211,13 @@ impl<'a, M> Widget<M, Theme, Renderer> for Suave<'a, M> {
     }
 
     fn diff(&self, arbol: &mut Tree) {
+        let estado = arbol.state.downcast_mut::<Estado>();
+        if self.clave.is_some() && estado.clave != self.clave {
+            // El siguiente cuadro anima desde la posición actual hasta arriba.
+            estado.clave = self.clave;
+            estado.objetivo = 0.0;
+            estado.ultimo = None;
+        }
         arbol.diff_children(std::slice::from_ref(&self.contenido));
     }
 
@@ -103,11 +257,23 @@ impl<'a, M> Widget<M, Theme, Renderer> for Suave<'a, M> {
         renderer: &Renderer,
         operacion: &mut dyn Operation,
     ) {
-        if let Some(hijo) = layout.children().next() {
+        let Some(hijo) = layout.children().next() else {
+            return;
+        };
+        if self.id.is_none() {
             self.contenido
                 .as_widget()
                 .operate(&mut arbol.children[0], hijo, renderer, operacion);
+            return;
         }
+        operacion.custom(arbol.state.downcast_mut::<Estado>(), self.id.as_ref());
+        let contenido = &self.contenido;
+        let hijos = &mut arbol.children;
+        operacion.container(self.id.as_ref(), layout.bounds(), &mut |op| {
+            contenido
+                .as_widget()
+                .operate(&mut hijos[0], hijo, renderer, op);
+        });
     }
 
     fn on_event(
@@ -125,23 +291,25 @@ impl<'a, M> Widget<M, Theme, Renderer> for Suave<'a, M> {
             return event::Status::Ignored;
         };
         let caja = hijo.bounds();
+        // Alto del contenido dentro del scrollable (su primer hijo).
+        let alto = hijo.children().next().map_or(caja.height, |c| c.bounds().height);
+        let maximo = (alto - caja.height).max(0.0);
 
         match &evento {
             Event::Mouse(mouse::Event::WheelScrolled { delta }) if cursor.is_over(caja) => {
-                // Alto del contenido dentro del scrollable (su primer hijo).
-                let alto = hijo.children().next().map_or(caja.height, |c| c.bounds().height);
-                let maximo = (alto - caja.height).max(0.0);
                 let dy = match delta {
                     mouse::ScrollDelta::Lines { y, .. } => *y * PASO_MUESCA,
                     mouse::ScrollDelta::Pixels { y, .. } => *y,
                 };
                 let estado = arbol.state.downcast_mut::<Estado>();
+                estado.limitar(maximo);
                 estado.objetivo = (estado.objetivo - dy).clamp(0.0, maximo);
                 shell.request_redraw(RedrawRequest::NextFrame);
                 return event::Status::Captured;
             }
             Event::Window(iced::window::Event::RedrawRequested(ahora)) => {
                 let estado = arbol.state.downcast_mut::<Estado>();
+                estado.limitar(maximo);
                 if (estado.objetivo - estado.actual).abs() > UMBRAL {
                     let dt = estado
                         .ultimo
@@ -238,6 +406,34 @@ mod pruebas_capas {
             desplazable(iced::widget::Space::with_height(1600)),
             con_menu.then(|| iced::widget::Space::new(260, 407).into()),
         )
+    }
+
+    #[test]
+    fn cambiar_la_clave_vuelve_arriba_y_conservarla_no() {
+        let vista = |clave| -> Element<'static, ()> {
+            desplazable_con_clave(iced::widget::Space::with_height(1600), clave)
+        };
+        let mut arbol = Tree::new(vista(1).as_widget());
+        let estado = arbol.state.downcast_mut::<Estado>();
+        estado.actual = 900.0;
+        estado.objetivo = 900.0;
+        arbol.diff(vista(1).as_widget());
+        assert_eq!(arbol.state.downcast_ref::<Estado>().objetivo, 900.0);
+        arbol.diff(vista(2).as_widget());
+        let estado = arbol.state.downcast_ref::<Estado>();
+        // La animación parte de donde estaba hacia arriba.
+        assert_eq!((estado.actual, estado.objetivo), (900.0, 0.0));
+    }
+
+    #[test]
+    fn un_contenido_mas_corto_limita_la_posicion() {
+        let mut estado = Estado {
+            objetivo: 1200.0,
+            actual: 1100.0,
+            ..Estado::default()
+        };
+        estado.limitar(400.0);
+        assert_eq!((estado.actual, estado.objetivo), (400.0, 400.0));
     }
 
     #[test]
