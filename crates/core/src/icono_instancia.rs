@@ -303,6 +303,51 @@ pub fn deshacer(store: &Almacen, id: &str, old: &Anterior) -> Result<(), String>
     }
     Ok(())
 }
+/// Tamaño de una portada propia: la proporción de la portada de la tarjeta.
+pub const PORTADA: (u32, u32) = (600, 262);
+
+/// Recorta al centro y escala la imagen a [`PORTADA`], como `object-fit: cover`.
+pub fn recortar_portada(f: &Fuente) -> Result<Vec<u8>, String> {
+    let img = f.imagen.as_ref();
+    let (w, h) = img.dimensions();
+    if w == 0 || h == 0 {
+        return Err("La imagen está vacía.".into());
+    }
+    let (pw, ph) = PORTADA;
+    // Lado que manda: el que deja cubrir toda la portada sin bandas.
+    let (cw, ch) = if u64::from(w) * u64::from(ph) > u64::from(h) * u64::from(pw) {
+        ((u64::from(h) * u64::from(pw) / u64::from(ph)) as u32, h)
+    } else {
+        (w, (u64::from(w) * u64::from(ph) / u64::from(pw)) as u32)
+    };
+    let (cw, ch) = (cw.max(1), ch.max(1));
+    let recorte = image::imageops::crop_imm(img, (w - cw) / 2, (h - ch) / 2, cw, ch).to_image();
+    png(image::imageops::resize(&recorte, pw, ph, FilterType::Lanczos3))
+}
+
+/// Portada propia guardada en la instancia, si tiene.
+pub fn leer_portada(store: &Almacen, id: &str) -> Result<Option<Vec<u8>>, String> {
+    let root = store.carpeta(id).map_err(|e| e.to_string())?;
+    let img = leer_opt(&root.join("portada.png"), MAX_ARCHIVO)?;
+    if let Some(b) = &img {
+        if decodificar(b)?.dimensions() != PORTADA {
+            return Err("La portada guardada no tiene el tamaño esperado.".into());
+        }
+    }
+    Ok(img)
+}
+
+/// Guarda (o quita, con `None`) la portada propia de forma atómica.
+pub fn guardar_portada(store: &Almacen, id: &str, img: Option<&[u8]>) -> Result<(), String> {
+    if let Some(b) = img {
+        if b.len() as u64 > MAX_ARCHIVO || decodificar(b)?.dimensions() != PORTADA {
+            return Err("La portada no es válida.".into());
+        }
+    }
+    let root = store.carpeta(id).map_err(|e| e.to_string())?;
+    publicar(&root.join("portada.png"), img)
+}
+
 pub fn capturas(store: &Almacen, id: &str) -> Result<Vec<PathBuf>, String> {
     let game = store.juego(id).map_err(|e| e.to_string())?;
     let path = game.join("screenshots");
@@ -409,6 +454,34 @@ mod tests {
         assert!(leer(&store, &i.id).unwrap().0.is_some());
         assert!(guardar(&store, &i.id, Some(b"no imagen".to_vec()), 0).is_err());
         assert!(leer(&store, &i.id).unwrap().0.is_some());
+        assert_eq!(root.parent(), Some(std::env::temp_dir().as_path()));
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn la_portada_propia_cubre_la_proporcion_y_se_guarda_y_quita() {
+        let root = std::env::temp_dir().join(format!(
+            "icaro-portada-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = Almacen::nuevo(root.join("instances"));
+        let i = store.crear("Prueba", "1.21.1", 0).unwrap();
+        for (w, h) in [(1920, 1080), (300, 900), (601, 262)] {
+            let source = Fuente {
+                nombre: "foto".into(),
+                imagen: Arc::new(RgbaImage::from_pixel(w, h, image::Rgba([9, 9, 9, 255]))),
+            };
+            let bytes = recortar_portada(&source).unwrap();
+            assert_eq!(decodificar(&bytes).unwrap().dimensions(), PORTADA);
+            guardar_portada(&store, &i.id, Some(&bytes)).unwrap();
+            assert_eq!(leer_portada(&store, &i.id).unwrap(), Some(bytes));
+        }
+        assert!(guardar_portada(&store, &i.id, Some(b"no imagen")).is_err());
+        assert!(leer_portada(&store, &i.id).unwrap().is_some());
+        guardar_portada(&store, &i.id, None).unwrap();
+        assert!(leer_portada(&store, &i.id).unwrap().is_none());
         assert_eq!(root.parent(), Some(std::env::temp_dir().as_path()));
         fs::remove_dir_all(root).unwrap();
     }
