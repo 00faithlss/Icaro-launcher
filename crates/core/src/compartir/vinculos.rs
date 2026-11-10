@@ -65,6 +65,42 @@ pub fn leer(juego: &Path) -> Result<Option<Vinculo>, Error> {
     Ok(vinculo)
 }
 
+/// Salir de una instancia recibida: quita su vínculo con el anfitrión. La
+/// instancia queda como una normal; no toca mods, mundos ni ajustes. Ejecutar
+/// fuera del hilo de iced.
+pub fn desvincular(juego: &Path) -> Result<(), Error> {
+    carpeta(juego)?;
+    let ruta = juego.join(VINCULO);
+    match fs::symlink_metadata(&ruta) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err(Error::Disco),
+        Ok(_) => (),
+    }
+    // Nunca sigue enlaces: el vínculo es un archivo regular de la instancia.
+    if !crate::almacenamiento::regular(&ruta).map_err(|_| Error::Disco)?.is_file() {
+        return Err(Error::Datos("vínculo local"));
+    }
+    fs::remove_file(&ruta).map_err(|_| Error::Disco)
+}
+
+#[cfg(test)]
+mod pruebas_desvincular {
+    #[test]
+    fn salir_quita_solo_el_vinculo_y_deja_la_instancia() {
+        let dir = std::env::temp_dir().join(format!("icaro-desvincular-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("mods")).unwrap();
+        std::fs::write(dir.join("mods/a.jar"), b"jar").unwrap();
+        std::fs::write(dir.join(super::VINCULO), b"{}").unwrap();
+        super::desvincular(&dir).unwrap();
+        assert!(!dir.join(super::VINCULO).exists());
+        assert!(dir.join("mods/a.jar").exists());
+        // Sin vínculo no hace nada.
+        super::desvincular(&dir).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
 /// Perfil actual de la instancia, sin escribir nada.
 pub(crate) fn perfil_de(store: &Almacen, instancia: &Instancia) -> Perfil {
     Perfil {
