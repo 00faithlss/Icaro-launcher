@@ -26,6 +26,10 @@ $env:ICARO_DEMO = '1'; $env:ICARO_CAPTURA_DISENO = "$env:TEMP\escena.png"; $env:
 Remove-Item Env:ICARO_DEMO, Env:ICARO_CAPTURA_DISENO, Env:ICARO_VISTA_DISENO
 ```
 
+## Regla de interfaz que no se olvida
+
+Las líneas (bordes, reglas, separadores, la línea de la barra lateral) **nunca desaparecen al pasar el mouse**, en ningún lado. En iced, `widget::hover` y otros estados dibujan en una capa propia que queda encima de lo pintado antes en la capa padre: los bordes que van sobre un elemento con hover se pintan en una capa posterior o el elemento se dibuja con `mouse::Cursor::Unavailable` (ver `menu_anclado.rs`).
+
 ## Arquitectura
 
 - `icaro-core` hace todo el trabajo de disco y red con funciones `async` o bloqueantes: autenticación y tokens (`auth`, `vault`), perfil, skins y capas de Microsoft (`cuenta`), instancias y sus metadatos (`instancias`, con `estadisticas` de tiempo jugado y tamaño), instalación de Minecraft, loaders y Java (`minecraft`, `java`, `lanzamiento`), catálogo de Modrinth con caché y presupuesto de solicitudes (`modrinth`), mods/packs y la sincronización transaccional con anfitriones (`mods`, `mods/sincronizacion`), y el actualizador (`actualizacion`). No depende de la interfaz.
