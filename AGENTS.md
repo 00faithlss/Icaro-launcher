@@ -88,9 +88,9 @@ Reglas acordadas con el usuario; prevalecen sobre costumbres de otros proyectos.
 
 ## Estado y fuentes de referencia
 
-Estado comprobado el 10-11-2026: `v0.4.x` integrada en `develop` y versión `0.4.1`
+Estado comprobado el 10-11-2026: `v0.4.x` integrada en `develop` y versión `0.4.2` (hotfix)
 preparada para beta por petición expresa del usuario (notas en
-[docs/releases/0.4.1.md](docs/releases/0.4.1.md)); esa autorización no cubre `main`.
+[docs/releases/0.4.2.md](docs/releases/0.4.2.md)); esa autorización no cubre `main`.
 La beta 0.4.0 se publicó como `v0.4.0-beta.42575921756`.
 Compartir sigue siendo experimental. El plan está en `d78e628`; el núcleo/servicio se registran
 en `d48181f` y la interfaz experimental en `f4fbf08`. El usuario autorizó registrar
@@ -111,7 +111,7 @@ escenas de diseño ni pruebas locales con una función habilitada o desplegada.
 Las referencias de publicaciones del párrafo siguiente son el registro previo;
 esta actualización documental no revalidó releases ni CI remotos.
 
-Base de trabajo: `0.4.1` (beta desde `develop`). Base anterior: `0.4.0` (beta `v0.4.0-beta.42575921756`) y `0.3.4` en `v0.3.x`, de la que nació `v0.4.x`. Últimas publicaciones registradas en estas guías: estable 0.3.3 (`v0.3.3-build.40389040180`, 26-10-2026) y beta 0.3.4 (`v0.3.4-beta.40452130273`, 27-10-2026); `v0.3.x` lleva además cambios posteriores a esa beta. Consultar `git status` y las referencias remotas antes de asumir rama, publicación o estado de CI. Desde 0.3.0 se publica por canales: `develop` → beta (prerelease `v<versión>-beta.<compilación>`) y `main` → estable (`v<versión>-build.<compilación>` más el tag fuente `v<versión>`, creado por el workflow). `v0.2.x` queda como historial y ya no publica. Revalidar con `gh release list` antes de asumir el estado. La versión visible y el actualizador deben usar `env!("CARGO_PKG_VERSION")`, heredado del workspace; nunca escribir `0.1.0` u otra versión fija en la interfaz.
+Base de trabajo: `0.4.2` (beta desde `develop`). Base anterior: `0.4.1`, `0.4.0` (beta `v0.4.0-beta.42575921756`) y `0.3.4` en `v0.3.x`, de la que nació `v0.4.x`. Últimas publicaciones registradas en estas guías: estable 0.3.3 (`v0.3.3-build.40389040180`, 26-10-2026) y beta 0.3.4 (`v0.3.4-beta.40452130273`, 27-10-2026); `v0.3.x` lleva además cambios posteriores a esa beta. Consultar `git status` y las referencias remotas antes de asumir rama, publicación o estado de CI. Desde 0.3.0 se publica por canales: `develop` → beta (prerelease `v<versión>-beta.<compilación>`) y `main` → estable (`v<versión>-build.<compilación>` más el tag fuente `v<versión>`, creado por el workflow). `v0.2.x` queda como historial y ya no publica. Revalidar con `gh release list` antes de asumir el estado. La versión visible y el actualizador deben usar `env!("CARGO_PKG_VERSION")`, heredado del workspace; nunca escribir `0.1.0` u otra versión fija en la interfaz.
 
 - [Notas de 0.2.5](docs/releases/0.2.5.md): cuentas sin conexión persistentes y skins locales con el componente original; conservar las limitaciones de autenticación y la validación pendiente en una partida real.
 - [Notas de 0.2.4](docs/releases/0.2.4.md): inventario incremental, plan sin red, consultas por lotes y presupuesto de la API, descargas en streaming y paralelas, y host incremental con ETag/304, conexiones persistentes y reanudación.
