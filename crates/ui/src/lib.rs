@@ -5,6 +5,8 @@
 
 pub mod ajustes;
 pub mod archivos_no_verificados;
+pub mod arranque;
+pub mod aviso_actualizacion;
 pub mod avisos;
 pub mod barrido;
 pub mod botones;

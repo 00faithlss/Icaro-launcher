@@ -84,6 +84,10 @@ pub enum Accion {
     PausarDe(String),
     CambiarCodigoDe(String),
     DejarDeCompartirDe(String),
+    /// Quitar una publicación en pausa: pide confirmar en la propia fila.
+    QuitarCompartidaDe(String),
+    ConfirmarQuitarDe(String),
+    CancelarQuitar,
     JugarRecibida(String),
     SincronizarRecibida(String),
     /// Elige la instancia en el selector sin analizarla todavía.
@@ -158,6 +162,8 @@ pub struct InstanciasCompartidas {
     pub compartes: Vec<InstanciaQueCompartes>,
     pub recibes: Vec<InstanciaQueRecibes>,
     pub menu: Option<String>,
+    /// Fila que pide confirmar «Quitar de compartidas».
+    pub confirmar_quitar: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]

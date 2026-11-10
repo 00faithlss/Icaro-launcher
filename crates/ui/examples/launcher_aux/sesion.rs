@@ -355,7 +355,7 @@ pub fn animando(app: &App) -> bool {
 /// «Skin aplicada» se muestra durante este tiempo.
 pub const MS_APLICADA: u128 = 3000;
 
-fn progreso_menu(app: &App) -> f32 {
+pub fn progreso_menu(app: &App) -> f32 {
     app.sesion.menu_desde.map_or(1.0, |i| {
         (app.ahora.saturating_duration_since(i).as_millis() as f32 / icaro_ui::tema::duracion::LOSA as f32).clamp(0.0, 1.0)
     })
@@ -518,7 +518,8 @@ pub fn vista_estudio(app: &App) -> Element<'_, Mensaje> {
 /// transparente que lo cierra al pulsar fuera.
 pub fn con_selector<'a>(app: &'a App, ventana: Element<'a, Mensaje>) -> Element<'a, Mensaje> {
     if !app.servicios.demo || app.servicios.local.abierta { return crate::servicios::selector(app, ventana); }
-    if !app.sesion.menu {
+    // Sin pantalla encima, el menú va unido al bloque de cuenta (MenuCuenta).
+    if !app.sesion.menu || app.pantalla.is_none() {
         return ventana;
     }
     let p = app.paleta();

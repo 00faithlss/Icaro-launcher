@@ -324,7 +324,7 @@ pub fn vista<'a>(app: &'a App, escena: &str) -> Option<Element<'a, Mensaje>> {
                 Diferencia {archivo:archivo("personal.jar","mods"),marca:Marca::Conservado,del_anfitrion:false,resolucion:Some(Resolucion::ConservarMia)},
             ],
         }),
-        "compartir-cupo" | "compartir-invitacion" => panel_publicacion(p, &PanelPublicacion {
+        "compartir-cupo" | "compartir-invitacion" | "compartir-cargando" => (if escena == "compartir-cargando" { |p, m: &PanelPublicacion| panel_publicacion_cargando(p, m, true) } else { panel_publicacion })(p, &PanelPublicacion {
             instancia:instancia(),revision:3,fecha_revision:"Hace unos minutos".into(),hash_revision:"a7f920cd82b1".into(),disponibilidad:"Disponible mientras Ícaro esté abierto".into(),transferencias:"Sin transferencias activas".into(),huella:"71ac 20f4 832d 5e90 b114 32fa".into(),contenido_privado:2,estado:EstadoPublicacion::Compartiendo,
             invitacion:Some(Invitacion {codigo:"7QKM-4XPT-R2C9".into(),estado:if escena=="compartir-cupo" {EstadoInvitacion::Completa} else {EstadoInvitacion::Vigente {restante:"23 h 41 min".into()}},cupo:10,aceptados:if escena=="compartir-cupo" {10} else {2},..Default::default()}),
             accesos:Accesos {personas:vec![Acceso {id:"fixture-invitado".into(),nombre:"Equipo invitado".into(),huella:"9e2a 7b14 08fc 621d".into(),estado:"Autorizado".into(),conectado:false,aceptado:"Hoy".into()}],confirmar:None,instancia:"Supervivencia".into()},
@@ -388,6 +388,7 @@ fn compartidas_ejemplo(escena: &str) -> InstanciasCompartidas {
             recibida("hard", "Hardcore", "Equipo b812 e3f0", AnfitrionRecibida::SinConexion, 2, 0, "1.21.4 · Vanilla"),
         ],
         menu: escena.contains("menu").then(|| "amigos".into()),
+        confirmar_quitar: escena.contains("quitar").then(|| "sky".into()),
     }
 }
 

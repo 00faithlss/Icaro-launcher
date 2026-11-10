@@ -12,6 +12,8 @@ use iced::Task;
 #[derive(Clone)]
 pub enum Accion {
     ActivarExperimental,
+    /// Una publicación en pausa se quitó de la biblioteca.
+    Quitada(Result<(), String>),
     Biblioteca(u64, Result<Vec<c::biblioteca::PublicacionGuardada>, String>),
     Recuperada(u64, Result<super::biblioteca_tareas::Recuperada, String>),
     Reconectada(u64, Result<super::biblioteca_tareas::Reconectada, String>),
@@ -208,6 +210,13 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
         Accion::ActivarExperimental => {
             app.servicios.compartir.activado_por_usuario = true;
             app.servicios.compartir.habilitado = true;
+            return super::biblioteca::cargar(app);
+        }
+        Accion::Quitada(r) => {
+            match r {
+                Ok(()) => app.avisar("Se quitó de tus instancias compartidas.".into()),
+                Err(e) => app.avisar(format!("No se pudo quitar: {e}")),
+            }
             return super::biblioteca::cargar(app);
         }
         Accion::Biblioteca(generacion, r) => {

@@ -62,6 +62,13 @@ pub struct Ajustes {
     pub metal: usize,
     pub cache_limpia: bool,
     pub canal: icaro_core::actualizacion::Canal,
+    pub copias_antes: bool,
+    /// AjusteArranque: transición al pulsar Jugar y sus opciones.
+    pub arranque: icaro_ui::arranque::Estilo,
+    pub tono_arranque: icaro_ui::arranque::Tono,
+    pub arranque_azar: bool,
+    pub frase_al_cargar: bool,
+    pub registro_al_cargar: bool,
 }
 
 impl Default for Ajustes {
@@ -79,6 +86,12 @@ impl Default for Ajustes {
             metal: 0,
             cache_limpia: false,
             canal: crate::actualizacion_real::canal_compilado(),
+            copias_antes: true,
+            arranque: icaro_ui::arranque::Estilo::Marea,
+            tono_arranque: icaro_ui::arranque::Tono::Tema,
+            arranque_azar: false,
+            frase_al_cargar: true,
+            registro_al_cargar: true,
         }
     }
 }
@@ -100,7 +113,10 @@ pub struct Asistente {
     pub version: usize,
     pub loader: usize,
     pub nombre: String,
+    /// Grabado elegido; `PORTADAS.len()` es la imagen propia.
     pub portada: usize,
+    /// Imagen propia ya recortada a la proporción de la portada.
+    pub portada_propia: Option<(Vec<u8>, iced::widget::image::Handle)>,
 }
 
 pub const PASOS: [&str; 4] = ["Versión", "Loader", "Nombre e icono", "Revisar"];
@@ -188,6 +204,9 @@ pub enum Accion {
     VersionScroll(bool, f32),
     AsistenteNombre(String),
     AsistentePortada(usize),
+    /// Abre el selector de archivos para usar una imagen propia de portada.
+    AsistentePortadaElegir,
+    AsistentePortadaLista(Result<Vec<u8>, String>),
     AsistenteCrear,
     // Importar
     Importar,
@@ -209,7 +228,6 @@ pub enum Accion {
     MostrarExportacion(std::path::PathBuf),
     AbrirListaEnlace(String),
     AbrirRepositorio,
-    Canal(String),
 
     ExportarCancelar,
     ExportarConfirmar,
@@ -298,6 +316,7 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                 | Accion::AsistenteLoaderVersion(_)
                 | Accion::AsistenteNombre(_)
                 | Accion::AsistentePortada(_)
+                | Accion::AsistentePortadaElegir
                 | Accion::AsistenteCrear
         )
     {
@@ -406,6 +425,7 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                 loader: 0,
                 nombre: String::new(),
                 portada: 0,
+                portada_propia: None,
             });
             if !app.servicios.demo {
                 return crate::instancias_reales::abrir(app);
@@ -505,9 +525,44 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
         }
         Accion::AsistentePortada(i) => {
             if let Some(s) = app.asistente.as_mut() {
-                s.portada = i.min(PORTADAS.len() - 1);
+                // La imagen propia solo se elige si ya hay una cargada.
+                let tope = PORTADAS.len() - usize::from(s.portada_propia.is_none());
+                s.portada = i.min(tope);
             }
         }
+        Accion::AsistentePortadaElegir => {
+            return Task::perform(
+                async {
+                    let Some(f) = rfd::AsyncFileDialog::new()
+                        .add_filter("Imágenes", &["png", "jpg", "jpeg", "webp", "gif"])
+                        .pick_file()
+                        .await
+                    else {
+                        return None;
+                    };
+                    let ruta = f.path().to_path_buf();
+                    Some(
+                        tokio::task::spawn_blocking(move || {
+                            let fuente = icaro_core::icono_instancia::abrir(&ruta)?;
+                            icaro_core::icono_instancia::recortar_portada(&fuente)
+                        })
+                        .await
+                        .unwrap_or_else(|_| Err("No se pudo preparar la imagen.".into())),
+                    )
+                },
+                |r| r.map_or(Mensaje::Nada, |r| m(Accion::AsistentePortadaLista(r))),
+            );
+        }
+        Accion::AsistentePortadaLista(r) => match r {
+            Ok(png) => {
+                if let Some(s) = app.asistente.as_mut() {
+                    let handle = iced::widget::image::Handle::from_bytes(png.clone());
+                    s.portada_propia = Some((png, handle));
+                    s.portada = PORTADAS.len();
+                }
+            }
+            Err(e) => app.avisar(e),
+        },
         Accion::AsistenteCrear => {
             if let Some(s) = app.asistente.take() {
                 let nombre = nombre_unico(if s.nombre.trim().is_empty() {
@@ -521,7 +576,7 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                 );
                 agregar_instancia(
                     app,
-                    nueva_instancia(&nombre, version, PORTADAS[s.portada].1),
+                    nueva_instancia(&nombre, version, PORTADAS[s.portada.min(PORTADAS.len() - 1)].1),
                 );
                 app.avisar(format!("Instancia {nombre} creada."));
                 arrancar(app);
@@ -732,16 +787,6 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
         // La dirección sale de `workspace.package.repository`, igual que la versión.
         Accion::AbrirRepositorio => {
             return crate::servicios::actualizar(app, crate::servicios::Accion::Enlace(env!("CARGO_PKG_REPOSITORY").into()));
-        }
-        // Cambiar de canal vuelve a comprobar: una descarga preparada de otro
-        // canal se descarta al recibir el resultado.
-        Accion::Canal(v) => {
-            let canal = if v == "Beta" { icaro_core::actualizacion::Canal::Beta } else { icaro_core::actualizacion::Canal::Estable };
-            if canal != app.aj.canal {
-                app.aj.canal = canal;
-                app.actualizacion.disponible = None;
-                return crate::actualizacion_real::actualizar(app, crate::actualizacion_real::Accion::Comprobar);
-            }
         }
         Accion::Exportada(result) => match result {
             Ok(path)=>{
@@ -1465,7 +1510,7 @@ mod pruebas_scroll_version {
         app.servicios.instancias.versiones=(0..100).map(|n|icaro_core::manifest::VersionEntry {
             id:format!("1.21.{n}"),kind:"release".into(),url:String::new(),sha1:String::new(),release_time:String::new()
         }).collect();
-        let state=Asistente {paso:0,tipo_version:0,busqueda:String::new(),version:0,loader:0,nombre:String::new(),portada:0};
+        let state=Asistente {paso:0,tipo_version:0,busqueda:String::new(),version:0,loader:0,nombre:String::new(),portada:0,portada_propia:None};
         let renderer=iced::Renderer::Secondary(iced_tiny_skia::Renderer::new(iced::Font::DEFAULT,16.into()));
         let mut widget=asistente(&app,&state);let mut tree=Tree::new(widget.as_widget());
         let size=Size::new(1000.,750.);
@@ -1489,6 +1534,9 @@ mod pruebas_scroll_version {
         assert!(messages.iter().any(|m|matches!(m,Mensaje::Pant(Accion::VersionScroll(false,y)) if *y>0.)),"La rueda debe llegar a la lista interior");
     }
 }
+
+/// Alto común de las tarjetas de loader.
+const ALTO_LOADER: f32 = 124.0;
 
 fn selector_loader_completo<'a>(
     app: &'a App,
@@ -1562,8 +1610,15 @@ fn selector_loader_completo<'a>(
         ]
         .spacing(espacio::S4)
         .align_y(Alignment::Center);
-        let button = iced::widget::button(container(row).padding([espacio::S4, espacio::S5]))
+        // Todas las tarjetas miden lo mismo: caben dos líneas de ayuda y el
+        // selector de versión de la elegida, sin que ninguna crezca.
+        let button = iced::widget::button(
+            container(row)
+                .center_y(Length::Fill)
+                .padding([espacio::S4, espacio::S5]),
+        )
             .width(Length::Fill)
+            .height(ALTO_LOADER)
             .padding(0)
             .on_press_maybe((!disabled).then(|| m(Accion::AsistenteLoader(index))))
             .style(icaro_ui::estilo::sin_estilo(p.text));
@@ -1592,16 +1647,35 @@ pub fn asistente<'a>(app: &'a App, s: &'a Asistente) -> Element<'a, Mensaje> {
         0 => selector_version(),
         1 => selector_loader(),
         2 => {
+            // La elegida lleva marco grueso de tinta y su nombre resaltado; el
+            // relleno es el del marco grueso en todas, así no cambia el tamaño.
+            let marco = move |elegida: bool| {
+                move |_: &iced::Theme| iced::widget::container::Style {
+                    border: iced::Border {
+                        color: if elegida { p.text } else { p.border },
+                        width: if elegida { icaro_ui::tema::borde::GRUESO } else { icaro_ui::tema::borde::FINO },
+                        radius: 0.0.into(),
+                    },
+                    ..Default::default()
+                }
+            };
+            let rotulo = |nombre: &str, elegida: bool| {
+                text(nombre.to_owned())
+                    .font(if elegida { fuentes::CUERPO_NEGRITA } else { fuentes::CUERPO })
+                    .size(texto::BODY_SM.0)
+                    .color(if elegida { p.text } else { p.text_muted })
+            };
+            const ALTO_PORTADA: f32 = 70.0;
             let mut portadas = row![].spacing(espacio::S3);
             for (i, (nombre, lamina)) in PORTADAS.iter().enumerate() {
+                let elegida = s.portada == i;
                 portadas = portadas.push(
                     iced::widget::button(
                         column![
-                            container(grabado(p, *lamina, Length::Fill, 70))
-                                .style(icaro_ui::estilo::marco(p)),
-                            text((*nombre).to_owned())
-                                .size(texto::BODY_SM.0)
-                                .color(if s.portada == i { p.text } else { p.text_muted }),
+                            container(grabado(p, *lamina, Length::Fill, ALTO_PORTADA))
+                                .padding(icaro_ui::tema::borde::GRUESO)
+                                .style(marco(elegida)),
+                            rotulo(nombre, elegida),
                         ]
                         .spacing(espacio::S1),
                     )
@@ -1611,6 +1685,61 @@ pub fn asistente<'a>(app: &'a App, s: &'a Asistente) -> Element<'a, Mensaje> {
                     .style(icaro_ui::estilo::sin_estilo(p.text)),
                 );
             }
+            // Imagen propia: sin elegir, la casilla abre el selector de archivos;
+            // con imagen, la elige y «Cambiar» abre el selector otra vez.
+            let propia = PORTADAS.len();
+            let elegida = s.portada == propia;
+            let (vista, al_pulsar): (Element<Mensaje>, Mensaje) = match &s.portada_propia {
+                Some((_, handle)) => (
+                    iced::widget::image(handle.clone())
+                        .width(Length::Fill)
+                        .height(ALTO_PORTADA)
+                        .content_fit(iced::ContentFit::Cover)
+                        .into(),
+                    m(Accion::AsistentePortada(propia)),
+                ),
+                None => (
+                    container(
+                        column![
+                            icaro_ui::iconos::icono(icaro_ui::iconos::Icono::Imagen, icaro_ui::iconos::Tam::Base, p.text_muted),
+                            text("Elegir imagen").size(texto::BODY_SM.0).color(p.text_muted),
+                        ]
+                        .spacing(espacio::S1)
+                        .align_x(Alignment::Center),
+                    )
+                    .center(Length::Fill)
+                    .height(ALTO_PORTADA)
+                    .into(),
+                    m(Accion::AsistentePortadaElegir),
+                ),
+            };
+            let mut pie_propia = row![rotulo("Tu imagen", elegida), Space::with_width(Length::Fill)]
+                .align_y(Alignment::Center);
+            if s.portada_propia.is_some() {
+                pie_propia = pie_propia.push(
+                    iced::widget::button(text("Cambiar").size(texto::BODY_SM.0).color(p.text_muted))
+                        .padding(0)
+                        .on_press(m(Accion::AsistentePortadaElegir))
+                        .style(icaro_ui::estilo::sin_estilo(p.text_muted)),
+                );
+            }
+            portadas = portadas.push(
+                column![
+                    iced::widget::button(
+                        container(vista)
+                            .height(ALTO_PORTADA + 2.0 * icaro_ui::tema::borde::GRUESO)
+                            .padding(icaro_ui::tema::borde::GRUESO)
+                            .style(marco(elegida)),
+                    )
+                    .padding(0)
+                    .width(Length::Fill)
+                    .on_press(al_pulsar)
+                    .style(icaro_ui::estilo::sin_estilo(p.text)),
+                    pie_propia,
+                ]
+                .spacing(espacio::S1)
+                .width(Length::FillPortion(1)),
+            );
             column![
                 etiqueta(p, "Nombre de la instancia"),
                 componentes::campo(p, "Mi instancia", &s.nombre, |t| m(
@@ -1870,7 +1999,9 @@ pub fn pagina_ajustes<'a>(app: &'a App) -> Element<'a, Mensaje> {
                     Mensaje::Tema, |i| m(Accion::Metal(i)), |n| m(Accion::Escala(n))),
             ).push(Space::with_height(espacio::S6))
              .push(fila_ajuste(p, "Reducir movimiento", "Quita animaciones; el Umbral pasa a ser un fundido.",
-                    componentes::interruptor(p, app.reducir, Mensaje::Reducir)));
+                    componentes::interruptor(p, app.reducir, Mensaje::Reducir)))
+             .push(Space::with_height(espacio::S8))
+             .push(crate::arranque_real::seccion(app));
         }
         2 => {
             col = col
@@ -1960,9 +2091,7 @@ pub fn pagina_ajustes<'a>(app: &'a App) -> Element<'a, Mensaje> {
                     componentes::boton_con_icono(p, Icono::Externo, "Código fuente en GitHub", Variante::Secundario, Some(m(Accion::AbrirRepositorio)), false),
                 ].spacing(espacio::S2))
                 .push(Space::with_height(espacio::S2))
-                .push(fila_ajuste(p, "Canal de actualizaciones", "Beta recibe antes las versiones en desarrollo; pueden tener errores.",
-                    componentes::selector(p, vec!["Estable".to_owned(), "Beta".to_owned()],
-                        Some(if a.canal == icaro_core::actualizacion::Canal::Beta { "Beta" } else { "Estable" }.to_owned()), |v| m(Accion::Canal(v)))));
+                .push(crate::canal_real::filas(app));
             if app.servicios.demo {
                 col = col.push(Space::with_height(espacio::S3))
                 .push(text("Pantallas de ejemplo").font(fuentes::TITULO).size(texto::BODY.0 + 1.0).color(p.text))

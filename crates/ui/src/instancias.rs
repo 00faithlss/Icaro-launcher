@@ -146,7 +146,33 @@ pub fn tarjeta_instancia<'a, M: Clone + 'a>(
 }
 
 pub fn tarjeta_instancia_con_icono<'a,M:Clone+'a>(p:Paleta,datos:&DatosInstancia,acciones:AccionesTarjeta<M>,imagen:Option<Element<'a,M>>)->Element<'a,M>{
-    let portada = crate::laminas::grabado_zoom(p, datos.portada, Length::Fill, ALTO_PORTADA);
+    tarjeta_instancia_con_portada(p, datos, acciones, imagen, None)
+}
+
+/// Como [`tarjeta_instancia_con_icono`], con una imagen propia como portada
+/// en lugar del grabado (recortada a la proporción de la portada).
+pub fn tarjeta_instancia_con_portada<'a,M:Clone+'a>(p:Paleta,datos:&DatosInstancia,acciones:AccionesTarjeta<M>,imagen:Option<Element<'a,M>>,propia:Option<iced::widget::image::Handle>)->Element<'a,M>{
+    tarjeta_instancia_completa(p, datos, acciones, imagen, propia, None)
+}
+
+/// Menú «⋮» abierto: su contenido, el mensaje que lo cierra y el avance de
+/// la apertura (0 a 1). Se dibuja unido al botón (MenuAnclado).
+pub struct MenuTarjeta<'a, M> {
+    pub contenido: Element<'a, M>,
+    pub cerrar: M,
+    pub progreso: f32,
+}
+
+/// Tarjeta completa, con el menú «⋮» unido a su botón cuando está abierto.
+pub fn tarjeta_instancia_completa<'a,M:Clone+'a>(p:Paleta,datos:&DatosInstancia,acciones:AccionesTarjeta<M>,imagen:Option<Element<'a,M>>,propia:Option<iced::widget::image::Handle>,menu:Option<MenuTarjeta<'a,M>>)->Element<'a,M>{
+    let portada: Element<'a, M> = match propia {
+        Some(h) => iced::widget::image(h)
+            .width(Length::Fill)
+            .height(ALTO_PORTADA)
+            .content_fit(iced::ContentFit::Cover)
+            .into(),
+        None => crate::laminas::grabado_zoom(p, datos.portada, Length::Fill, ALTO_PORTADA),
+    };
 
     let icono_grande=imagen.is_some();
     let mut cuerpo = column![
@@ -221,11 +247,25 @@ pub fn tarjeta_instancia_con_icono<'a,M:Clone+'a>(p:Paleta,datos:&DatosInstancia
         EstadoInstancia::Error => (Icono::Instancias, "Reparar".to_owned(), p.error, true),
     };
     let regla_pie = if invertido { Color { a: 0.3, ..p.bg } } else { p.border };
+    let boton_mas: Element<'a, M> = pie_fantasma(p, None, tinta, Some(acciones.mas.clone()), invertido).width(44).into();
+    let mas: Element<'a, M> = match menu {
+        Some(m) => crate::menu_anclado::menu_unido(
+            p,
+            boton_mas,
+            m.contenido,
+            true,
+            m.cerrar,
+            crate::menu_anclado::Alineacion::Derecha,
+            crate::menu_anclado::Direccion::Auto,
+            m.progreso,
+        ),
+        None => boton_mas,
+    };
     let pie = row![
         pie_fantasma(p, Some((glifo, etiqueta)), color, activo.then(|| acciones.principal.clone()), invertido)
             .width(Length::Fill),
         container(Space::new(1.0, Length::Fill)).style(estilo::bloque(regla_pie)),
-        pie_fantasma(p, None, tinta, Some(acciones.mas.clone()), invertido).width(44),
+        mas,
     ]
     .height(44);
     let pie = column![

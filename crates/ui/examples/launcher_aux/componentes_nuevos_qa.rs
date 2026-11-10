@@ -11,6 +11,9 @@ pub fn vista<'a>(app: &'a App, scene: &str) -> Option<Element<'a, Mensaje>> {
     let p = app.paleta();
     let vista: Element<'a, Mensaje> = match scene {
         "picar" => return None,
+        "arranque-ajuste" => return Some(iced::widget::container(crate::arranque_real::seccion(app))
+            .padding([24., 48.]).width(iced::Length::Fill).height(iced::Length::Fill)
+            .style(icaro_ui::estilo::bloque(p.bg)).into()),
         "apariencia" => componentes::apariencia(p, app.tema, app.aj.metal, app.aj.escala,
             Mensaje::Tema, |i| Mensaje::Pant(crate::pantallas::Accion::Metal(i)),
             |v| Mensaje::Pant(crate::pantallas::Accion::Escala(v))),

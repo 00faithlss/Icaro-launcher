@@ -3,8 +3,7 @@
 
 //! SaludoInicio: una frase arriba de Instancias, justo bajo la banda, con una
 //! segunda línea útil (última instancia y cuándo se jugó). La frase la elige
-//! la aplicación; aquí solo se dibuja. El nombre de la cuenta va más grueso,
-//! con un subrayado ancho en `accent-soft`.
+//! la aplicación; aquí solo se dibuja. El nombre de la cuenta va más grueso.
 
 use iced::widget::{column, container, rich_text, span, text};
 use iced::{Element, Length, Padding};
@@ -16,8 +15,6 @@ use crate::tema::{espacio, texto, Paleta};
 pub const FRASE: (f32, f32) = (30.0, 36.0);
 /// Ancho máximo de la frase: unas 34 letras por línea.
 const ANCHO_FRASE: f32 = 620.0;
-/// Alto del subrayado del nombre (0,18 em).
-const SUBRAYADO: f32 = FRASE.0 * 0.18;
 
 /// Un trozo de la frase: texto corrido o el nombre de la cuenta.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,16 +38,8 @@ pub fn saludo_inicio<'a, M: Clone + 'static>(p: Paleta, datos: &DatosSaludo) -> 
     for trozo in &datos.frase {
         spans.push(match trozo {
             Trozo::Texto(t) => span(t.clone()),
-            // El subrayado es un resalte que solo cubre el pie del renglón.
-            Trozo::Nombre(n) => span(n.clone())
-                .font(fuentes::TITULO)
-                .background(p.accent_soft)
-                .padding(Padding {
-                    top: -(FRASE.1 - (FRASE.1 - FRASE.0) / 2.0 - SUBRAYADO),
-                    right: 0.0,
-                    bottom: -((FRASE.1 - FRASE.0) / 2.0),
-                    left: 0.0,
-                }),
+            // El nombre va más grueso, sin subrayado.
+            Trozo::Nombre(n) => span(n.clone()).font(fuentes::TITULO),
         });
     }
     let frase = rich_text(spans)

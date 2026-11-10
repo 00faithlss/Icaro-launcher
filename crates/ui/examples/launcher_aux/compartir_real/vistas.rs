@@ -59,6 +59,10 @@ pub fn vista(app: &App) -> Option<Element<'_, Mensaje>> {
             )
         }
         Etapa::Listo => v::compartido_listo(p, &super::listo::modelo(s)?),
+        // Recuperando o reconectando (Reanudar, Volver a compartir): esqueleto.
+        Etapa::Panel if s.red_ocupada && s.anfitrion.is_none() => {
+            v::panel_publicacion_cargando(p, s.panel.as_ref()?, app.reducir)
+        }
         Etapa::Panel => v::panel_publicacion(p, s.panel.as_ref()?),
         Etapa::Cierre => v::cierre_transferencias(
             p,
@@ -96,6 +100,8 @@ pub fn vista(app: &App) -> Option<Element<'_, Mensaje>> {
         Etapa::Entrada => 820.,
         Etapa::Identidad => 680.,
         Etapa::Destino => 720.,
+        // Publicación reparte invitación y accesos en dos columnas: cabe sin desplazar.
+        Etapa::Panel => 1080.,
         _ => 960.,
     };
     // Fase de página dentro de Servidores: migas y fase centradas, sin velo.

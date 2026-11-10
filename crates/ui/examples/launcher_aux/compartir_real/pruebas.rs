@@ -155,6 +155,15 @@ fn una_fase_deja_navegar_la_conserva_y_escape_cierra_solo_el_controlador() {
 }
 
 #[test]
+fn consultar_el_vinculo_al_jugar_no_cuenta_como_fase_visible() {
+    let mut a = app();
+    a.servicios.compartir.etapa = Etapa::ConsultandoVinculo;
+    assert!(a.servicios.compartir.modal() && !a.servicios.compartir.visible());
+    a.servicios.compartir.etapa = Etapa::RevisionVinculo;
+    assert!(a.servicios.compartir.visible());
+}
+
+#[test]
 fn una_eleccion_privada_espera_el_guardado_antes_de_decir_que_quedo_lista() {
     let mut a = app();
     let t = trabajo();

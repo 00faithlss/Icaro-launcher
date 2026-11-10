@@ -5,6 +5,7 @@
 use crate::{pantallas, App, Mensaje};
 use icaro_core::actualizacion::{self, Canal, Disponible, Preparada, Resultado};
 use icaro_ui::{
+    aviso_actualizacion as aviso,
     componentes::{self, Estado as Senal, Variante},
     fuentes,
     iconos::Icono,
@@ -30,6 +31,21 @@ pub struct Estado {
     pub al_cerrar: bool,
     pub resultado: Option<Resultado>,
     anterior: Option<pantallas::Pantalla>,
+    /// Versión (con compilación) cuya tarjeta se minimizó; se guarda para no
+    /// volver a mostrarla como tarjeta hasta la siguiente versión.
+    pub minimizada: Option<String>,
+    /// Cuándo se volvió a abrir la tarjeta desde la pastilla, para animarla.
+    mostrada: Option<std::time::Instant>,
+    /// Bytes descargados y totales, y cuándo empezó la descarga.
+    hecho: u64,
+    total: u64,
+    inicio: Option<std::time::Instant>,
+    cancelar: Option<tokio_util::sync::CancellationToken>,
+    /// El último intento de descarga falló (no una comprobación).
+    pub fallo_descarga: bool,
+    /// Solo escenas de diseño: simulan una descarga lista o un juego abierto.
+    diseno_lista: bool,
+    diseno_juego: bool,
 }
 #[derive(Debug, Clone)]
 pub enum Accion {
@@ -42,6 +58,15 @@ pub enum Accion {
     Progreso(u64, u64),
     Descargada(bool, Result<Preparada, String>),
     AplicacionLanzada(Result<(), String>),
+    /// AvisoActualizacion: dejar la tarjeta como pastilla o volver a abrirla.
+    Minimizar,
+    Mostrar,
+    Cancelar,
+    Cancelada,
+    /// Descargar desde la página de releases.
+    Web,
+    /// Ver todo lo que cambia en la versión disponible.
+    Novedades,
 }
 pub fn m(a: Accion) -> Mensaje {
     Mensaje::Actualizacion(a)
@@ -67,7 +92,7 @@ pub fn comprobar(canal: Canal) -> Task<Mensaje> {
         |r| m(Accion::Comprobada(r)),
     )
 }
-fn juego_abierto(app: &App) -> bool {
+pub fn juego_abierto(app: &App) -> bool {
     !app.servicios.juego.procesos.is_empty()
         || app.servicios.juego.trabajos.values().any(|t| {
             matches!(
@@ -121,20 +146,24 @@ pub fn actualizar(app: &mut App, accion: Accion) -> Task<Mensaje> {
             if app.actualizacion.descargando || app.actualizacion.aplicando {
                 return Task::none();
             }
-            if ahora && juego_abierto(app) {
-                app.actualizacion.error =
-                    Some("Cierra Minecraft y espera a que terminen sus tareas antes de actualizar Icaro Launcher.".into());
-                return Task::none();
-            }
             if let Some(p) = app.actualizacion.preparada.as_ref() {
+                // Nunca se reinicia con el juego abierto: queda para el cierre.
+                if ahora && juego_abierto(app) {
+                    app.actualizacion.al_cerrar = true;
+                    return Task::none();
+                }
                 if ahora {
                     let preparada=p.clone();
                     app.actualizacion.aplicando=true;
                     app.actualizacion.al_cerrar=false;
                     app.actualizacion.resultado=None;
                     app.pantalla=Some(pantallas::Pantalla::Actualizacion);
+                    let copia = (app.aj.copias_antes && !app.servicios.demo).then(|| crate::estado::directorio(false));
                     return Task::perform(async move {
-                        tokio::task::spawn_blocking(move ||actualizacion::aplicar(&preparada,true))
+                        tokio::task::spawn_blocking(move || {
+                            if let Some(raiz) = copia { crate::canal_real::copia_previa(&raiz); }
+                            actualizacion::aplicar(&preparada,true)
+                        })
                             .await.map_err(|_|"No se pudo preparar la actualización.".to_owned())?
                             .map_err(|e|e.to_string())
                     },|r|m(Accion::AplicacionLanzada(r)));
@@ -151,6 +180,12 @@ pub fn actualizar(app: &mut App, accion: Accion) -> Task<Mensaje> {
             app.actualizacion.resultado = None;
             app.actualizacion.error = None;
             app.actualizacion.avance = 0.;
+            app.actualizacion.hecho = 0;
+            app.actualizacion.total = d.bytes;
+            app.actualizacion.inicio = Some(std::time::Instant::now());
+            app.actualizacion.fallo_descarga = false;
+            let cancelar = tokio_util::sync::CancellationToken::new();
+            app.actualizacion.cancelar = Some(cancelar.clone());
             return Task::run(
                 iced::stream::channel(32, move |mut salida| async move {
                     let (tx, mut rx) = iced::futures::channel::mpsc::unbounded();
@@ -161,6 +196,11 @@ pub fn actualizar(app: &mut App, accion: Accion) -> Task<Mensaje> {
                     use iced::futures::StreamExt;
                     let resultado = loop {
                         tokio::select! {
+                            // Cancelar suelta la descarga; la próxima empieza de cero.
+                            _ = cancelar.cancelled() => {
+                                let _ = salida.send(m(Accion::Cancelada)).await;
+                                return;
+                            }
                             r = &mut descargar => break r.map_err(|e| e.to_string()),
                             Some(a) = rx.next() => { let _ = salida.send(a).await; }
                         }
@@ -181,6 +221,8 @@ pub fn actualizar(app: &mut App, accion: Accion) -> Task<Mensaje> {
             } else { app.actualizacion.anterior };
         }
         Accion::Progreso(n, total) => {
+            app.actualizacion.hecho = n;
+            app.actualizacion.total = total;
             app.actualizacion.avance = if total == 0 {
                 0.
             } else {
@@ -189,24 +231,53 @@ pub fn actualizar(app: &mut App, accion: Accion) -> Task<Mensaje> {
         }
         Accion::Descargada(ahora, r) => {
             app.actualizacion.descargando = false;
+            app.actualizacion.cancelar = None;
             match r {
-                Err(e) => app.actualizacion.error = Some(e),
+                Err(e) => {
+                    app.actualizacion.fallo_descarga = true;
+                    app.actualizacion.error = Some(e);
+                }
                 Ok(p) => {
                     app.actualizacion.preparada = Some(p);
                     if ahora && !juego_abierto(app) {
                         return actualizar(app, Accion::Ahora);
                     }
+                    // Con Minecraft abierto, la tarjeta pasa a «espera a Minecraft».
                     app.actualizacion.al_cerrar = true;
-                    if ahora {
-                        app.actualizacion.error = Some(
-                            "Minecraft está abierto. La actualización se aplicará al cerrar Icaro Launcher."
-                                .into(),
-                        );
-                    } else {
+                    if !ahora && app.pantalla == Some(pantallas::Pantalla::Actualizacion) {
                         app.pantalla = app.actualizacion.anterior;
                     }
                 }
             }
+        }
+        Accion::Cancelar => {
+            if let Some(c) = app.actualizacion.cancelar.take() {
+                c.cancel();
+            }
+        }
+        Accion::Cancelada => {
+            app.actualizacion.descargando = false;
+            app.actualizacion.cancelar = None;
+            app.actualizacion.avance = 0.;
+            app.actualizacion.hecho = 0;
+        }
+        Accion::Minimizar => app.actualizacion.minimizada = clave(&app.actualizacion),
+        Accion::Mostrar => {
+            app.actualizacion.minimizada = None;
+            app.ahora = std::time::Instant::now();
+            app.actualizacion.mostrada = Some(app.ahora);
+        }
+        Accion::Web => {
+            return crate::servicios::actualizar(
+                app,
+                crate::servicios::Accion::Enlace(format!("{}/releases", env!("CARGO_PKG_REPOSITORY"))),
+            );
+        }
+        Accion::Novedades => {
+            // Leer las novedades cierra la tarjeta: queda la pastilla.
+            app.actualizacion.minimizada = clave(&app.actualizacion);
+            let disponible = app.actualizacion.disponible.clone();
+            crate::novedades::abrir_con(app, false, disponible.as_ref());
         }
         Accion::AplicacionLanzada(r) if app.actualizacion.aplicando => match r {
             Ok(()) => return crate::juego_real::cerrar(app),
@@ -234,6 +305,7 @@ pub fn al_cerrar(app: &mut App) -> bool {
         return false;
     }
     if let Some(p) = app.actualizacion.preparada.as_ref() {
+        if app.aj.copias_antes && !app.servicios.demo { crate::canal_real::copia_previa(&crate::estado::directorio(false)); }
         if let Err(e) = actualizacion::aplicar(p, false) {
             app.actualizacion.error = Some(e.to_string());
             app.pantalla = Some(pantallas::Pantalla::Actualizacion);
@@ -244,36 +316,166 @@ pub fn al_cerrar(app: &mut App) -> bool {
     true
 }
 
-/// Banner info discreto; nunca abre la actualización por su cuenta.
-pub fn banner(app: &App) -> Option<Element<'_, Mensaje>> {
-    let d = app.actualizacion.disponible.as_ref()?;
-    let p = app.paleta();
-    if app.pantalla == Some(pantallas::Pantalla::Actualizacion) {
+/// Identidad de la versión ofrecida, para recordar que se minimizó.
+fn clave(e: &Estado) -> Option<String> {
+    e.disponible.as_ref().map(|d| format!("{}+{}", d.version, d.compilacion))
+}
+
+/// Fase de AvisoActualizacion; `None` si no hay nada que avisar o se está
+/// aplicando (entonces se ve la pantalla completa).
+fn fase(app: &App) -> Option<aviso::Fase> {
+    let e = &app.actualizacion;
+    if e.aplicando || e.disponible.is_none() {
         return None;
     }
-    Some(
-        container(
-            row![
-                text(format!("Icaro Launcher {} disponible", d.version))
-                    .size(texto::BODY_SM.0)
-                    .color(p.text),
-                Space::with_width(Length::Fill),
-                componentes::boton(
-                    p,
-                    "Ver actualización",
-                    Variante::Fantasma,
-                    Some(m(Accion::Abrir))
-                )
-            ]
-            .align_y(Alignment::Center),
-        )
-        .padding([espacio::S2, espacio::S4])
-        .style(move |_: &iced::Theme| iced::widget::container::Style {
-            background: Some(p.info_soft.into()),
-            ..Default::default()
+    Some(if e.descargando {
+        let velocidad = e
+            .inicio
+            .map(|i| i.elapsed().as_secs_f64())
+            .filter(|s| *s > 0.5)
+            .map_or(0, |s| (e.hecho as f64 / s) as u64);
+        aviso::Fase::Descargando { hecho: e.hecho, total: e.total, velocidad }
+    } else if e.preparada.is_some() || e.diseno_lista {
+        if juego_abierto(app) || e.diseno_juego {
+            let instancia = app
+                .servicios
+                .juego
+                .procesos
+                .keys()
+                .next()
+                .and_then(|id| app.servicios.instancias.registros.iter().find(|r| &r.id == id))
+                .map(|r| r.nombre.clone());
+            aviso::Fase::EsperaJuego { instancia }
+        } else {
+            aviso::Fase::Lista
+        }
+    } else if let (true, Some(error)) = (e.fallo_descarga, &e.error) {
+        aviso::Fase::Error(error.clone())
+    } else {
+        aviso::Fase::Disponible
+    })
+}
+
+/// Una línea en lenguaje de jugador por tipo de cambio.
+fn resumen(notas: &[actualizacion::Nota]) -> aviso::Resumen {
+    let de = |tipo: &'static str| notas.iter().filter(move |n| n.tipo == tipo);
+    let corta = |t: &str| -> String {
+        let t = t.trim_end_matches('.');
+        if t.chars().count() <= 72 {
+            t.to_owned()
+        } else {
+            format!("{}…", t.chars().take(70).collect::<String>().trim_end())
+        }
+    };
+    // Las nuevas se nombran por su título (o lo que va antes de «: »).
+    let titulos: Vec<String> = de("nuevo")
+        .map(|n| {
+            n.titulo.clone().unwrap_or_else(|| {
+                n.texto
+                    .split_once(": ")
+                    .filter(|(t, _)| t.chars().count() <= 48)
+                    .map_or_else(|| corta(&n.texto), |(t, _)| t.to_owned())
+            })
         })
-        .into(),
-    )
+        .take(3)
+        .collect();
+    let lista = match titulos.as_slice() {
+        [] => String::new(),
+        [a] => a.clone(),
+        [inicio @ .., ultimo] => format!("{} y {}", inicio.join(", "), ultimo.to_lowercase()),
+    };
+    let primera = |tipo: &'static str| -> String {
+        let mut it = de(tipo);
+        match (it.next(), it.next()) {
+            (Some(a), Some(_)) => format!("{} y más", corta(&a.texto)),
+            (Some(a), None) => corta(&a.texto),
+            _ => String::new(),
+        }
+    };
+    aviso::Resumen {
+        nuevas: de("nuevo").count(),
+        mejoras: de("mejora").count(),
+        correcciones: de("correccion").count(),
+        linea_nuevas: lista,
+        linea_mejoras: primera("mejora"),
+        linea_correcciones: primera("correccion"),
+    }
+}
+
+/// La tarjeta flotante, alineada abajo a la derecha. No aparece durante el
+/// arranque del juego ni sobre un diálogo; minimizada queda solo la pastilla.
+pub fn tarjeta(app: &App) -> Option<Element<'_, Mensaje>> {
+    let e = &app.actualizacion;
+    let d = e.disponible.as_ref()?;
+    let fase = fase(app)?;
+    let importante = d.importante.is_some() && fase == aviso::Fase::Disponible;
+    let minimizada = e.minimizada.is_some() && e.minimizada == clave(e);
+    if (minimizada && !importante)
+        || app.pantalla == Some(pantallas::Pantalla::Actualizacion)
+        || app.umbral.is_some()
+        || crate::hay_dialogo(app)
+    {
+        return None;
+    }
+    let datos = aviso::Datos {
+        version: d.version.clone(),
+        actual: version_visible(),
+        bytes: d.bytes,
+        fase,
+        importante: d.importante.clone(),
+        resumen: resumen(&d.notas),
+    };
+    let tarjeta = aviso::tarjeta(
+        app.paleta(),
+        &datos,
+        aviso::Mensajes {
+            minimizar: m(Accion::Minimizar),
+            ahora: m(Accion::Ahora),
+            al_cerrar: m(Accion::AlCerrar),
+            cancelar: m(Accion::Cancelar),
+            reiniciar: m(Accion::Ahora),
+            reintentar: m(Accion::Ahora),
+            web: m(Accion::Web),
+            novedades: m(Accion::Novedades),
+        },
+    );
+    // Al abrirla desde la pastilla se descubre desde abajo y se asienta.
+    Some(icaro_ui::efectos::descubrir_desde_abajo(tarjeta, progreso_mostrada(app)))
+}
+
+/// Avance (0 a 1) de la aparición de la tarjeta tras pulsar la pastilla.
+fn progreso_mostrada(app: &App) -> f32 {
+    if app.reducir {
+        return 1.0;
+    }
+    app.actualizacion.mostrada.map_or(1.0, |i| {
+        (app.ahora.saturating_duration_since(i).as_millis() as f32 / icaro_ui::tema::duracion::LOSA as f32).clamp(0.0, 1.0)
+    })
+}
+
+/// La tarjeta se está descubriendo y pide cuadros.
+pub fn animando(app: &App) -> bool {
+    app.actualizacion.mostrada.is_some() && progreso_mostrada(app) < 1.0
+}
+
+/// Pastilla del pie de la barra lateral: con la tarjeta minimizada o con una
+/// actualización lista para aplicar.
+pub fn pastilla(app: &App) -> Option<Element<'_, Mensaje>> {
+    let e = &app.actualizacion;
+    let d = e.disponible.as_ref()?;
+    let fase = fase(app)?;
+    let minimizada = e.minimizada.is_some() && e.minimizada == clave(e);
+    let lista = matches!(fase, aviso::Fase::Lista | aviso::Fase::EsperaJuego { .. });
+    if !minimizada && !lista {
+        return None;
+    }
+    Some(aviso::pastilla(
+        app.paleta(),
+        &d.version,
+        lista,
+        app.barra_colapsada(),
+        m(Accion::Mostrar),
+    ))
 }
 pub fn vista(app: &App) -> Element<'_, Mensaje> {
     iced::widget::responsive(move |tam| vista_ancho(app, tam.width)).into()
@@ -488,6 +690,46 @@ pub fn preparar_diseno_al_cerrar(app: &mut App) {
     app.actualizacion.al_cerrar = true;
 }
 
+/// AvisoActualizacion sobre Instancias: `aviso-actualizacion-<estado>` con
+/// disponible, descargando, lista, juego, importante, error o minimizado.
+pub fn preparar_diseno_aviso(app: &mut App, escena: &str) {
+    preparar_diseno(app);
+    app.pantalla = None;
+    let e = &mut app.actualizacion;
+    if let Some(d) = e.disponible.as_mut() {
+        d.version = "0.4.1".into();
+        d.notas[0].titulo = Some("Sincronizar mods con un servidor".into());
+        d.notas[1].titulo = Some("Estudio de skin".into());
+    }
+    match escena.trim_start_matches("aviso-actualizacion-") {
+        "descargando" => {
+            e.descargando = true;
+            e.total = 14_889_779;
+            e.hecho = 9_231_663;
+            e.inicio = Some(std::time::Instant::now() - std::time::Duration::from_secs(2));
+        }
+        "lista" => e.diseno_lista = true,
+        "juego" => {
+            e.diseno_lista = true;
+            e.diseno_juego = true;
+        }
+        "importante" => {
+            if let Some(d) = e.disponible.as_mut() {
+                d.importante = Some(
+                    "Corrige un fallo que podía dañar mundos al cerrar Minecraft de golpe. Conviene actualizar hoy."
+                        .into(),
+                );
+            }
+        }
+        "error" => {
+            e.fallo_descarga = true;
+            e.error = Some("GitHub no responde.".into());
+        }
+        "minimizado" => e.minimizada = clave(e),
+        _ => {}
+    }
+}
+
 /// Estados de la misma pantalla original, sin descarga ni reemplazo reales.
 pub fn preparar_diseno_estado(app: &mut App, escena: &str) {
     preparar_diseno(app);
@@ -529,6 +771,68 @@ mod tests {
         assert!(!app.actualizacion.descargando && !app.actualizacion.aplicando);
         assert!(!app.actualizacion.al_cerrar);
         assert!(app.actualizacion.resultado.is_some());
+    }
+
+    #[test]
+    fn minimizar_deja_solo_la_pastilla_hasta_otra_version() {
+        let mut app = app();
+        preparar_diseno_aviso(&mut app, "aviso-actualizacion-disponible");
+        assert!(tarjeta(&app).is_some() && pastilla(&app).is_none());
+        let _ = actualizar(&mut app, Accion::Minimizar);
+        assert!(tarjeta(&app).is_none() && pastilla(&app).is_some());
+        // Otra versión vuelve a mostrar la tarjeta.
+        app.actualizacion.disponible.as_mut().unwrap().version = "0.4.2".into();
+        assert!(tarjeta(&app).is_some());
+        let _ = actualizar(&mut app, Accion::Minimizar);
+        let _ = actualizar(&mut app, Accion::Mostrar);
+        assert!(tarjeta(&app).is_some());
+    }
+
+    #[test]
+    fn una_importante_no_se_esconde_y_un_fallo_de_comprobacion_no_es_de_descarga() {
+        let mut app = app();
+        preparar_diseno_aviso(&mut app, "aviso-actualizacion-importante");
+        let _ = actualizar(&mut app, Accion::Minimizar);
+        assert!(tarjeta(&app).is_some());
+        let mut app = super::tests::app();
+        preparar_diseno_aviso(&mut app, "aviso-actualizacion-disponible");
+        app.actualizacion.error = Some("Sin red".into());
+        assert_eq!(fase(&app), Some(aviso::Fase::Disponible));
+        app.actualizacion.fallo_descarga = true;
+        assert!(matches!(fase(&app), Some(aviso::Fase::Error(_))));
+    }
+
+    #[test]
+    fn cancelar_la_descarga_vuelve_a_disponible() {
+        let mut app = app();
+        preparar_diseno_aviso(&mut app, "aviso-actualizacion-descargando");
+        let token = tokio_util::sync::CancellationToken::new();
+        app.actualizacion.cancelar = Some(token.clone());
+        let _ = actualizar(&mut app, Accion::Cancelar);
+        assert!(token.is_cancelled());
+        let _ = actualizar(&mut app, Accion::Cancelada);
+        assert!(!app.actualizacion.descargando);
+        assert_eq!(fase(&app), Some(aviso::Fase::Disponible));
+    }
+
+    #[test]
+    fn el_resumen_nombra_las_nuevas_y_resume_lo_demas() {
+        let nota = |tipo: &str, texto: &str, titulo: Option<&str>| actualizacion::Nota {
+            tipo: tipo.into(),
+            texto: texto.into(),
+            titulo: titulo.map(Into::into),
+        };
+        let r = resumen(&[
+            nota("nuevo", "Transiciones suaves al pulsar Jugar.", Some("Transiciones suaves")),
+            nota("nuevo", "Saludo de inicio: una frase arriba de Instancias.", None),
+            nota("mejora", "La revisión agrupa por tipo.", None),
+            nota("mejora", "Códigos más flexibles.", None),
+            nota("correccion", "Descargas pausadas.", None),
+        ]);
+        assert_eq!((r.nuevas, r.mejoras, r.correcciones), (2, 2, 1));
+        assert_eq!(r.linea_nuevas, "Transiciones suaves y saludo de inicio");
+        assert_eq!(r.linea_mejoras, "La revisión agrupa por tipo y más");
+        assert_eq!(r.linea_correcciones, "Descargas pausadas");
     }
 
     #[test]

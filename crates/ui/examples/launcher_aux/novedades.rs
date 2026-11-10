@@ -43,6 +43,29 @@ struct Nota {
     titulo: Option<String>,
     #[serde(default)]
     accion: Option<String>,
+    /// Qué pasa con lo guardado si se vuelve a una versión anterior.
+    #[serde(default)]
+    al_bajar: Option<String>,
+}
+
+/// Funciones nuevas de una versión con lo que pasa al volver a Estable
+/// (CanalActualizaciones): título y consecuencia.
+pub fn al_volver(version: &str) -> Vec<(String, String)> {
+    NOTAS
+        .iter()
+        .filter_map(|j| serde_json::from_str::<Archivo>(j).ok())
+        .filter(|a| a.version == version)
+        .flat_map(|a| a.notas.into_iter())
+        .filter(|n| n.tipo == "nuevo")
+        .map(|n| {
+            let f = funcion(&n);
+            let consecuencia = n
+                .al_bajar
+                .clone()
+                .unwrap_or_else(|| "Deja de estar disponible; lo guardado se conserva.".into());
+            (f.titulo, consecuencia)
+        })
+        .collect()
 }
 
 /// Una versión con el destino de cada acción de sus funciones nuevas.
@@ -59,6 +82,11 @@ pub struct Estado {
     pub recien: bool,
     /// Sección desde la que se abrió (si no fue Ajustes), para volver a ella.
     pub volver: Option<Seccion>,
+    /// Versiones que se muestran: la disponible (si se abrió desde el aviso
+    /// de actualización) seguida de las incluidas en el launcher.
+    pub versiones: Vec<Version>,
+    /// 1 si la primera es la versión disponible, aún sin instalar.
+    desfase: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -125,6 +153,9 @@ fn rotulo(destino: &str) -> Option<&'static str> {
         "servidores" => Some("Abrir Servidores"),
         "cuenta" => Some("Ver tu cuenta"),
         "tienda" => Some("Abrir la tienda"),
+        "apariencia" => Some("Elegir transición"),
+        "canal" => Some("Ver el canal"),
+        "instancias" => Some("Ir a Instancias"),
         _ => None,
     }
 }
@@ -202,13 +233,34 @@ fn registros() -> &'static [Registro] {
     })
 }
 
-fn versiones() -> &'static [Version] {
-    static LISTA: OnceLock<Vec<Version>> = OnceLock::new();
-    LISTA.get_or_init(|| registros().iter().map(|r| r.version.clone()).collect())
-}
-
 fn instalada() -> Option<usize> {
     registros().iter().position(|r| r.version.version == ACTUAL)
+}
+
+/// Las notas de una versión publicada que todavía no está instalada.
+fn version_disponible(d: &icaro_core::actualizacion::Disponible) -> Version {
+    let mut v = Version {
+        version: d.version.clone(),
+        fecha: "Disponible".into(),
+        hace: String::new(),
+        nuevo: Vec::new(),
+        mejoras: Vec::new(),
+        correcciones: Vec::new(),
+    };
+    for n in &d.notas {
+        match n.tipo.as_str() {
+            "nuevo" => v.nuevo.push(funcion(&Nota {
+                tipo: n.tipo.clone(),
+                texto: n.texto.clone(),
+                titulo: n.titulo.clone(),
+                accion: None,
+                al_bajar: None,
+            })),
+            "mejora" => v.mejoras.push(n.texto.clone()),
+            _ => v.correcciones.push(n.texto.clone()),
+        }
+    }
+    v
 }
 
 /// Al iniciar: abre las novedades si el estado guardado viene de otra
@@ -221,15 +273,34 @@ pub fn al_iniciar(app: &mut App, vistas: Option<Option<String>>) {
     }
 }
 
-/// Abre la página en Ajustes; al cerrarla se vuelve a la sección de origen.
 fn abrir(app: &mut App, recien: bool) {
+    abrir_con(app, recien, None);
+}
+
+/// Abre la página en Ajustes; al cerrarla se vuelve a la sección de origen.
+/// Con `disponible`, la versión nueva va primero y queda elegida.
+pub fn abrir_con(
+    app: &mut App,
+    recien: bool,
+    disponible: Option<&icaro_core::actualizacion::Disponible>,
+) {
     let volver = (app.seccion != Seccion::Ajustes).then_some(app.seccion);
+    let extra = disponible
+        .filter(|d| numero(&d.version) > numero(ACTUAL))
+        .map(version_disponible);
+    let desfase = usize::from(extra.is_some());
+    let versiones: Vec<Version> = extra
+        .into_iter()
+        .chain(registros().iter().map(|r| r.version.clone()))
+        .collect();
     app.novedades = Estado {
         abierta: true,
-        elegida: instalada().unwrap_or(0),
+        elegida: if desfase == 1 { 0 } else { instalada().unwrap_or(0) },
         filtro: None,
         recien,
         volver,
+        versiones,
+        desfase,
     };
     app.seccion = Seccion::Ajustes;
 }
@@ -238,18 +309,27 @@ pub fn actualizar(app: &mut App, accion: Accion) -> Task<Mensaje> {
     match accion {
         Accion::Abrir { recien } => abrir(app, recien),
         Accion::Elegir(i) => {
-            app.novedades.elegida = i.min(registros().len().saturating_sub(1));
+            app.novedades.elegida = i.min(app.novedades.versiones.len().saturating_sub(1));
             app.novedades.filtro = None;
         }
         Accion::Filtrar(f) => app.novedades.filtro = f,
         Accion::Ir(i) => {
-            let destino = registros()
-                .get(app.novedades.elegida)
+            let destino = app
+                .novedades
+                .elegida
+                .checked_sub(app.novedades.desfase)
+                .and_then(|n| registros().get(n))
                 .and_then(|r| r.destinos.get(i).cloned().flatten());
             app.novedades.abierta = false;
             return match destino.as_deref() {
                 Some("servidores") => Task::done(Mensaje::Ir(Seccion::Servidores)),
                 Some("tienda") => Task::done(Mensaje::Ir(Seccion::Modpacks)),
+                Some("instancias") => Task::done(Mensaje::Ir(Seccion::Instancias)),
+                // Ajustes › Apariencia y Ajustes › Acerca de (canal).
+                Some(d @ ("apariencia" | "canal")) => {
+                    app.ajuste = if d == "apariencia" { 1 } else { 7 };
+                    Task::done(Mensaje::Ir(Seccion::Ajustes))
+                }
                 Some("cuenta") => Task::done(Mensaje::Pant(pantallas::Accion::Abrir(
                     pantallas::Pantalla::Cuenta,
                 ))),
@@ -313,9 +393,12 @@ pub fn pagina(app: &App) -> Element<'_, Mensaje> {
 
 fn bloque(app: &App) -> Element<'_, Mensaje> {
     let m = |a| Mensaje::Novedades(a);
-    let instalada = instalada();
+    let versiones = &app.novedades.versiones;
+    let instalada = versiones.iter().position(|v| v.version == ACTUAL);
     let pie = if app.novedades.recien {
         "Esto vuelve a estar en Ajustes › Acerca de.".to_owned()
+    } else if app.novedades.desfase == 1 {
+        format!("Tienes la {ACTUAL}; la {} está disponible.", versiones[0].version)
     } else if instalada == Some(0) {
         format!("Tienes la {ACTUAL}, la más reciente.")
     } else {
@@ -324,7 +407,7 @@ fn bloque(app: &App) -> Element<'_, Mensaje> {
     v::novedades(
         app.paleta(),
         v::Datos {
-            versiones: versiones(),
+            versiones,
             elegida: app.novedades.elegida,
             instalada,
             filtro: app.novedades.filtro,
@@ -346,7 +429,7 @@ fn bloque(app: &App) -> Element<'_, Mensaje> {
 pub fn preparar_diseno(app: &mut App, escena: &str) {
     abrir(app, escena.ends_with("-recien"));
     if escena.ends_with("-mantenimiento") {
-        if let Some(i) = registros().iter().position(|r| r.version.nuevo.is_empty()) {
+        if let Some(i) = app.novedades.versiones.iter().position(|v| v.nuevo.is_empty()) {
             app.novedades.elegida = i;
         }
     }
@@ -423,6 +506,7 @@ mod tests {
             texto: "Skin local por cuenta: carga un PNG.".into(),
             titulo: None,
             accion: None,
+            al_bajar: None,
         };
         let f = funcion(&n);
         assert_eq!(

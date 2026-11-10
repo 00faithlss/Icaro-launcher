@@ -260,6 +260,53 @@ fn fila_compartes<'a>(
             true,
             Accion::DejarDeCompartirDe(f.id.clone()),
         ));
+    } else {
+        // En pausa no hay nodo activo: se puede quitar de la lista.
+        opciones.push(ElementoMenu::Separador);
+        opciones.push(opcion(
+            Icono::Papelera,
+            "Quitar de compartidas",
+            true,
+            Accion::QuitarCompartidaDe(f.id.clone()),
+        ));
+    }
+    // Confirmación en la misma fila, sin diálogo: ocupa el lugar del código y
+    // de las acciones para que el texto y los botones quepan en una línea.
+    if m.confirmar_quitar.as_deref() == Some(f.id.as_str()) {
+        let confirmar = row![
+            container(t(
+                "¿Quitarla? Tus amigos pierden el acceso.",
+                fuentes::CUERPO,
+                13.,
+                19.,
+                p.text
+            ))
+            .width(Length::Fill),
+            btn_sm(p, None, "Cancelar", None, Variante::Secundario, Accion::CancelarQuitar),
+            btn_sm(
+                p,
+                None,
+                "Quitar",
+                None,
+                Variante::Peligro,
+                Accion::ConfirmarQuitarDe(f.id.clone())
+            ),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center);
+        return container(
+            row![
+                crate::servidores::avatar_servidor(p, &f.nombre),
+                datos.spacing(4).width(Length::Fill),
+                container(confirmar).width(ANCHO_CODIGO + 24. + ANCHO_ACCION + 120.),
+            ]
+            .spacing(24)
+            .align_y(Alignment::Center),
+        )
+        .padding([18., 20.])
+        .width(Length::Fill)
+        .style(caja(Some(p.error_soft), p.error))
+        .into();
     }
     let accion = row![
         principal,
@@ -615,6 +662,7 @@ mod tests {
                 version: "1.21.1 · Fabric 0.16.9".into(),
             }],
             menu: Some("a".into()),
+            confirmar_quitar: None,
         }
     }
 

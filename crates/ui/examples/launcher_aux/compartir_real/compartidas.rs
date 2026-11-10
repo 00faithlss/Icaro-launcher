@@ -93,6 +93,7 @@ pub fn modelo(app: &App) -> v::InstanciasCompartidas {
         compartes,
         recibes: s.recibidas.iter().map(|r| r.fila.clone()).collect(),
         menu: s.menu_compartida.clone(),
+        confirmar_quitar: s.confirmar_quitar.clone(),
     }
 }
 
@@ -300,6 +301,51 @@ pub fn accion(app: &mut App, a: &v::Accion) -> Option<Task<Mensaje>> {
             let abrir = super::biblioteca::abrir(app, id.clone());
             let detener = super::actualizar(app, Accion::Vista(v::Accion::DejarDeCompartir));
             Some(Task::batch([abrir, detener]))
+        }
+        v::Accion::QuitarCompartidaDe(id) => {
+            s.menu_compartida = None;
+            s.confirmar_quitar = Some(id.clone());
+            Some(Task::none())
+        }
+        v::Accion::CancelarQuitar => {
+            s.confirmar_quitar = None;
+            Some(Task::none())
+        }
+        v::Accion::ConfirmarQuitarDe(id) => {
+            s.confirmar_quitar = None;
+            // La publicación activa se detiene con «Dejar de compartir».
+            if s.anfitrion.is_some() && s.publicacion.as_ref().map(|p| &p.instancia_id) == Some(id) {
+                return Some(Task::none());
+            }
+            let instancia = app
+                .servicios
+                .instancias
+                .registros
+                .iter()
+                .find(|i| &i.id == id)
+                .cloned()?;
+            let almacen = app.servicios.instancias.almacen.clone();
+            let raiz = crate::estado::directorio(false);
+            Some(Task::perform(
+                async move {
+                    tokio::task::spawn_blocking(move || {
+                        let identidad =
+                            icaro_core::compartir::identidad::Identidad::cargar_existente(&raiz)
+                                .map_err(icaro_core::diagnostico_contexto::texto)?
+                                .ok_or_else(|| "No hay una identidad de anfitrión.".to_owned())?;
+                        icaro_core::compartir::biblioteca::eliminar(
+                            &raiz,
+                            &almacen,
+                            &instancia,
+                            &identidad.clave_publica(),
+                        )
+                        .map_err(icaro_core::diagnostico_contexto::texto)
+                    })
+                    .await
+                    .unwrap_or_else(|_| Err("No se pudo quitar la publicación.".into()))
+                },
+                |r| Mensaje::Compartir(Accion::Quitada(r)),
+            ))
         }
         v::Accion::JugarRecibida(id) => {
             s.menu_compartida = None;

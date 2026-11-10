@@ -231,6 +231,7 @@ fn salida<'a, M: Clone + 'a>(
     lineas: &[String],
     opacidad: f32,
     al_volver: M,
+    al_cancelar: Option<M>,
 ) -> Element<'a, M> {
     let mut log = column![].spacing(2);
     for (i, l) in lineas.iter().enumerate() {
@@ -254,6 +255,22 @@ fn salida<'a, M: Clone + 'a>(
         border: Border { color: con_alfa(p.on_fulgor, opacidad), width: borde::MEDIO, radius: 0.0.into() },
         ..Default::default()
     });
+    // Cancelar junto a Volver, con el mismo contorno.
+    let mut botones = iced::widget::row![].spacing(espacio::S2);
+    if let Some(c) = al_cancelar {
+        botones = botones.push(
+            button(text("Cancelar").font(fuentes::ETIQUETA).size(12).color(con_alfa(p.on_fulgor, opacidad)))
+                .padding(Padding::from([8.0, 14.0]))
+                .on_press(c)
+                .style(move |_, _| button::Style {
+                    background: None,
+                    text_color: con_alfa(p.on_fulgor, opacidad),
+                    border: Border { color: con_alfa(p.on_fulgor, opacidad), width: borde::MEDIO, radius: 0.0.into() },
+                    ..Default::default()
+                }),
+        );
+    }
+    let botones = botones.push(volver);
     container(
         column![
             text("ABRIENDO\nEL UMBRAL")
@@ -262,7 +279,7 @@ fn salida<'a, M: Clone + 'a>(
                 .line_height(iced::widget::text::LineHeight::Absolute(66.0.into()))
                 .color(con_alfa(p.on_fulgor, opacidad)),
             log,
-            volver,
+            botones,
         ]
         .spacing(espacio::S6)
         .align_x(Alignment::Start),
@@ -305,7 +322,7 @@ pub fn umbral_registro<'a, M: Clone + 'a>(
     lineas: &[String],
     al_volver: M,
 ) -> Element<'a, M> {
-    umbral_registro_transicion(p, ms, pref, aspecto, lineas, None, al_volver)
+    umbral_registro_transicion(p, ms, pref, aspecto, lineas, None, al_volver, None)
 }
 
 /// Entrada original, retirada por fallo de 200 ms y Rastrillo al volver.
@@ -318,6 +335,7 @@ pub fn umbral_registro_transicion<'a, M: Clone + 'a>(
     lineas: &[String],
     retirada: Option<(f32, bool)>,
     al_volver: M,
+    al_cancelar: Option<M>,
 ) -> Element<'a, M> {
     let fase = movimiento::umbral(ms, pref);
     let (opacidad, recorte) = estado_capa_umbral(ms, pref, retirada);
@@ -344,6 +362,7 @@ pub fn umbral_registro_transicion<'a, M: Clone + 'a>(
             lineas,
             opacidad,
             al_volver,
+            al_cancelar,
         ));
     }
     // El Umbral bloquea la interfaz mientras dura: nada debajo recibe clics.
@@ -498,6 +517,57 @@ impl<M> Widget<M, iced::Theme, iced::Renderer> for EntradaAviso<'_, M> {
         self.contenido.as_widget().draw(&arbol.children[0], renderer, tema, estilo, layout.children().next().unwrap(), cursor, visible);
     }
 }
+/// Descubre una tarjeta flotante desde su borde inferior: el recorte crece
+/// hacia arriba y la tarjeta sube 12 px hasta asentarse. `progreso` de 0 a 1.
+pub fn descubrir_desde_abajo<'a, M: 'a>(contenido: Element<'a, M>, progreso: f32) -> Element<'a, M> {
+    Element::new(Descubrir { contenido, progreso: progreso.clamp(0.0, 1.0) })
+}
+
+struct Descubrir<'a, M> {
+    contenido: Element<'a, M>,
+    progreso: f32,
+}
+
+impl<M> Widget<M, iced::Theme, iced::Renderer> for Descubrir<'_, M> {
+    fn size(&self) -> Size<Length> { self.contenido.as_widget().size() }
+    fn children(&self) -> Vec<Tree> { vec![Tree::new(&self.contenido)] }
+    fn diff(&self, arbol: &mut Tree) { arbol.diff_children(std::slice::from_ref(&self.contenido)); }
+    fn layout(&self, arbol: &mut Tree, renderer: &iced::Renderer, limites: &layout::Limits) -> layout::Node {
+        self.contenido.as_widget().layout(&mut arbol.children[0], renderer, limites)
+    }
+    fn operate(&self, arbol: &mut Tree, layout: Layout<'_>, renderer: &iced::Renderer, operacion: &mut dyn iced::advanced::widget::Operation) {
+        self.contenido.as_widget().operate(&mut arbol.children[0], layout, renderer, operacion);
+    }
+    fn on_event(&mut self, arbol: &mut Tree, evento: Event, layout: Layout<'_>, cursor: mouse::Cursor,
+        renderer: &iced::Renderer, portapapeles: &mut dyn Clipboard, shell: &mut Shell<'_, M>, visible: &Rectangle) -> iced::event::Status {
+        self.contenido.as_widget_mut().on_event(&mut arbol.children[0], evento, layout, cursor, renderer, portapapeles, shell, visible)
+    }
+    fn mouse_interaction(&self, arbol: &Tree, layout: Layout<'_>, cursor: mouse::Cursor, visible: &Rectangle, renderer: &iced::Renderer) -> mouse::Interaction {
+        self.contenido.as_widget().mouse_interaction(&arbol.children[0], layout, cursor, visible, renderer)
+    }
+    fn draw(&self, arbol: &Tree, renderer: &mut iced::Renderer, tema: &iced::Theme,
+        estilo: &renderer::Style, layout: Layout<'_>, cursor: mouse::Cursor, visible: &Rectangle) {
+        use iced::advanced::Renderer as _;
+        if self.progreso >= 1.0 {
+            self.contenido.as_widget().draw(&arbol.children[0], renderer, tema, estilo, layout, cursor, visible);
+            return;
+        }
+        let caja = layout.bounds();
+        let k = crate::movimiento::Curva::Salida.aplicar(self.progreso);
+        let alto = caja.height * k;
+        // Margen para el borde y la sombra dura de la tarjeta.
+        let recorte = Rectangle::new(
+            Point::new(caja.x - 2.0, caja.y + caja.height - alto),
+            Size::new(caja.width + 12.0, alto + 12.0),
+        );
+        renderer.with_layer(recorte, |renderer| {
+            renderer.with_translation(iced::Vector::new(0.0, (1.0 - k) * 12.0), |renderer| {
+                self.contenido.as_widget().draw(&arbol.children[0], renderer, tema, estilo, layout, cursor, visible);
+            });
+        });
+    }
+}
+
 /// La imagen estándar crea su propio recorte y puede escapar del Rastrillo.
 /// Este fondo cruza el viewport recibido con la imagen, sin cambiar su cover.
 struct FondoUmbral { opacidad: f32 }

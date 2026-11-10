@@ -112,7 +112,7 @@ pub fn invitacion<'a>(p: Paleta, m: &Invitacion) -> Element<'a, Accion> {
             .spacing(28),
         );
     }
-    let mut codigo = row![].spacing(5);
+    let mut codigo = row![].spacing(4);
     let anulado = matches!(
         m.estado,
         EstadoInvitacion::Vencida { .. } | EstadoInvitacion::Revocada
@@ -152,7 +152,7 @@ pub fn invitacion<'a>(p: Paleta, m: &Invitacion) -> Element<'a, Accion> {
                 .size(24)
                 .color(tinta),
         )
-        .width(36)
+        .width(34)
         .height(48)
         .align_x(Alignment::Center)
         .align_y(Alignment::Center)
@@ -164,7 +164,7 @@ pub fn invitacion<'a>(p: Paleta, m: &Invitacion) -> Element<'a, Accion> {
         };
         codigo = codigo.push(
             container(celda)
-                .width(36)
+                .width(34)
                 .height(48)
                 .align_x(Alignment::Center)
                 .align_y(Alignment::Center)
@@ -323,6 +323,76 @@ pub fn accesos<'a>(p: Paleta, m: &Accesos) -> Element<'a, Accion> {
     c.into()
 }
 
+/// Publicación mientras se recupera o se reconecta: la misma estructura con
+/// esqueletos en lugar de datos, para que no salte al llegar.
+pub fn panel_publicacion_cargando<'a>(
+    p: Paleta,
+    m: &PanelPublicacion,
+    reducir: bool,
+) -> Element<'a, Accion> {
+    use crate::progreso::esqueleto;
+    let mut datos = row![];
+    for label in ["Revisión vigente", "Disponibilidad", "Transferencias", "Tu huella"] {
+        datos = datos.push(
+            container(
+                column![
+                    container(tenue(p, label)).height(16).center_x(Length::Fill),
+                    container(esqueleto(p, Length::Fixed(140.), 12., reducir))
+                        .height(36)
+                        .center_x(Length::Fill)
+                        .align_y(Alignment::Center),
+                    container(esqueleto(p, Length::Fixed(80.), 10., reducir))
+                        .height(28)
+                        .center_x(Length::Fill)
+                        .align_y(Alignment::Center),
+                ]
+                .spacing(6),
+            )
+            .padding([14., 16.])
+            .width(Length::FillPortion(1))
+            .height(120)
+            .style(marco(p)),
+        );
+    }
+    let bloque = |alto: f32| -> Element<'a, Accion> {
+        container(
+            column![
+                esqueleto(p, Length::Fixed(120.), 14., reducir),
+                esqueleto(p, Length::Fill, 12., reducir),
+                esqueleto(p, Length::FillPortion(1), 12., reducir),
+            ]
+            .spacing(14),
+        )
+        .padding(24)
+        .width(Length::Fill)
+        .height(alto)
+        .style(marco(p))
+        .into()
+    };
+    let c = column![
+        row![
+            identidad_instancia(p, &m.instancia),
+            Space::new(Length::Fill, 0),
+            componentes::insignia_contorno(p, "Conectando"),
+        ]
+        .spacing(16)
+        .align_y(Alignment::Center),
+        regla(p, true),
+        datos,
+        cuerpo(p, "Recuperando la publicación y conectando con el servicio…"),
+        row![
+            container(bloque(380.)).width(Length::FillPortion(3)),
+            container(column![bloque(52.), bloque(200.)].spacing(20))
+                .width(Length::FillPortion(2)),
+        ]
+        .spacing(24),
+    ]
+    .spacing(20);
+    // Sin recuadro: la publicación va sobre el fondo de la página, alineada
+    // con las migas.
+    crate::scroll::desplazable(container(c).padding([8., 32.]).width(Length::Fill))
+}
+
 pub fn panel_publicacion<'a>(p: Paleta, m: &PanelPublicacion) -> Element<'a, Accion> {
     let detenida = matches!(m.estado, EstadoPublicacion::Detenida);
     let mut c = column![
@@ -339,15 +409,21 @@ pub fn panel_publicacion<'a>(p: Paleta, m: &PanelPublicacion) -> Element<'a, Acc
         .align_y(Alignment::Center),
         regla(p, true)
     ]
-    .spacing(24);
+    .spacing(20);
     let mut datos = row![];
     for (label, valor) in [
         (
             "Revisión vigente",
-            format!(
-                "Revisión {} · {} · {}",
-                m.revision, m.fecha_revision, m.hash_revision
-            ),
+            // Sin fecha ni hash conocidos no quedan separadores sueltos.
+            [
+                format!("Revisión {}", m.revision),
+                m.fecha_revision.clone(),
+                m.hash_revision.clone(),
+            ]
+            .into_iter()
+            .filter(|s| !s.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join(" · "),
         ),
         ("Disponibilidad", m.disponibilidad.clone()),
         ("Transferencias", m.transferencias.clone()),
@@ -366,12 +442,12 @@ pub fn panel_publicacion<'a>(p: Paleta, m: &PanelPublicacion) -> Element<'a, Acc
                 .align_y(Alignment::Center),
             container(accion).height(28).center_x(Length::Fill),
         ]
-        .spacing(8);
+        .spacing(6);
         datos = datos.push(
             container(d)
-                .padding([18., 20.])
+                .padding([14., 16.])
                 .width(Length::FillPortion(1))
-                .height(132)
+                .height(120)
                 .style(marco(p)),
         );
     }
@@ -467,27 +543,38 @@ pub fn panel_publicacion<'a>(p: Paleta, m: &PanelPublicacion) -> Element<'a, Acc
         EstadoPublicacion::Compartiendo => {}
     }
     if !detenida {
-        c = c.push(
-            container(
+        let privado = container(
+            row![
+                cuerpo(p, format!("Contenido privado: {}", m.contenido_privado)),
+                Space::new(Length::Fill, 0),
+                pequeno(
+                    p,
+                    "Revisar",
+                    Variante::Fantasma,
+                    Some(Accion::RevisarPublicacion)
+                )
+            ]
+            .spacing(16)
+            .align_y(Alignment::Center),
+        )
+        .padding([14., 18.])
+        .style(marco(p));
+        // Todo en una pantalla: la invitación a la izquierda; contenido privado
+        // y accesos a la derecha.
+        let lado = column![privado, accesos(p, &m.accesos)].spacing(20);
+        c = c.push(match &m.invitacion {
+            Some(i) => Element::from(
                 row![
-                    cuerpo(p, format!("Contenido privado: {}", m.contenido_privado)),
-                    Space::new(Length::Fill, 0),
-                    pequeno(
-                        p,
-                        "Revisar",
-                        Variante::Fantasma,
-                        Some(Accion::RevisarPublicacion)
-                    )
+                    container(invitacion(p, i)).width(Length::FillPortion(3)),
+                    container(lado).width(Length::FillPortion(2)),
                 ]
-                .spacing(16),
-            )
-            .padding([14., 18.])
-            .style(marco(p)),
-        );
-        if let Some(i) = &m.invitacion {
-            c = c.push(invitacion(p, i));
-        }
-        c = c.push(accesos(p, &m.accesos));
+                .spacing(24),
+            ),
+            None => lado.into(),
+        });
     }
-    crate::scroll::desplazable(container(c).padding(28).width(Length::Fill).style(marco(p)))
+    // Si la ventana es baja, la página se desplaza con suavidad.
+    // Sin recuadro: la publicación va sobre el fondo de la página, alineada
+    // con las migas.
+    crate::scroll::desplazable(container(c).padding([8., 32.]).width(Length::Fill))
 }

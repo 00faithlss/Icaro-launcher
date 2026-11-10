@@ -17,6 +17,9 @@ const MANANA: &[&str] = &[
     "Los aldeanos ya abrieron sus puestos.",
     "La mañana es de los que madrugan a minar.",
     "{instancia} amaneció tranquila.",
+    "Primero, revisar las granjas.",
+    "Mañana de redstone y café, {nickname}.",
+    "Buen momento para bajar al Nether.",
 ];
 const TARDE: &[&str] = &[
     "Buenas tardes, {nickname}.",
@@ -27,6 +30,9 @@ const TARDE: &[&str] = &[
     "Hora de minar, {nickname}.",
     "Todavía queda luz para terminar la granja.",
     "¿Seguimos donde lo dejaste?",
+    "Tarde perfecta para ir al End.",
+    "Buena tarde para ampliar la granja.",
+    "¿Un viaje rápido al Nether, {nickname}?",
 ];
 const NOCHE: &[&str] = &[
     "Buenas noches, {nickname}.",
@@ -37,6 +43,9 @@ const NOCHE: &[&str] = &[
     "Una cama cerca y a seguir construyendo.",
     "Noche tranquila en {instancia}.",
     "¿Una más antes de dormir, {nickname}?",
+    "En el Nether no hay noche.",
+    "De noche, la granja de mobs rinde más.",
+    "Noche ideal para tu circuito de redstone.",
 ];
 const CUALQUIERA: &[&str] = &[
     "¿Ganas de construir, {nickname}?",
@@ -47,12 +56,38 @@ const CUALQUIERA: &[&str] = &[
     "Hoy toca aventura.",
     "Tus mundos siguen ahí.",
     "Los creepers te extrañaban.",
+    // Nether
+    "El Nether no se va a explorar solo.",
+    "¿Portal al Nether, {nickname}?",
+    "Trae oro: los piglins quieren negociar.",
+    "Cuidado con los ghasts, {nickname}.",
+    "La netherita no se mina sola.",
+    "Las fortalezas del Nether guardan blazes.",
+    // End
+    "El dragón del End sigue esperando.",
+    "¿Listo para el End, {nickname}?",
+    "Las ciudades del End guardan elytras.",
+    "Ojos de ender en mano y a buscar la fortaleza.",
+    "Mejor no mirar a los endermen.",
+    // Granjas técnicas y redstone
+    "La granja de hierro no se arma sola.",
+    "¿Terminamos la granja de mobs, {nickname}?",
+    "Un poco de redstone nunca sobra.",
+    "¿Otro circuito de redstone, {nickname}?",
+    "Las tolvas no se llenan solas.",
+    "Hoy toca optimizar la granja.",
+    "Los aldeanos tienen buenas ofertas hoy.",
+    // Profundidades
+    "Sin ruido: el Warden escucha.",
+    "Las ciudades antiguas guardan secretos.",
 ];
 const REGRESO: &[&str] = &[
     "Cuánto tiempo, {nickname}.",
     "Volviste, {nickname}. Tus mundos te esperaban.",
     "Qué bueno tenerte de vuelta, {nickname}.",
     "{instancia} te extrañaba.",
+    "Tus granjas te esperan, {nickname}.",
+    "El Nether te extrañaba, {nickname}.",
 ];
 
 /// Días sin jugar a partir de los que se usa una frase de regreso.
@@ -290,10 +325,10 @@ mod tests {
     }
 
     #[test]
-    fn hay_36_frases_y_respetan_la_hora() {
+    fn hay_67_frases_y_respetan_la_hora() {
         assert_eq!(
             MANANA.len() + TARDE.len() + NOCHE.len() + CUALQUIERA.len() + REGRESO.len(),
-            36
+            67
         );
         for s in 0..40 {
             let manana = texto(&frase_con(s, &ctx(8, Some("Ana"))));

@@ -334,16 +334,20 @@ fn indicador_descargas<'a, M: 'a>(p: Paleta, d: &DescargasActivas) -> Element<'a
 
 /// Bloque de cuenta: cabeza de skin, nombre y proveedor, sobre una regla de
 /// 1 px. Al pulsarlo se abre el menú de cuentas.
-fn bloque_cuenta<'a, M: Clone + 'a>(p: Paleta, c: &Cuenta<'a>, al_pulsar: M) -> Element<'a, M> {
-    column![
-        container(Space::new(Length::Fill, Length::Fixed(borde::FINO))).style(move |_: &Theme| container::Style {
-            background: Some(Background::Color(p.border)),
-            ..Default::default()
-        }),
-        crate::cuenta::bloque_cuenta(p, c.estado, c.nombre, c.proveedor, c.textura, al_pulsar),
-    ]
-    .spacing(espacio::S3)
-    .into()
+fn bloque_cuenta<'a, M: Clone + 'a>(p: Paleta, c: &Cuenta<'a>, al_pulsar: M, menu: Option<crate::instancias::MenuTarjeta<'a, M>>) -> Element<'a, M> {
+    let bloque = crate::cuenta::bloque_cuenta(p, c.estado, c.nombre, c.proveedor, c.textura, al_pulsar);
+    // MenuCuenta: unido al bloque, crece hacia arriba alineado a su izquierda.
+    // Ocupa la barra hasta sus bordes. Los 2 px de la derecha quedan libres
+    // para la línea de la barra; al abrirse, la pestaña los cubre y su borde
+    // derecho coincide con esa línea.
+    let bloque: Element<'a, M> = container(bloque)
+        .width(Length::Fill)
+        .padding(Padding { top: 0.0, right: borde::MEDIO, bottom: 0.0, left: 0.0 })
+        .into();
+    match menu {
+        Some(m) => crate::menu_anclado::menu_unido(p, bloque, m.contenido, true, m.cerrar, crate::menu_anclado::Alineacion::Izquierda, crate::menu_anclado::Direccion::Arriba, m.progreso),
+        None => bloque,
+    }
 }
 
 fn barra_lateral<'a, M: Clone + 'a>(
@@ -352,6 +356,8 @@ fn barra_lateral<'a, M: Clone + 'a>(
     colapsada: bool,
     cuenta: &Cuenta<'a>,
     descargas: Option<&DescargasActivas>,
+    aviso: Option<Element<'a, M>>,
+    menu_cuenta: Option<crate::instancias::MenuTarjeta<'a, M>>,
     m: &MensajesShell<'a, M>,
 ) -> Element<'a, M> {
     let mut items = column![].spacing(espacio::S1);
@@ -380,11 +386,20 @@ fn barra_lateral<'a, M: Clone + 'a>(
     );
     let mut pie =
         column![container(control).width(Length::Fill).align_x(alineacion)].spacing(espacio::S3);
+    // Pastilla de AvisoActualizacion: también con la barra plegada.
+    if let Some(aviso) = aviso {
+        pie = pie.push(aviso);
+    }
     if !colapsada {
         if let Some(d) = descargas {
             pie = pie.push(indicador_descargas(p, d));
         }
-        pie = pie.push(bloque_cuenta(p, cuenta, m.cuenta.clone()));
+        pie = pie.push(
+            container(Space::new(Length::Fill, Length::Fixed(borde::FINO))).style(move |_: &Theme| container::Style {
+                background: Some(Background::Color(p.border)),
+                ..Default::default()
+            }),
+        );
     }
     let ancho = if colapsada {
         medida::BARRA_LATERAL_COLAPSADA
@@ -392,23 +407,29 @@ fn barra_lateral<'a, M: Clone + 'a>(
         medida::BARRA_LATERAL
     };
     let cuerpo = column![items, Space::with_height(Length::Fill), pie];
-    row![
-        container(cuerpo)
-            .padding(espacio::S2)
-            .width(ancho - borde::MEDIO)
-            .height(Length::Fill)
-            .style(move |_: &Theme| container::Style {
-                background: Some(Background::Color(p.surface)),
-                ..Default::default()
-            }),
-        container(Space::new(Length::Fixed(borde::MEDIO), Length::Fill)).style(move |_: &Theme| {
-            container::Style {
-                background: Some(Background::Color(p.text)),
-                ..Default::default()
-            }
+    let mut contenido = column![row![
+        container(cuerpo).padding(espacio::S2).width(ancho - borde::MEDIO).height(Length::Fill),
+        Space::with_width(borde::MEDIO),
+    ]
+    .height(Length::Fill)];
+    if !colapsada {
+        contenido = contenido.push(bloque_cuenta(p, cuenta, m.cuenta.clone(), menu_cuenta));
+    }
+    // La línea de la barra va debajo del contenido, de arriba abajo.
+    let linea = row![
+        Space::with_width(Length::Fill),
+        container(Space::new(Length::Fixed(borde::MEDIO), Length::Fill)).style(move |_: &Theme| container::Style {
+            background: Some(Background::Color(p.text)),
+            ..Default::default()
         }),
     ]
-    .into()
+    .height(Length::Fill);
+    container(iced::widget::stack![linea, contenido].width(ancho).height(Length::Fill))
+        .style(move |_: &Theme| container::Style {
+            background: Some(Background::Color(p.surface)),
+            ..Default::default()
+        })
+        .into()
 }
 
 /// Ventana completa. `pie` es la barra de juego; si no hay, no se dibuja.
@@ -423,7 +444,25 @@ pub fn app_shell<'a, M: Clone + 'a>(
     pie: Option<Element<'a, M>>,
     m: MensajesShell<'a, M>,
 ) -> Element<'a, M> {
-    let lateral = barra_lateral(p, activa.into(), colapsada, &cuenta, descargas.as_ref(), &m);
+    app_shell_con_aviso(p, activa, colapsada, cuenta, descargas, None, None, contenido, pie, m)
+}
+
+/// Como [`app_shell`], con la pastilla de una actualización en el pie de la
+/// barra lateral.
+#[allow(clippy::too_many_arguments)]
+pub fn app_shell_con_aviso<'a, M: Clone + 'a>(
+    p: Paleta,
+    activa: impl Into<Option<Seccion>>,
+    colapsada: bool,
+    cuenta: Cuenta<'a>,
+    descargas: Option<DescargasActivas>,
+    aviso: Option<Element<'a, M>>,
+    menu_cuenta: Option<crate::instancias::MenuTarjeta<'a, M>>,
+    contenido: Element<'a, M>,
+    pie: Option<Element<'a, M>>,
+    m: MensajesShell<'a, M>,
+) -> Element<'a, M> {
+    let lateral = barra_lateral(p, activa.into(), colapsada, &cuenta, descargas.as_ref(), aviso, menu_cuenta, &m);
     let mut derecha = column![container(contenido)
         .width(Length::Fill)
         .height(Length::Fill)];
