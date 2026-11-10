@@ -35,3 +35,4 @@ pub mod archivos_no_verificados;
 
 pub mod papelera;
 pub mod almacenamiento;
+pub mod copias;

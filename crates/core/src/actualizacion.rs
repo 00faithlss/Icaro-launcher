@@ -36,6 +36,9 @@ const PLATAFORMA: &str = "windows-x86_64";
 pub struct Nota {
     pub tipo: String,
     pub texto: String,
+    /// Título corto de una función nueva, opcional.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub titulo: Option<String>,
 }
 #[derive(Debug, Clone, Deserialize)]
 struct Manifest {
@@ -44,6 +47,12 @@ struct Manifest {
     compilacion: u64,
     #[serde(default)]
     notas: Vec<Nota>,
+    /// Motivo, solo si la versión corrige un fallo que daña datos o seguridad.
+    #[serde(default)]
+    importante: Option<String>,
+    /// Esquema de datos que sabe leer (ver `copias::ESQUEMA`); 1 si falta.
+    #[serde(default = "esquema_inicial")]
+    esquema: u32,
     plataformas: BTreeMap<String, Artefacto>,
 }
 #[derive(Debug, Clone, Deserialize)]
@@ -75,6 +84,12 @@ pub struct Disponible {
     #[serde(default)]
     instalador: bool,
     pub notas: Vec<Nota>,
+    /// Motivo de una actualización importante; las demás no lo traen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub importante: Option<String>,
+    /// Esquema de datos de esa versión.
+    #[serde(default = "esquema_inicial")]
+    pub esquema: u32,
     pub bytes: u64,
     url: String,
     sha256: String,
@@ -272,8 +287,11 @@ fn resolver_compilacion(
         || !asset_valido(&asset.browser_download_url, &release.tag_name, &asset.name)
         || manifest.notas.len() > 200
         || manifest.notas.iter().any(|n| {
-            n.texto.len() > 4096 || !matches!(n.tipo.as_str(), "nuevo" | "mejora" | "correccion")
+            n.texto.len() > 4096
+                || n.titulo.as_ref().is_some_and(|t| t.len() > 200)
+                || !matches!(n.tipo.as_str(), "nuevo" | "mejora" | "correccion")
         })
+        || manifest.importante.as_ref().is_some_and(|m| m.len() > 1024)
     {
         return Err(Error::Datos);
     }
@@ -283,10 +301,23 @@ fn resolver_compilacion(
         beta,
         instalador,
         notas: manifest.notas,
+        importante: manifest.importante.filter(|m| !m.trim().is_empty()),
+        esquema: manifest.esquema,
         bytes: asset.size,
         url: asset.browser_download_url.clone(),
         sha256: artefacto.sha256.to_ascii_lowercase(),
     }))
+}
+
+fn esquema_inicial() -> u32 {
+    1
+}
+
+/// La versión estable publicada, aunque sea anterior a la instalada: es el
+/// destino de «Volver ahora» desde una beta. Las demás comprobaciones nunca
+/// ofrecen versiones menores.
+pub async fn estable_publicada() -> Result<Option<Disponible>, Error> {
+    comprobar_canal("0.0.0", 0, Canal::Estable).await
 }
 
 /// Sin releases publicadas (404) es un resultado normal, no una actualización ficticia.
@@ -507,6 +538,8 @@ async fn descargar_interno<F: Fn(u64, u64)>(d: Disponible, progreso: F) -> Resul
             return Err(Error::Integridad);
         }
         rechazar_enlaces(&temporal)?;
+        // Una descarga cancelada o cortada deja su parte: se empieza de nuevo.
+        let _ = tokio::fs::remove_file(&temporal).await;
         let mut archivo = tokio::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -852,7 +885,10 @@ mod tests {
             notas: vec![Nota {
                 tipo: "mejora".into(),
                 texto: "Consola más rápida.".into(),
+                titulo: None,
             }],
+            importante: None,
+            esquema: 1,
             plataformas: BTreeMap::from([(
                 PLATAFORMA.into(),
                 Artefacto {

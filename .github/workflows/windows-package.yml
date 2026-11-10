@@ -254,6 +254,11 @@ jobs:
               'windows-x86_64-setup' = @{archivo=$setup.Name;sha256=(Get-FileHash -LiteralPath $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
             }
           }
+          # Solo una versión que corrige daño de datos o seguridad lleva motivo «importante».
+          if ($notesData.PSObject.Properties.Name -contains 'importante' -and $notesData.importante) {
+            if ($notesData.importante.Length -gt 1024) { throw 'Motivo importante demasiado largo' }
+            $manifest['importante'] = [string]$notesData.importante
+          }
           $latest = Join-Path $dir 'latest.json'
           $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $latest -Encoding utf8
           $files += $latest
