@@ -38,6 +38,27 @@ pub fn fase<'a, M: 'a>(
         contenido: contenido.into(),
         clave,
         fondo,
+        subir: None,
+        duracion: DURACION,
+    })
+}
+
+/// Entrada vertical: el contenido nuevo aparece sobre el fondo y sube `dy`
+/// píxeles en `ms` milisegundos cada vez que cambia `clave` (pestañas y
+/// paneles de PantallaServidores: 8 px en 260 ms, 6 px en 260 ms).
+pub fn subir<'a, M: 'a>(
+    fondo: Color,
+    clave: u64,
+    dy: f32,
+    ms: u64,
+    contenido: impl Into<Element<'a, M>>,
+) -> Element<'a, M> {
+    Element::new(Fase {
+        contenido: contenido.into(),
+        clave,
+        fondo,
+        subir: Some(dy),
+        duracion: Duration::from_millis(ms),
     })
 }
 
@@ -45,6 +66,9 @@ struct Fase<'a, M> {
     contenido: Element<'a, M>,
     clave: u64,
     fondo: Color,
+    /// `Some(dy)`: entra subiendo; `None`: entra de lado.
+    subir: Option<f32>,
+    duracion: Duration,
 }
 
 #[derive(Debug, Default)]
@@ -56,9 +80,14 @@ struct Estado {
 
 impl Estado {
     /// Progreso de 0 a 1 de la entrada; `None` si no anima.
+    #[cfg(test)]
     fn progreso(&self, ahora: Instant) -> Option<f32> {
+        self.progreso_en(ahora, DURACION)
+    }
+
+    fn progreso_en(&self, ahora: Instant, duracion: Duration) -> Option<f32> {
         let inicio = self.inicio?;
-        let t = ahora.saturating_duration_since(inicio).as_secs_f32() / DURACION.as_secs_f32();
+        let t = ahora.saturating_duration_since(inicio).as_secs_f32() / duracion.as_secs_f32();
         (t < 1.0).then_some(t)
     }
 }
@@ -124,7 +153,7 @@ impl<'a, M> Widget<M, Theme, Renderer> for Fase<'a, M> {
             return;
         };
         let estado = arbol.state.downcast_ref::<Estado>();
-        let Some(t) = estado.progreso(Instant::now()) else {
+        let Some(t) = estado.progreso_en(Instant::now(), self.duracion) else {
             self.contenido.as_widget().draw(
                 &arbol.children[0],
                 renderer,
@@ -137,9 +166,13 @@ impl<'a, M> Widget<M, Theme, Renderer> for Fase<'a, M> {
             return;
         };
         let (dx, velo) = aspecto(t, estado.adelante);
+        let traslado = match self.subir {
+            Some(dy) => Vector::new(0.0, (1.0 - Curva::Salida.aplicar(t)) * dy),
+            None => Vector::new(dx, 0.0),
+        };
         let caja = layout.bounds();
         renderer.with_layer(caja, |r| {
-            r.with_translation(Vector::new(dx, 0.0), |r| {
+            r.with_translation(traslado, |r| {
                 self.contenido.as_widget().draw(
                     &arbol.children[0],
                     r,
@@ -196,7 +229,7 @@ impl<'a, M> Widget<M, Theme, Renderer> for Fase<'a, M> {
         };
         if let Event::Window(iced::window::Event::RedrawRequested(ahora)) = &evento {
             let estado = arbol.state.downcast_mut::<Estado>();
-            if estado.progreso(*ahora).is_some() {
+            if estado.progreso_en(*ahora, self.duracion).is_some() {
                 shell.request_redraw(RedrawRequest::NextFrame);
             } else {
                 estado.inicio = None;

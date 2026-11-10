@@ -7,6 +7,8 @@ use icaro_ui::compartir as v;
 use iced::Task;
 
 pub struct Invitado {
+    /// Con amigos › Unirme: valida y avanza solo (código completo, confianza).
+    pub auto: bool,
     pub avance: super::avance::Avance,
     pub entrada: v::EstadoEntrada,
     pub resuelta: Option<tareas::Resuelta>,
@@ -27,6 +29,7 @@ impl Default for Invitado {
     fn default() -> Self {
         Self {
             avance: Default::default(),
+            auto: false,
             entrada: v::EstadoEntrada::Vacio,
             resuelta: None,
             visita: None,

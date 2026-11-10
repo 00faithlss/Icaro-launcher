@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 use super::{biblioteca_tareas, Accion, Estado, Etapa};
 use crate::{App, Mensaje};
-use icaro_core::{
-    compartir::biblioteca::{EstadoGuardada, PublicacionGuardada},
-    instancias::Instancia,
-};
+use icaro_core::compartir::biblioteca::{EstadoGuardada, PublicacionGuardada};
+#[cfg(test)]
+use icaro_core::instancias::Instancia;
 use icaro_ui::compartir as v;
 use iced::Task;
 
@@ -66,6 +65,7 @@ pub fn recibida(
         Err(e) => s.biblioteca.error = Some(e),
     }
 }
+#[cfg(test)]
 pub fn resumenes(s: &Estado, instancias: &[Instancia]) -> Vec<v::ResumenPublicacion> {
     let mut salida: Vec<_> = s
         .biblioteca

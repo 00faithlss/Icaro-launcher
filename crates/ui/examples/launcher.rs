@@ -30,6 +30,12 @@ mod archivos;
 mod estado;
 #[path = "launcher_aux/servidores_reales.rs"]
 mod servidores_reales;
+#[path = "launcher_aux/servidores_vista.rs"]
+mod servidores_vista;
+#[path = "launcher_aux/con_amigos.rs"]
+mod con_amigos;
+#[path = "launcher_aux/con_amigos_flujos.rs"]
+mod con_amigos_flujos;
 #[path = "launcher_aux/red_privada_real.rs"]
 mod red_privada_real;
 #[path = "launcher_aux/sincronizacion_real.rs"]
@@ -559,6 +565,15 @@ fn actualizar(app: &mut App, m: Mensaje) -> Task<Mensaje> {
     // se navega hasta allí; la consulta previa a Jugar no navega.
     if !compartiendo && app.servicios.compartir.visible() && app.seccion != Seccion::Servidores {
         tarea = Task::batch([tarea, Task::done(Mensaje::Ir(Seccion::Servidores))]);
+    }
+    // Los flujos de compartir viven en el panel de Con amigos.
+    if app.servicios.compartir.visible()
+        && app.servicios.servidores.pestana != icaro_ui::pantalla_servidores::Pestana::ConAmigos
+    {
+        let s = &mut app.servicios.servidores;
+        s.pestana_desde = s.pestana;
+        s.pestana = icaro_ui::pantalla_servidores::Pestana::ConAmigos;
+        s.pestana_t = (!app.reducir).then(std::time::Instant::now);
     }
     app.servicios.servidores.avanzar();
     if let Some(aviso)=app.aviso.take(){app.avisos.agregar(aviso);}
@@ -3339,12 +3354,13 @@ fn pantalla_capturas(app: &App) -> Element<'_, Mensaje> {
 
 /// Servidores y las fases de compartir comparten lugar: la transición desliza
 /// y hace aparecer la fase nueva sin velo ni diálogo.
+/// PantallaServidores: banda, pestañas Servidores, Con amigos y Red privada.
+/// Los flujos de compartir se ven dentro del panel de Con amigos.
 fn pantalla_servidores(app: &App) -> Element<'_, Mensaje> {
-    let clave = compartir_real::clave_fase(&app.servicios.compartir);
-    let contenido = compartir_real::vista(app)
-        .or_else(|| compartir_real::pagina_compartidas(app))
-        .unwrap_or_else(|| pantalla_servidores_base(app));
-    icaro_ui::transicion::fase(app.paleta().bg, clave, contenido)
+    if app.servicios.demo && !app.servicios.servidores.visual {
+        return pantalla_servidores_base(app);
+    }
+    servidores_reales::vista(app)
 }
 
 fn pantalla_servidores_base(app: &App) -> Element<'_, Mensaje> {
@@ -3506,18 +3522,7 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
     } else {
         match app.seccion {
         Seccion::Instancias => pantalla_instancias_con_asistente(app),
-        Seccion::Servidores => iced::widget::stack![
-            pantalla_servidores(app),
-            container(componentes::insignia(
-                p,
-                componentes::Estado::Aviso,
-                "Fase experimental",
-            ))
-            .width(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Right)
-            .padding(espacio::S4),
-        ]
-        .into(),
+        Seccion::Servidores => pantalla_servidores(app),
         Seccion::Descargas => pantalla_descargas(app),
         // Novedades es una página de Ajustes: entra y sale como una fase.
         Seccion::Ajustes => icaro_ui::transicion::fase(
@@ -3824,6 +3829,7 @@ fn main() -> iced::Result {
                 || progreso(app.anim_panel, app.ahora, MS_PANEL) < 1.0
                 || (hay_dialogo(app) && progreso(app.anim_dialogo, app.ahora, MS_LOSA) < 1.0)
                 || sesion::animando(app)
+                || app.servicios.servidores.animando(app.ahora)
                 || actualizacion_real::animando(app)
                 || app.capt.animando(app.ahora, app.reducir)
                 || (!app.reducir && app.servicios.instancias.cambio.as_ref().is_some_and(|c| !c.confirmando && !c.cargando_compatibilidad.is_empty()))

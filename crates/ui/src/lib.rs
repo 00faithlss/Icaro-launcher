@@ -31,6 +31,7 @@ pub mod movimiento;
 pub mod novedades;
 pub mod menu_anclado;
 pub mod migas;
+pub mod pantalla_servidores;
 pub mod progreso;
 pub mod servidores;
 pub mod shell;

@@ -272,7 +272,7 @@ pub(super) fn icono_estado<'a>(p: Paleta, i: Icono) -> Element<'a, Accion> {
 }
 
 /// Rayado original a 135°, una línea de un píxel cada seis píxeles.
-pub(super) fn rayado<'a>(color: Color) -> Element<'a, Accion> {
+pub(super) fn rayado<'a, M: 'a>(color: Color) -> Element<'a, M> {
     iced::widget::canvas(Rayado { color })
         .width(Length::Fill)
         .height(Length::Fill)
@@ -281,7 +281,7 @@ pub(super) fn rayado<'a>(color: Color) -> Element<'a, Accion> {
 struct Rayado {
     color: Color,
 }
-impl iced::widget::canvas::Program<Accion> for Rayado {
+impl<M> iced::widget::canvas::Program<M> for Rayado {
     type State = ();
     fn draw(
         &self,

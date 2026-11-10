@@ -62,13 +62,13 @@ const MAX_CUPO: u32 = 50;
 /// La barra muestra un bloque por plaza hasta 25.
 const MAX_BLOQUES: u32 = 25;
 
-fn t<'a>(
+fn t<'a, M: 'a>(
     s: impl Into<String>,
     f: iced::Font,
     tam: f32,
     alto: f32,
     c: Color,
-) -> Element<'a, Accion> {
+) -> Element<'a, M> {
     text(s.into())
         .font(f)
         .size(tam)
@@ -94,7 +94,7 @@ fn caja(
 }
 
 /// `ic-cmp-codigo`: celdas de 36 × 48 con borde de 2 px; guiones de 14 px.
-fn celdas<'a>(p: Paleta, codigo: &str, anulado: bool) -> Element<'a, Accion> {
+pub fn celdas<'a, M: 'a>(p: Paleta, codigo: &str, anulado: bool) -> Element<'a, M> {
     let mut fila = row![].spacing(5).align_y(Alignment::Center);
     for c in codigo.chars() {
         if c == '-' {
@@ -114,7 +114,7 @@ fn celdas<'a>(p: Paleta, codigo: &str, anulado: bool) -> Element<'a, Accion> {
         ))
         .center_x(36)
         .center_y(48);
-        let celda: Element<'a, Accion> = if anulado {
+        let celda: Element<'a, M> = if anulado {
             stack![
                 container(Space::new(36, 48)).style(caja(None, p.border_strong, 2.)),
                 container(rayado(p.border)).width(36).height(48).padding(2),

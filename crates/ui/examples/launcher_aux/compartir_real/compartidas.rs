@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! Servidores › Instancias compartidas: lo que compartes, desde la biblioteca
 //! de publicaciones, y lo que recibes, desde el vínculo de cada instancia.
-use super::{servicio::Servicio, Accion, Estado, Etapa};
+use super::{servicio::Servicio, Accion, Estado};
 use crate::{App, Mensaje};
 use icaro_core::{
     compartir::{
@@ -11,7 +11,7 @@ use icaro_core::{
     instancias::{Almacen, Instancia},
 };
 use icaro_ui::compartir as v;
-use iced::{Element, Task};
+use iced::Task;
 use std::{path::PathBuf, time::Duration};
 
 /// Una instancia recibida y el origen con el que se comprueba su anfitrión.
@@ -95,18 +95,6 @@ pub fn modelo(app: &App) -> v::InstanciasCompartidas {
         menu: s.menu_compartida.clone(),
         confirmar_quitar: s.confirmar_quitar.clone(),
     }
-}
-
-/// Página dentro de Servidores, solo cuando no hay un flujo de compartir abierto.
-pub fn pagina(app: &App) -> Option<Element<'_, Mensaje>> {
-    let s = &app.servicios.compartir;
-    if s.etapa != Etapa::Cerrada || s.compartidas.is_none() {
-        return None;
-    }
-    Some(
-        v::instancias_compartidas(app.paleta(), &modelo(app))
-            .map(|a| Mensaje::Compartir(Accion::Vista(a))),
-    )
 }
 
 /// Lee el vínculo y la revisión aplicada de cada instancia, fuera de iced.
