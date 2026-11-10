@@ -1,6 +1,6 @@
 # Changelog
 
-## [Sin publicar]
+## [0.4.1] - 2026-11-10
 
 - Compartir ya no abre diálogos: sus fases son páginas dentro de Servidores, con migas, contenido centrado y desplazamiento suave, y pasan de una a otra deslizándose 24 px y apareciendo (sin movimiento con «reducir movimiento»). Se puede navegar a otra sección y volver; la fase espera en Servidores.
 - Servidores › Instancias compartidas reúne lo que compartes (estado, revisión, personas, código con copiar, caducidad, acción principal y menú con Pausar, Cambiar código y Dejar de compartir) y lo que recibes (de quién es, si el anfitrión está disponible, revisión y Jugar o Sincronizar), con sus estados vacíos.

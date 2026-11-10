@@ -1,0 +1,77 @@
+{
+  "version": "0.4.1",
+  "notas": [
+    {
+      "tipo": "nuevo",
+      "titulo": "Elige cómo arranca el juego",
+      "accion": "apariencia",
+      "al_bajar": "Vuelve el Umbral como única transición al pulsar Jugar.",
+      "texto": "Elige cómo arranca el juego: en Ajustes › Apariencia hay seis transiciones para cuando pulsas Jugar (Marea, Horizonte, Tinta, Bloques, Respiro o el Umbral), con tono, frase y registro mientras carga."
+    },
+    {
+      "tipo": "nuevo",
+      "titulo": "Cancelar al jugar",
+      "texto": "Cancelar al jugar: la pantalla de carga permite detener la preparación o cerrar el juego si todavía no abrió su ventana."
+    },
+    {
+      "tipo": "nuevo",
+      "titulo": "Canal Beta o Estable",
+      "accion": "canal",
+      "al_bajar": "Ya no se guardan copias antes de actualizar; las que tienes se conservan en tu carpeta de Ícaro.",
+      "texto": "Canal Beta o Estable: antes de pasar a Beta se guarda una copia de tus ajustes y cuentas sin conexión, y puedes volver a Estable restaurándola. Tus mundos, mods e instancias no se tocan."
+    },
+    {
+      "tipo": "nuevo",
+      "titulo": "Saludo en Instancias",
+      "accion": "instancias",
+      "al_bajar": "Instancias vuelve a abrir sin saludo.",
+      "texto": "Saludo en Instancias: una frase según la hora del día y la última instancia que jugaste."
+    },
+    {
+      "tipo": "nuevo",
+      "titulo": "Menú de cuenta",
+      "accion": "cuenta",
+      "al_bajar": "Vuelve el selector de cuenta anterior. Tus cuentas se conservan.",
+      "texto": "Menú de cuenta: pulsando tu cuenta en la barra lateral eliges con qué cuenta jugar, agregas cuentas o cierras sesión."
+    },
+    {
+      "tipo": "nuevo",
+      "titulo": "Portada propia",
+      "accion": "instancias",
+      "al_bajar": "Las instancias vuelven a usar un grabado como portada; tu imagen se conserva en la carpeta de la instancia.",
+      "texto": "Portada propia: al crear una instancia puedes usar una imagen tuya como portada."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "El aviso de actualización es una tarjeta abajo a la derecha que no tapa nada, con la descarga y su velocidad."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "Compartir funciona en páginas dentro de Servidores, e Instancias compartidas reúne lo que compartes y lo que recibes."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "Los menús salen unidos a su botón y se abren arriba o al costado cuando no caben, sin taparlo."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "Plata y Bronce tiñen toda la interfaz, no solo el botón principal."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "Los textos largos de la pantalla de carga se recortan en vez de salirse de la pantalla."
+    },
+    {
+      "tipo": "correccion",
+      "texto": "Jugar ya no te lleva a Servidores mientras comprueba la instancia."
+    },
+    {
+      "tipo": "correccion",
+      "texto": "Arrastrar la skin hacia la derecha la gira hacia la derecha."
+    },
+    {
+      "tipo": "correccion",
+      "texto": "Los bordes de los menús ya no desaparecen al pasar el mouse."
+    }
+  ]
+}
