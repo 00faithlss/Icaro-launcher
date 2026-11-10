@@ -61,7 +61,10 @@ pub fn instancia(id: &str) {
 #[track_caller]
 pub fn texto<E: std::fmt::Display + 'static>(error: E) -> String {
     registrar_error(&error);
-    error.to_string()
+    let texto = error.to_string();
+    // El mensaje completo, con su ruta, queda en el registro legible local.
+    crate::diagnostico::anotar(crate::diagnostico::Gravedad::Error, "nucleo", &texto);
+    texto
 }
 #[track_caller]
 pub fn registrar_error<E: 'static>(error: &E) {

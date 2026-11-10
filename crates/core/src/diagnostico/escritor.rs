@@ -38,6 +38,8 @@ pub(crate) type Acuse = SyncSender<Result<(), Causa>>;
 
 pub(crate) enum Mensaje {
     Evento(Evento),
+    /// Línea libre solo para el registro legible (mensajes de error con rutas).
+    Texto(String),
     Vaciar(Acuse),
     Cerrar(Acuse),
 }
@@ -158,9 +160,18 @@ pub(crate) struct Escritor {
     descartes_informados: u64,
     perdidos_informados: u64,
     fallo_sin_acuse: Option<Causa>,
+    /// `logs/latest.log` y las líneas legibles pendientes de escribir.
+    legible: Option<PathBuf>,
+    texto: String,
 }
 
 impl Escritor {
+    /// Escribe además cada evento en el registro legible `ruta`.
+    pub(crate) fn con_legible(mut self, ruta: Option<PathBuf>) -> Self {
+        self.legible = ruta;
+        self
+    }
+
     pub(crate) fn nuevo(
         rx: Receiver<Mensaje>,
         cab: Cabecera,
@@ -181,6 +192,8 @@ impl Escritor {
             descartes_informados: 0,
             perdidos_informados: 0,
             fallo_sin_acuse: None,
+            legible: None,
+            texto: String::new(),
         }
     }
 
@@ -232,6 +245,10 @@ impl Escritor {
                 self.responder(acuse);
                 true
             }
+            Mensaje::Texto(t) => {
+                self.texto_libre(t);
+                true
+            }
             Mensaje::Cerrar(acuse) => {
                 self.cerrar(acuse);
                 false
@@ -258,6 +275,7 @@ impl Escritor {
                     self.volcar();
                     self.responder(vaciado);
                 }
+                Mensaje::Texto(t) => self.texto_libre(t),
                 Mensaje::Cerrar(otro) => cierres.push(otro),
             }
         }
@@ -272,6 +290,12 @@ impl Escritor {
         }
     }
 
+    fn texto_libre(&mut self, t: String) {
+        if self.legible.is_some() {
+            self.texto.push_str(&t);
+        }
+    }
+
     fn responder(&mut self, acuse: Acuse) {
         let resultado = match self.fallo_sin_acuse.take() {
             Some(causa) => Err(causa),
@@ -283,6 +307,9 @@ impl Escritor {
     fn anotar(&mut self, evento: &Evento, externa: bool) {
         let bytes = evento.linea(&self.cab, self.seq);
         self.seq += 1;
+        if self.legible.is_some() {
+            self.texto.push_str(&super::legible::linea(evento));
+        }
         self.lote.push(Linea { bytes, externa });
     }
 
@@ -313,6 +340,10 @@ impl Escritor {
 
     fn volcar(&mut self) {
         let informe = self.informar_perdidas();
+        if let (Some(ruta), false) = (&self.legible, self.texto.is_empty()) {
+            super::legible::anexar(ruta, &self.texto);
+            self.texto.clear();
+        }
         if self.lote.is_empty() {
             return;
         }

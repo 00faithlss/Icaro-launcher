@@ -1422,6 +1422,13 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             app.servicios.juego.mostrar_ultimo_registro = true;
             return Task::batch([cargar_consola(app), seguir_consola(app)]);
         }
+        Accion::AbrirRegistros if id_consola(app).as_deref() == Some(ICARO) => {
+            let logs = crate::estado::directorio(false).join("logs");
+            let programa = if cfg!(windows) { "explorer" } else { "xdg-open" };
+            if std::process::Command::new(programa).arg(logs).spawn().is_err() {
+                app.avisar("No se pudo abrir la carpeta de registros.".into());
+            }
+        }
         Accion::AbrirRegistros => {
             if let Some(id) = id_consola(app) {
                 if let Ok(game) = app.servicios.instancias.almacen.juego(&id) {
@@ -1494,10 +1501,121 @@ pub fn seguir_consola(app: &App) -> Task<Mensaje> {
     }
 }
 
+/// Fuente de la consola que muestra el registro del propio Ícaro
+/// (`logs/latest.log` de la carpeta de datos) en vez del de una instancia.
+pub const ICARO: &str = "icaro";
+
+/// La consola muestra el registro de Ícaro (fuera del editor).
+pub fn mostrando_icaro(app: &App) -> bool {
+    app.editor.is_none() && app.servicios.juego.consola_seleccionada.as_deref() == Some(ICARO)
+}
+
+/// Acción para abrir el registro de Ícaro en la consola.
+pub fn ver_registro_icaro() -> Mensaje {
+    m(Accion::SeleccionarConsola(ICARO.into()))
+}
+
+/// Lee el registro de Ícaro cada vez que se elige, para ver lo último.
+fn cargar_registro_icaro(app: &mut App) -> Task<Mensaje> {
+    if app.servicios.juego.cargando_registro.as_deref() == Some(ICARO) {
+        return Task::none();
+    }
+    if app.servicios.demo {
+        app.servicios.juego.logs.insert(ICARO.into(), lineas_icaro(MUESTRA_ICARO));
+        return seguir_consola(app);
+    }
+    app.servicios.juego.logs.remove(ICARO);
+    app.servicios.juego.cargando_registro = Some(ICARO.into());
+    let logs = crate::estado::directorio(false).join("logs");
+    Task::perform(
+        async move {
+            tokio::task::spawn_blocking(move || {
+                leer_registro_icaro(&logs).map(|t| lineas_icaro(&t)).unwrap_or_else(|| {
+                    vec![Linea {
+                        hora: "—".into(),
+                        nivel: Nivel::Info,
+                        mensaje: "Todavía no hay registro de esta sesión.".into(),
+                    }]
+                })
+            })
+            .await
+            .unwrap_or_default()
+        },
+        |lineas| m(Accion::RegistroCargado(ICARO.into(), lineas)),
+    )
+}
+
+fn leer_registro_icaro(logs: &std::path::Path) -> Option<String> {
+    let ruta = logs.join(icaro_core::diagnostico::ARCHIVO_LEGIBLE);
+    let meta = std::fs::symlink_metadata(&ruta).ok()?;
+    if !meta.is_file() || meta.len() > 32 * 1024 * 1024 {
+        return None;
+    }
+    std::fs::read_to_string(ruta).ok()
+}
+
+/// `[2026-11-10 02:34:50] [cuenta/INFO]: renovar_sesion: completado en 2713 ms`
+/// → hora `02:34:50`, nivel y `[cuenta] renovar_sesion: …`.
+fn lineas_icaro(texto: &str) -> Vec<Linea> {
+    let mut v: Vec<Linea> = texto
+        .lines()
+        .rev()
+        .take(5000)
+        .map(|l| {
+            let hora = l.get(12..20).filter(|h| h.as_bytes().get(2) == Some(&b':')).unwrap_or("—");
+            let nivel = if l.contains("/ERROR]") {
+                Nivel::Error
+            } else if l.contains("/WARN]") {
+                Nivel::Warn
+            } else {
+                Nivel::Info
+            };
+            let resto = l.get(22..).filter(|_| hora != "—").unwrap_or(l);
+            // «[cuenta/INFO]: texto» → «[cuenta] texto»
+            let mensaje = match resto.split_once("]: ") {
+                Some((cab, msg)) if cab.starts_with('[') => {
+                    let comp = cab.trim_start_matches('[').split('/').next().unwrap_or("");
+                    format!("[{comp}] {msg}")
+                }
+                _ => resto.to_owned(),
+            };
+            Linea { hora: hora.to_owned(), nivel, mensaje }
+        })
+        .collect();
+    v.reverse();
+    v
+}
+
+#[cfg(test)]
+#[test]
+fn el_registro_de_icaro_se_lee_con_hora_nivel_y_componente() {
+    let l = lineas_icaro(MUESTRA_ICARO);
+    assert_eq!(l.len(), 8);
+    assert_eq!((l[0].hora.as_str(), l[0].nivel), ("02:34:49", Nivel::Info));
+    assert!(l[0].mensaje.starts_with("[launcher] Ícaro 0.4.1"));
+    assert_eq!(l[4].nivel, Nivel::Warn);
+    assert_eq!(l[5].nivel, Nivel::Error);
+    assert!(l[5].mensaje.starts_with("[nucleo] No se pudo leer C:"));
+    let suelta = lineas_icaro("texto sin formato");
+    assert_eq!((suelta[0].hora.as_str(), suelta[0].mensaje.as_str()), ("—", "texto sin formato"));
+}
+
+const MUESTRA_ICARO: &str = "[2026-11-10 02:34:49] [launcher/INFO]: Ícaro 0.4.1 (compilación 0) en windows · sesión 588c1651bc018065
+[2026-11-10 02:34:50] [actualizador/INFO]: comprobar: completado en 519 ms
+[2026-11-10 02:34:50] [cuenta/INFO]: renovar_sesion › xbox
+[2026-11-10 02:34:53] [cuenta/INFO]: renovar_sesion: completado en 2713 ms
+[2026-11-10 02:35:10] [mods/WARN]: sincronizar: quedó sin terminar · mods.rs:412
+[2026-11-10 02:35:12] [nucleo/ERROR]: No se pudo leer C:\\Users\\Ana\\AppData\\Roaming\\Icaro\\instances\\26.3\\minecraft\\mods\\sodium.jar: Acceso denegado. (os error 5) · mods_reales.rs:388
+[2026-11-10 02:35:12] [aviso/ERROR]: No se pudo instalar Sodium: Acceso denegado. · launcher.rs:566
+[2026-11-10 02:36:01] [juego/INFO]: preparar: completado en 2140 ms";
+
 pub fn cargar_consola(app: &mut App) -> Task<Mensaje> {
     let Some(id) = id_consola(app) else {
         return Task::none();
     };
+    if id == ICARO {
+        return cargar_registro_icaro(app);
+    }
     if app.servicios.juego.logs.contains_key(&id)
         || app.servicios.juego.procesos.contains_key(&id)
         || app.servicios.juego.cargando_registro.as_deref() == Some(&id)
@@ -1578,6 +1696,30 @@ fn lineas_guardadas(text: &str) -> Vec<Linea> {
 
 fn exportar_registro(app: &App) -> Task<Mensaje> {
     let id = id_consola(app);
+    if id.as_deref() == Some(ICARO) {
+        let logs = crate::estado::directorio(false).join("logs");
+        return Task::perform(
+            async move {
+                let file = rfd::AsyncFileDialog::new()
+                    .set_title("Exportar registro de Ícaro")
+                    .set_file_name("icaro-latest.log")
+                    .add_filter("Registro de texto", &["log", "txt"])
+                    .save_file()
+                    .await?;
+                Some(
+                    tokio::task::spawn_blocking(move || {
+                        let texto = leer_registro_icaro(&logs).ok_or("No hay registro de esta sesión.")?;
+                        std::fs::write(file.path(), texto).map_err(|_| "No se pudo guardar el registro.")?;
+                        Ok(file.path().to_owned())
+                    })
+                    .await
+                    .unwrap_or_else(|_| Err("No se pudo guardar el registro."))
+                    .map_err(|e: &str| e.to_owned()),
+                )
+            },
+            |result| result.map_or(Mensaje::Nada, |r| m(Accion::RegistroExportado(r))),
+        );
+    }
     let game = id
         .as_ref()
         .and_then(|id| app.servicios.instancias.almacen.juego(id).ok());
@@ -1837,9 +1979,12 @@ pub fn consola(app: &App) -> Element<'_, Mensaje> {
     let p = app.paleta();
     let id = id_consola(app);
     let instancia = id.as_ref().and_then(|id| registro(app, id));
-    let nombre = instancia
-        .as_ref()
-        .map_or("Minecraft", |i| i.nombre.as_str());
+    let es_icaro = id.as_deref() == Some(ICARO);
+    let nombre = if es_icaro {
+        "Ícaro"
+    } else {
+        instancia.as_ref().map_or("Minecraft", |i| i.nombre.as_str())
+    };
     let content = consola::consola_viva(
         p,
         lineas(app),
@@ -1877,6 +2022,12 @@ pub fn consola(app: &App) -> Element<'_, Mensaje> {
         })
         .collect();
     opciones.sort_by_key(|i| !i.ejecutando);
+    // El registro del propio launcher, siempre al final de la lista.
+    opciones.push(OpcionConsola {
+        id: ICARO.into(),
+        nombre: "Ícaro (registro del launcher)".into(),
+        ejecutando: false,
+    });
     let elegida = opciones
         .iter()
         .find(|i| Some(&i.id) == id.as_ref())
@@ -1901,7 +2052,7 @@ pub fn consola(app: &App) -> Element<'_, Mensaje> {
     let en_ejecucion = id
         .as_ref()
         .is_some_and(|id| app.servicios.juego.procesos.contains_key(id));
-    let content: Element<Mensaje> = if en_ejecucion || app.servicios.juego.mostrar_ultimo_registro {
+    let content: Element<Mensaje> = if es_icaro || en_ejecucion || app.servicios.juego.mostrar_ultimo_registro {
         content
     } else {
         let ultima = id.as_ref().and_then(|id| app.servicios.juego.resultados.get(id))
@@ -2166,6 +2317,14 @@ pub fn instalaciones_java(app: &App) -> Vec<icaro_ui::editor::InstalacionJava> {
 /// Datos aislados para capturar los widgets reales; no ejecuta tareas ni usa
 /// cuentas, red, archivos del usuario o procesos externos.
 pub fn preparar_diseno(app: &mut App, scene: &str) {
+    // juego-consola-icaro: Consola con el registro del propio launcher.
+    if scene == "juego-consola-icaro" {
+        app.seccion = icaro_ui::shell::Seccion::Consola;
+        app.editor = None;
+        app.servicios.juego.consola_seleccionada = Some(ICARO.into());
+        app.servicios.juego.logs.insert(ICARO.into(), lineas_icaro(MUESTRA_ICARO));
+        return;
+    }
     let cantidad = if scene == "juego-descargas" { 4 } else { 1 };
     let nombres = ["Supervivencia", "Creativo", "Pruebas", "Vanilla 1.20.4"];
     let registros: Vec<_> = (0..cantidad)

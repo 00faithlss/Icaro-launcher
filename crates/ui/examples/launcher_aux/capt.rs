@@ -1181,6 +1181,17 @@ pub fn vacio_consola(app: &App) -> Element<'_, Mensaje> {
             ))
             .padding(vacios::margen())
         ),
+        // Sin partida que mostrar, sigue a mano el registro del propio Ícaro.
+        container(icaro_ui::componentes::boton_con_icono(
+            p,
+            icaro_ui::iconos::Icono::Consola,
+            "Ver el registro de Ícaro",
+            icaro_ui::componentes::Variante::Secundario,
+            Some(crate::juego_real::ver_registro_icaro()),
+            true,
+        ))
+        .center_x(iced::Length::Fill)
+        .padding(Padding { top: 0.0, right: 0.0, bottom: espacio::S6, left: 0.0 }),
     ]
     .into()
 }

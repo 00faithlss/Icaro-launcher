@@ -78,6 +78,17 @@ fn emergencia(ubicacion: Option<&Location<'_>>, carga: &'static str) {
     };
     if let Some(contexto) = contexto {
         let _ = escribir(&contexto, ubicacion, carga);
+        // También en el registro legible, para verlo junto al resto.
+        let donde = ubicacion
+            .map(|l| format!(" en {}:{}", super::modelos::nombre_base(l.file()), l.line()))
+            .unwrap_or_default();
+        super::legible::anexar(
+            &contexto.logs.join(super::legible::ARCHIVO),
+            &format!(
+                "[{}] [proceso/ERROR]: cierre inesperado{donde}\n",
+                super::legible::fecha_local(std::time::SystemTime::now())
+            ),
+        );
     }
     EN_CURSO.store(false, Ordering::Release);
 }

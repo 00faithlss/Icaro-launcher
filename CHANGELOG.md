@@ -1,5 +1,12 @@
 # Changelog
 
+## [Sin publicar]
+
+- Al cambiar de sección, pantalla, pestaña, ajuste o página, todo vuelve arriba en vez de abrirse a la altura en que quedó lo anterior. Un panel desplazable dentro de una página se mueve primero y, al llegar a su borde, la rueda sigue con la página: ya no queda fija debajo de un panel.
+- La pestaña Archivos ocupa todo el alto de la ventana: el árbol y la vista previa se desplazan por dentro.
+- Registro legible `logs/latest.log`, como el de Minecraft: `[2026-11-10 02:34:50] [cuenta/INFO]: renovar_sesion: completado en 2713 ms`, con hora local, componente, nivel (INFO, WARN, ERROR), etapa, duración y causa de cada fallo. Los errores guardan su mensaje completo, con rutas, y el archivo y la línea del código; también quedan los avisos que ve quien usa Ícaro y los cierres inesperados. Es local: `diagnostico.jsonl` sigue sin rutas ni textos. Al abrir Ícaro, el anterior pasa a `AAAA-MM-DD-N.log` y se conservan los últimos 10. `launcher.log` también usa fecha legible.
+- Consola › «Ícaro (registro del launcher)» muestra ese registro dentro del launcher, con filtros por nivel, búsqueda, exportar y carpeta; con la consola vacía, «Ver el registro de Ícaro» lo abre.
+
 ## [0.4.1] - 2026-11-10
 
 - Compartir ya no abre diálogos: sus fases son páginas dentro de Servidores, con migas, contenido centrado y desplazamiento suave, y pasan de una a otra deslizándose 24 px y apareciendo (sin movimiento con «reducir movimiento»). Se puede navegar a otra sección y volver; la fase espera en Servidores.

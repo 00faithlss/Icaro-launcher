@@ -257,6 +257,14 @@ impl Ubicacion {
             linea: lugar.line(),
         }
     }
+
+    pub(crate) fn archivo(&self) -> &'static str {
+        self.archivo
+    }
+
+    pub(crate) fn linea(&self) -> u32 {
+        self.linea
+    }
 }
 
 /// Último componente de una ruta de código fuente, sin carpetas.

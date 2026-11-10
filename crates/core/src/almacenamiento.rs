@@ -150,12 +150,11 @@ pub fn escribir_json(path: &Path, value: &serde_json::Value) -> Result<(), Strin
     }
     result
 }
+/// Nota del launcher en `logs/launcher.log`: `[AAAA-MM-DD HH:MM:SS] [INFO]: mensaje`
+/// en hora local. El registro completo de la sesión está en `logs/latest.log`.
 pub fn registrar(root: &Path, message: &str) -> Result<(), String> {
-    let time = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(crate::diagnostico_contexto::texto)?
-        .as_secs();
-    anexar(root, "launcher", &format!("{time} {}", linea(message)))
+    let fecha = crate::diagnostico::fecha_local(std::time::SystemTime::now());
+    anexar(root, "launcher", &format!("[{fecha}] [INFO]: {}", linea(message)))
 }
 
 /// Registro propio de un componente en `logs/<nombre>.log`, con fecha UTC legible
