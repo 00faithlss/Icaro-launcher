@@ -16,6 +16,7 @@
 mod archivos;
 mod escritor;
 mod global;
+mod legible;
 mod medicion;
 mod modelos;
 mod panico;
@@ -24,6 +25,7 @@ mod pruebas;
 #[cfg(test)]
 mod pruebas_escritura;
 
+pub use legible::{fecha_local, usar_desfase_local, ARCHIVO as ARCHIVO_LEGIBLE};
 pub use medicion::Medicion;
 pub use modelos::{Campo, Causa, Resultado, ESQUEMA};
 
@@ -131,6 +133,8 @@ pub(crate) fn iniciar_con(
     };
     let salud = Arc::new(Salud::default());
     let (tx, rx) = mpsc::sync_channel(config.capacidad);
+    // El registro legible es un espejo: si no se puede preparar, se sigue sin él.
+    let legible = legible::preparar(&logs, &cab);
     let escritor = Escritor::nuevo(
         rx,
         cab.clone(),
@@ -138,7 +142,8 @@ pub(crate) fn iniciar_con(
         config.clone(),
         base,
         bloqueo,
-    );
+    )
+    .con_legible(legible);
     let hilo = thread::Builder::new()
         .name("icaro-diagnostico".into())
         .spawn(move || escritor.ejecutar())
@@ -159,6 +164,41 @@ pub(crate) fn iniciar_con(
         cerrada: false,
         plazo_drop: config.plazo_drop,
     })
+}
+
+/// Gravedad de una línea libre del registro legible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Gravedad {
+    Info,
+    Aviso,
+    Error,
+}
+
+/// Escribe en `logs/latest.log` una línea con texto libre, por ejemplo el
+/// mensaje completo de un error con su ruta. Es un registro local para quien
+/// usa Ícaro: no va a `diagnostico.jsonl`. No espera ni hace IO; sin registro
+/// global no hace nada.
+#[track_caller]
+pub fn anotar(gravedad: Gravedad, componente: &str, texto: &str) {
+    let Some(registro) = global::actual() else {
+        return;
+    };
+    let lugar = std::panic::Location::caller();
+    let nivel = match gravedad {
+        Gravedad::Info => "INFO",
+        Gravedad::Aviso => "WARN",
+        Gravedad::Error => "ERROR",
+    };
+    let donde = if gravedad == Gravedad::Info {
+        String::new()
+    } else {
+        format!(" · {}:{}", modelos::nombre_base(lugar.file()), lugar.line())
+    };
+    let texto: String = texto.chars().take(4000).collect::<String>().replace(['\r', '\n'], " ");
+    registro.anotar(format!(
+        "[{}] [{componente}/{nivel}]: {texto}{donde}\n",
+        legible::fecha_local(std::time::SystemTime::now())
+    ));
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -294,6 +334,15 @@ impl Registro {
         if self.c.tx.try_send(Mensaje::Evento(evento)).is_err() {
             salud.enviados.fetch_sub(1, Ordering::AcqRel);
             salud.descartados.fetch_add(1, Ordering::AcqRel);
+        }
+    }
+
+    /// Línea libre del registro legible; no pasa por `diagnostico.jsonl`.
+    fn anotar(&self, texto: String) {
+        let salud = &self.c.salud;
+        let _cola = salud.cola();
+        if !salud.cerrando.load(Ordering::Acquire) {
+            let _ = self.c.tx.try_send(Mensaje::Texto(texto));
         }
     }
 
