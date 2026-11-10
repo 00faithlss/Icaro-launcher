@@ -1,0 +1,23 @@
+{
+  "version": "0.4.2",
+  "notas": [
+    {
+      "tipo": "nuevo",
+      "titulo": "Registro de Ícaro",
+      "al_bajar": "La consola deja de mostrar el registro de Ícaro; el archivo latest.log se conserva en tu carpeta de Ícaro.",
+      "texto": "Registro de Ícaro: un registro legible con fecha, parte del launcher, nivel y el mensaje completo de cada error, que puedes ver en Consola › «Ícaro (registro del launcher)»."
+    },
+    {
+      "tipo": "correccion",
+      "texto": "Al cambiar de sección, pestaña, ajuste o página, la vista vuelve arriba en vez de quedarse abajo."
+    },
+    {
+      "tipo": "correccion",
+      "texto": "Un panel desplazable dentro de una página ya no deja la página fija al llegar a su borde."
+    },
+    {
+      "tipo": "correccion",
+      "texto": "La pestaña Archivos aprovecha todo el alto de la ventana."
+    }
+  ]
+}

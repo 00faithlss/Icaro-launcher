@@ -1,6 +1,6 @@
 # Changelog
 
-## [Sin publicar]
+## [0.4.2] - 2026-11-10
 
 - Al cambiar de sección, pantalla, pestaña, ajuste o página, todo vuelve arriba en vez de abrirse a la altura en que quedó lo anterior. Un panel desplazable dentro de una página se mueve primero y, al llegar a su borde, la rueda sigue con la página: ya no queda fija debajo de un panel.
 - La pestaña Archivos ocupa todo el alto de la ventana: el árbol y la vista previa se desplazan por dentro.
