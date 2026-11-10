@@ -1634,11 +1634,84 @@ pub fn account_view(app: &App) -> Element<'_, Mensaje> {
     crate::cuenta_real::vista(app)
 }
 
+/// MenuCuenta: unido al bloque de cuenta de la barra lateral, crece hacia
+/// arriba. «Jugar como» con todas las cuentas (la activa con check), agregar
+/// cuentas, Cuenta y skin, y cerrar sesión en rojo con el nombre activo.
+pub fn menu_cuenta(app: &App) -> Option<icaro_ui::instancias::MenuTarjeta<'_, Mensaje>> {
+    use icaro_ui::superficies::ElementoMenu;
+    if !app.sesion.menu || app.servicios.local.abierta {
+        return None;
+    }
+    let p = app.paleta();
+    let ocupada = app.servicios.auth_busy;
+    // Con Minecraft abierto no se cambia de cuenta.
+    let jugando = !app.servicios.juego.procesos.is_empty();
+    let mut e: Vec<ElementoMenu<Mensaje>> = vec![ElementoMenu::Rotulo("Jugar como".into())];
+    let mut cuenta = |nombre: String, tipo: &'static str, marcada: bool, al_pulsar: Option<Mensaje>| {
+        e.push(ElementoMenu::Marcada {
+            texto: nombre.into(),
+            detalle: Some(tipo.into()),
+            marcada,
+            mensaje: if marcada { al_pulsar } else { al_pulsar.filter(|_| !jugando && !ocupada) },
+        });
+    };
+    let activa_nombre;
+    if app.servicios.demo {
+        activa_nombre = app.servicios.nombre(app.sesion.estado.nombre()).to_owned();
+        cuenta(activa_nombre.clone(), "Microsoft", true, Some(Mensaje::Ses(crate::sesion::Accion::Gestionar)));
+        cuenta("Pato_Lucas".into(), "Sin conexión", false, Some(Mensaje::Ses(crate::sesion::Accion::Menu(false))));
+    } else {
+        activa_nombre = app.servicios.nombre("Sin cuenta").to_owned();
+        let local = app.servicios.session.as_ref().is_some_and(|s| s.es_local());
+        if app.servicios.session.is_some() && !local {
+            cuenta(activa_nombre.clone(), "Microsoft", true, Some(Mensaje::Ses(crate::sesion::Accion::Gestionar)));
+        }
+        if local {
+            if let Some(ms) = &app.servicios.local.microsoft {
+                cuenta(ms.profile.name.clone(), "Microsoft", false, Some(crate::cuenta_sin_conexion::m(crate::cuenta_sin_conexion::Accion::UsarMicrosoft)));
+            }
+        }
+        for nombre in &app.servicios.local.cuentas.nombres {
+            let marcada = app.servicios.session.as_ref().is_some_and(|s| s.es_local() && s.profile.name == *nombre);
+            cuenta(nombre.clone(), "Sin conexión", marcada, Some(crate::cuenta_sin_conexion::m(crate::cuenta_sin_conexion::Accion::Usar(nombre.clone()))));
+        }
+    }
+    if jugando {
+        e.push(ElementoMenu::Rotulo("Cierra el juego para cambiar de cuenta".into()));
+    }
+    e.push(ElementoMenu::Separador);
+    e.push(ElementoMenu::Opcion {
+        icono: Icono::UsuarioMas, texto: "Agregar cuenta Microsoft".into(), atajo: None, peligro: false,
+        mensaje: if ocupada { Mensaje::Nada } else { m(Accion::Login) },
+    });
+    e.push(ElementoMenu::Opcion {
+        icono: Icono::Usuario, texto: "Añadir cuenta sin conexión".into(), atajo: None, peligro: false,
+        mensaje: crate::cuenta_sin_conexion::m(crate::cuenta_sin_conexion::Accion::Abrir),
+    });
+    e.push(ElementoMenu::Opcion {
+        icono: Icono::Ajustes, texto: "Cuenta y skin".into(), atajo: Some("Ctrl ,"), peligro: false,
+        mensaje: Mensaje::Ses(crate::sesion::Accion::Gestionar),
+    });
+    if app.servicios.demo || app.servicios.session.is_some() {
+        e.push(ElementoMenu::Separador);
+        e.push(ElementoMenu::Opcion {
+            icono: Icono::Salir, texto: format!("Cerrar sesión de {activa_nombre}").into(), atajo: None, peligro: true,
+            mensaje: Mensaje::Ses(crate::sesion::Accion::CerrarSesion),
+        });
+    }
+    Some(icaro_ui::instancias::MenuTarjeta {
+        contenido: icaro_ui::superficies::menu_contextual_ancho(p, e, 320.0),
+        cerrar: Mensaje::Ses(crate::sesion::Accion::Menu(false)),
+        progreso: if app.reducir { 1.0 } else { crate::sesion::progreso_menu(app) },
+    })
+}
+
 pub fn selector<'a>(app: &'a App, window: Element<'a, Mensaje>) -> Element<'a, Mensaje> {
     if app.servicios.local.abierta {
         return icaro_ui::superficies::con_velo(app.paleta(), window, crate::cuenta_sin_conexion::vista(app), crate::cuenta_sin_conexion::m(crate::cuenta_sin_conexion::Accion::Cerrar));
     }
-    if !app.sesion.menu {
+    // El menú de cuenta va unido al bloque de la barra lateral (MenuCuenta).
+    if !app.sesion.menu || app.pantalla.is_none() {
         return window;
     }
     let p = app.paleta();

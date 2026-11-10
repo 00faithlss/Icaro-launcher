@@ -16,6 +16,15 @@ static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 struct Estadisticas {
     #[serde(default)]
     segundos_jugados: u64,
+    /// Fin de la última partida, en segundos Unix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ultima_partida: Option<u64>,
+}
+
+fn ahora() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 fn leer(carpeta: &Path) -> Result<Estadisticas, Error> {
@@ -35,13 +44,21 @@ impl Almacen {
         Ok(leer(&self.carpeta(id)?)?.segundos_jugados)
     }
 
-    /// Suma una sesión terminada y devuelve el total. Un registro dañado
-    /// devuelve error y se conserva, en lugar de reiniciar el tiempo a cero.
+    /// Cuándo terminó la última partida (segundos Unix); `None` si nunca se
+    /// registró una.
+    pub fn ultima_partida(&self, id: &str) -> Result<Option<u64>, Error> {
+        Ok(leer(&self.carpeta(id)?)?.ultima_partida)
+    }
+
+    /// Suma una sesión terminada, anota cuándo terminó y devuelve el total.
+    /// Un registro dañado devuelve error y se conserva, en lugar de reiniciar
+    /// el tiempo a cero.
     pub fn sumar_tiempo_jugado(&self, id: &str, segundos: u64) -> Result<u64, Error> {
         let carpeta = self.carpeta(id)?;
         let _guard = LOCK.lock().map_err(|_| Error::Disco)?;
         let mut estadisticas = leer(&carpeta)?;
         estadisticas.segundos_jugados = estadisticas.segundos_jugados.saturating_add(segundos);
+        estadisticas.ultima_partida = Some(ahora());
         let bytes = serde_json::to_vec_pretty(&estadisticas).map_err(|_| Error::Datos)?;
         escribir(&carpeta.join(ARCHIVO), &bytes)?;
         Ok(estadisticas.segundos_jugados)
@@ -114,6 +131,20 @@ mod tests {
         assert_eq!(almacen.sumar_tiempo_jugado(&id, 30).unwrap(), 120);
         let otro = Almacen::nuevo(&prueba.0);
         assert_eq!(otro.tiempo_jugado(&id).unwrap(), 120);
+    }
+
+    #[test]
+    fn la_ultima_partida_se_anota_al_sumar_y_falta_en_registros_antiguos() {
+        let (_prueba, almacen, id) = almacen();
+        assert_eq!(almacen.ultima_partida(&id).unwrap(), None);
+        let ruta = almacen.carpeta(&id).unwrap().join(ARCHIVO);
+        fs::write(&ruta, br#"{"segundos_jugados": 60}"#).unwrap();
+        assert_eq!(almacen.ultima_partida(&id).unwrap(), None);
+        let antes = ahora();
+        almacen.sumar_tiempo_jugado(&id, 30).unwrap();
+        let ultima = almacen.ultima_partida(&id).unwrap().unwrap();
+        assert!(ultima >= antes && ultima <= ahora());
+        assert_eq!(almacen.tiempo_jugado(&id).unwrap(), 90);
     }
 
     #[test]

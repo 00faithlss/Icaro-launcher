@@ -5,6 +5,8 @@
 
 pub mod ajustes;
 pub mod archivos_no_verificados;
+pub mod arranque;
+pub mod aviso_actualizacion;
 pub mod avisos;
 pub mod barrido;
 pub mod botones;
@@ -26,14 +28,18 @@ pub mod instancias;
 pub mod laminas;
 mod imagenes;
 pub mod movimiento;
+pub mod novedades;
 pub mod menu_anclado;
+pub mod migas;
 pub mod progreso;
 pub mod servidores;
 pub mod shell;
 pub mod superficies;
 pub mod tema;
+pub mod transicion;
 pub mod vacios;
 pub mod visor;
 pub mod visor_skin;
+pub mod saludo;
 pub mod scroll;
 pub mod zona_soltar;

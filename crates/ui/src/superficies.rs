@@ -115,17 +115,60 @@ pub enum ElementoMenu<M> {
         peligro: bool,
         mensaje: M,
     },
+    /// Separa grupos: regla de 1 px con 6 px de aire.
     Separador,
+    /// Rótulo de un grupo («Organizar», «Jugar como»).
+    Rotulo(std::borrow::Cow<'static, str>),
+    /// Cabecera: sobre qué actúa el menú (instancia o cuenta).
+    Cabecera {
+        titulo: std::borrow::Cow<'static, str>,
+        detalle: std::borrow::Cow<'static, str>,
+    },
+    /// Opción principal (Jugar): en negrita y con el icono en tinta.
+    Principal {
+        icono: Icono,
+        texto: std::borrow::Cow<'static, str>,
+        atajo: Option<&'static str>,
+        mensaje: M,
+    },
+    /// Opción de una lista exclusiva: check `success` si está marcada.
+    Marcada {
+        texto: std::borrow::Cow<'static, str>,
+        detalle: Option<std::borrow::Cow<'static, str>>,
+        marcada: bool,
+        /// Sin mensaje queda deshabilitada.
+        mensaje: Option<M>,
+    },
+    /// Abre un submenú al lado; `abierto` lo deja resaltado.
+    Submenu {
+        icono: Icono,
+        texto: std::borrow::Cow<'static, str>,
+        abierto: bool,
+        mensaje: M,
+    },
 }
 
-const ANCHO_MENU: f32 = 260.0;
-const ALTO_OPCION: f32 = 40.0;
+pub const ANCHO_MENU: f32 = 300.0;
+const ALTO_OPCION: f32 = 36.0;
+/// Relleno interior del menú (6 px) más su borde.
+const MARCO_MENU: f32 = 6.0 + borde::MEDIO;
+
+fn alto_elemento<M>(e: &ElementoMenu<M>) -> f32 {
+    match e {
+        ElementoMenu::Opcion { .. } | ElementoMenu::Principal { .. } | ElementoMenu::Submenu { .. } => ALTO_OPCION,
+        ElementoMenu::Marcada { detalle: Some(_), .. } => 52.0,
+        ElementoMenu::Marcada { .. } => ALTO_OPCION,
+        ElementoMenu::Separador => 13.0,
+        ElementoMenu::Rotulo(_) => 24.0,
+        ElementoMenu::Cabecera { .. } => 56.0,
+    }
+}
 
 pub fn tamano_menu<M>(elementos: &[ElementoMenu<M>]) -> Size {
-    Size::new(ANCHO_MENU, 2.0 * borde::MEDIO + elementos.iter().map(|e| match e {
-        ElementoMenu::Opcion { .. } => ALTO_OPCION,
-        ElementoMenu::Separador => borde::FINO,
-    }).sum::<f32>())
+    Size::new(
+        ANCHO_MENU,
+        2.0 * MARCO_MENU + elementos.iter().map(alto_elemento).sum::<f32>(),
+    )
 }
 
 /// Se abre junto al punto pulsado, hacia arriba cuando falta espacio abajo.
@@ -172,64 +215,235 @@ mod tests {
     }
 }
 
-/// Menú contextual: marco de 2 px, ítems de 40 px que invierten la tinta.
+/// Lo que va a la derecha de una fila del menú.
+enum Derecha {
+    Atajo(&'static str),
+    Check,
+    Flecha,
+}
+
+/// Fila de MenuAnclado: 36 px, icono gris que pasa a tinta y fondo
+/// `surface-hover` al pasar el puntero (sin invertir a negro). Las de peligro
+/// van en `error` con hover `error-soft`.
+#[allow(clippy::too_many_arguments)]
+fn fila_menu<'a, M: Clone + 'a>(
+    p: Paleta,
+    glifo: Option<Icono>,
+    etiqueta: std::borrow::Cow<'static, str>,
+    detalle: Option<std::borrow::Cow<'static, str>>,
+    derecha: Option<Derecha>,
+    peligro: bool,
+    principal: bool,
+    resaltada: Option<Color>,
+    alto: f32,
+    mensaje: Option<M>,
+) -> Element<'a, M> {
+    let tinta = if mensaje.is_none() {
+        p.text_disabled
+    } else if peligro {
+        p.error
+    } else {
+        p.text
+    };
+    let construir = |sobre: bool, derecha: Option<Element<'a, M>>| -> Element<'a, M> {
+        let color_icono = if peligro || principal || sobre { tinta } else { p.text_muted };
+        let mut fila = row![].spacing(espacio::S3).align_y(Alignment::Center);
+        if let Some(g) = glifo {
+            fila = fila.push(icono(g, Tam::Base, color_icono));
+        }
+        let nombre = text(etiqueta.clone())
+            .font(if principal || detalle.is_some() { fuentes::CUERPO_NEGRITA } else { fuentes::CUERPO })
+            .size(13)
+            .line_height(iced::widget::text::LineHeight::Absolute(18.0.into()))
+            .color(tinta);
+        fila = fila.push(match &detalle {
+            Some(d) => Element::from(
+                column![
+                    nombre,
+                    text(d.clone())
+                        .font(fuentes::MONO)
+                        .size(texto::MONO_SM.0)
+                        .color(p.text_muted)
+                ]
+                .width(Length::Fill),
+            ),
+            None => container(nombre).width(Length::Fill).into(),
+        });
+        if let Some(d) = derecha {
+            fila = fila.push(d);
+        }
+        let fondo = if sobre {
+            Some(if peligro { p.error_soft } else { p.surface_hover })
+        } else {
+            resaltada
+        };
+        container(fila)
+            .center_y(alto)
+            .width(Length::Fill)
+            .padding(Padding::from([0.0, 10.0]))
+            .style(move |_: &Theme| container::Style {
+                background: fondo.map(Background::Color),
+                ..Default::default()
+            })
+            .into()
+    };
+    // Lo de la derecha (atajo, check, flecha) se dibuja igual en ambos estados.
+    let lado = |d: &Derecha| -> Element<'a, M> {
+        match d {
+            Derecha::Atajo(a) => atajo_menu(p, a),
+            Derecha::Check => icono(Icono::Check, Tam::Base, p.success).into(),
+            Derecha::Flecha => icono(Icono::ChevronDerecha, Tam::Base, p.text_muted).into(),
+        }
+    };
+    let normal = construir(false, derecha.as_ref().map(lado));
+    let sobre = construir(true, derecha.as_ref().map(lado));
+    let contenido: Element<'a, M> = if mensaje.is_some() {
+        iced::widget::hover(normal, sobre)
+    } else {
+        normal
+    };
+    button(contenido)
+        .width(Length::Fill)
+        .padding(0)
+        .on_press_maybe(mensaje)
+        .style(move |_: &Theme, _| button::Style {
+            text_color: tinta,
+            ..Default::default()
+        })
+        .into()
+}
+
+fn atajo_menu<'a, M: 'a>(p: Paleta, a: &'static str) -> Element<'a, M> {
+    text(a)
+        .font(fuentes::MONO)
+        .size(texto::MONO_SM.0)
+        .color(p.text_muted)
+        .into()
+}
+
+/// MenuAnclado: superficie elevada con borde de 2 px y sombra dura baja
+/// (8 px de tinta al 18 %). Grupos separados por una regla con rótulo.
 pub fn menu_contextual<'a, M: Clone + 'a>(p: Paleta, elementos: Vec<ElementoMenu<M>>) -> Element<'a, M> {
+    menu_contextual_ancho(p, elementos, ANCHO_MENU)
+}
+
+pub fn menu_contextual_ancho<'a, M: Clone + 'a>(
+    p: Paleta,
+    elementos: Vec<ElementoMenu<M>>,
+    ancho: f32,
+) -> Element<'a, M> {
     let mut col = column![];
     for e in elementos {
-        match e {
-            ElementoMenu::Separador => col = col.push(regla(borde::FINO, p.border)),
-            ElementoMenu::Opcion {
-                icono: glifo,
-                texto: etiqueta,
-                atajo,
+        let alto = alto_elemento(&e);
+        col = col.push(match e {
+            ElementoMenu::Separador => container(regla(borde::FINO, p.border))
+                .padding(Padding::from([6.0, 0.0]))
+                .into(),
+            ElementoMenu::Rotulo(t) => container(
+                text(t.to_uppercase())
+                    .font(fuentes::ETIQUETA)
+                    .size(10)
+                    .color(p.text_muted),
+            )
+            .height(alto)
+            .padding(Padding {
+                top: 4.0,
+                right: 10.0,
+                bottom: 6.0,
+                left: 10.0,
+            })
+            .into(),
+            ElementoMenu::Cabecera { titulo, detalle } => container(
+                column![
+                    text(titulo)
+                        .font(fuentes::TITULO)
+                        .size(texto::HEADING.0)
+                        .color(p.text),
+                    text(detalle)
+                        .font(fuentes::MONO)
+                        .size(texto::MONO_SM.0)
+                        .color(p.text_muted),
+                ]
+                .spacing(2),
+            )
+            .height(alto)
+            .center_y(alto)
+            .padding(Padding::from([0.0, 10.0]))
+            .into(),
+            ElementoMenu::Opcion { icono: g, texto: t, atajo, peligro, mensaje } => fila_menu(
+                p,
+                Some(g),
+                t,
+                None,
+                atajo.map(Derecha::Atajo),
                 peligro,
+                false,
+                None,
+                alto,
+                Some(mensaje),
+            ),
+            ElementoMenu::Principal { icono: g, texto: t, atajo, mensaje } => fila_menu(
+                p,
+                Some(g),
+                t,
+                None,
+                atajo.map(Derecha::Atajo),
+                false,
+                true,
+                None,
+                alto,
+                Some(mensaje),
+            ),
+            ElementoMenu::Marcada { texto: t, detalle, marcada, mensaje } => fila_menu(
+                p,
+                None,
+                t,
+                detalle,
+                marcada.then_some(Derecha::Check),
+                false,
+                false,
+                marcada.then_some(p.accent_soft),
+                alto,
                 mensaje,
-            } => {
-                let tinta = if peligro { p.error } else { p.text };
-                // La fila normal y su versión invertida (relleno de tinta,
-                // texto y atajo en el color de fondo) al pasar el puntero.
-                let construir = |tinta: Color, atajo_c: Color, relleno: Option<Color>| -> Element<'a, M> {
-                    let mut fila = row![
-                        icono(glifo, Tam::Base, tinta),
-                        text(etiqueta.clone())
-                            .size(texto::BODY.0)
-                            .color(tinta)
-                            .width(Length::Fill),
-                    ]
-                    .spacing(espacio::S3)
-                    .align_y(Alignment::Center);
-                    if let Some(a) = atajo {
-                        fila = fila.push(
-                            text(a)
-                                .font(fuentes::MONO)
-                                .size(texto::MONO_SM.0)
-                                .color(atajo_c),
-                        );
-                    }
-                    button(container(fila).center_y(Length::Fill))
-                        .width(Length::Fill)
-                        .height(ALTO_OPCION)
-                        .padding(Padding::from([0.0, espacio::S4]))
-                        .on_press(mensaje.clone())
-                        .style(move |_: &Theme, _| button::Style {
-                            background: relleno.map(Background::Color),
-                            text_color: tinta,
-                            ..Default::default()
-                        })
-                        .into()
-                };
-                let (relleno, sobre) = if peligro { (p.error, p.on_error) } else { (p.text, p.bg) };
-                col = col.push(iced::widget::hover(
-                    construir(tinta, p.text_muted, None),
-                    construir(sobre, sobre, Some(relleno)),
-                ));
-            }
-        }
+            ),
+            ElementoMenu::Submenu { icono: g, texto: t, abierto, mensaje } => fila_menu(
+                p,
+                Some(g),
+                t,
+                None,
+                Some(Derecha::Flecha),
+                false,
+                false,
+                abierto.then_some(p.surface_hover),
+                alto,
+                Some(mensaje),
+            ),
+        });
     }
     container(col)
-        .padding(borde::MEDIO)
-        .width(ANCHO_MENU)
-        .style(estilo::flotante(p))
+        .padding(6.0)
+        .width(ancho)
+        .style(move |_: &Theme| container::Style {
+            background: Some(Background::Color(p.surface_raised)),
+            border: Border {
+                color: p.text,
+                width: borde::MEDIO,
+                radius: 0.0.into(),
+            },
+            // Tinta al 18 % ya mezclada con el fondo: una sombra opaca no deja
+            // ver a través las reglas y textos que quedan debajo.
+            shadow: iced::Shadow {
+                color: Color {
+                    r: p.bg.r + (p.text.r - p.bg.r) * 0.18,
+                    g: p.bg.g + (p.text.g - p.bg.g) * 0.18,
+                    b: p.bg.b + (p.text.b - p.bg.b) * 0.18,
+                    a: 1.0,
+                },
+                offset: iced::Vector::new(8.0, 8.0),
+                blur_radius: 0.0,
+            },
+            ..Default::default()
+        })
         .into()
 }
 

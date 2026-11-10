@@ -284,6 +284,9 @@ pub enum Accion {
     Reintentar(usize),
     QuitarRegistro(usize),
     Detener(String),
+    /// Cancelar desde la pantalla de carga: detiene la preparación o el
+    /// proceso que aún no abrió su ventana y retira la capa.
+    CancelarArranque,
     Ventana(String, u64, u32, ResultadoVentana),
     UmbralRetirado(String, u64, Instant),
     Copiar,
@@ -1330,6 +1333,28 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                     p.cerrar_hasta = Some(Instant::now() + std::time::Duration::from_secs(3));
                 }
             }
+        }
+        Accion::CancelarArranque => {
+            let Some((id, _)) = app.servicios.juego.umbral_generacion.clone() else {
+                app.umbral = None;
+                return Task::none();
+            };
+            let s = &mut app.servicios.juego;
+            let preparando = s.trabajos.get(&id).is_some_and(|t| {
+                matches!(t.estado, EstadoDescarga::Activa(_) | EstadoDescarga::EnCola(_) | EstadoDescarga::Pausada(_))
+            });
+            if preparando || s.pendientes.iter().any(|p| p.instancia.id == id) {
+                s.suspender(&id, false);
+                if s.activa.as_deref() != Some(&id) {
+                    listo(app, &id);
+                }
+            }
+            // Un juego que aún no abrió su ventana se cierra sin confirmar.
+            if let Some(p) = app.servicios.juego.procesos.get(&id).filter(|p| !p.ventana_lista) {
+                p.cancel.cancel();
+            }
+            app.avisar("Arranque cancelado.".to_string());
+            return volver_umbral(app);
         }
         Accion::Ventana(id, g, pid, ResultadoVentana::Lista) => {
             if app.servicios.juego.ventana_lista(&id, g, pid) {

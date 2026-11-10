@@ -26,6 +26,8 @@ pub struct Guardado {
 pub struct Estado {
     pub dialogo: Option<Dialogo>,
     pub cache: HashMap<String, Guardado>,
+    /// Portadas propias por id de instancia.
+    pub portadas: HashMap<String, image::Handle>,
     undo: Option<(u64, String, Anterior)>,
     secuencia: u64,
 }
@@ -72,7 +74,8 @@ pub enum Accion {
     VolverGenerado,
     Guardar,
     Guardado(String, Guardado, Result<Anterior, String>),
-    Cargados(Vec<(String, Result<(Option<Vec<u8>>, u32), String>)>),
+    /// Icono y portada propia de cada instancia, leídos al iniciar.
+    Cargados(Vec<(String, Result<(Option<Vec<u8>>, u32), String>, Option<Vec<u8>>)>),
     Deshacer(u64),
     Deshecho(String, Result<(), String>),
 }
@@ -97,7 +100,9 @@ pub fn cargar(app: &App) -> Task<Mensaje> {
                 ids.into_iter()
                     .map(|id| {
                         let r = core::leer(&store, &id);
-                        (id, r)
+                        // Una portada dañada se ignora: queda el grabado elegido.
+                        let portada = core::leer_portada(&store, &id).ok().flatten();
+                        (id, r, portada)
                     })
                     .collect()
             })
@@ -390,7 +395,13 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             }
         },
         Accion::Cargados(v) => {
-            for (id, r) in v {
+            for (id, r, portada) in v {
+                if let Some(png) = portada {
+                    app.iconos
+                        .portadas
+                        .entry(id.clone())
+                        .or_insert_with(|| image::Handle::from_bytes(png));
+                }
                 if let Ok((png, variacion)) = r {
                     let handle = png.as_ref().map(|p| image::Handle::from_bytes(p.clone()));
                     app.iconos.cache.entry(id).or_insert(Guardado {

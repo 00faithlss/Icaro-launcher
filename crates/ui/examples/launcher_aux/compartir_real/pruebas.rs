@@ -136,16 +136,31 @@ fn cerrar_panel_conserva_datos_para_editar_invitacion_y_reabrir_publicacion() {
 }
 
 #[test]
-fn modal_bloquea_navegacion_y_escape_cierra_solo_el_controlador() {
+fn una_fase_deja_navegar_la_conserva_y_escape_cierra_solo_el_controlador() {
     let mut a = app();
     a.servicios.compartir.etapa = Etapa::Selector;
+    // Sin popups: se puede ir a otra sección y la fase espera en Servidores.
     let _ = crate::actualizar_estado(
         &mut a,
         crate::Mensaje::Ir(icaro_ui::shell::Seccion::Instancias),
     );
-    assert_eq!(a.seccion, icaro_ui::shell::Seccion::Servidores);
+    assert_eq!(a.seccion, icaro_ui::shell::Seccion::Instancias);
+    assert_eq!(a.servicios.compartir.etapa, Etapa::Selector);
+    let _ = crate::actualizar_estado(
+        &mut a,
+        crate::Mensaje::Ir(icaro_ui::shell::Seccion::Servidores),
+    );
     let _ = crate::actualizar_estado(&mut a, crate::Mensaje::Escape);
     assert_eq!(a.servicios.compartir.etapa, Etapa::Cerrada);
+}
+
+#[test]
+fn consultar_el_vinculo_al_jugar_no_cuenta_como_fase_visible() {
+    let mut a = app();
+    a.servicios.compartir.etapa = Etapa::ConsultandoVinculo;
+    assert!(a.servicios.compartir.modal() && !a.servicios.compartir.visible());
+    a.servicios.compartir.etapa = Etapa::RevisionVinculo;
+    assert!(a.servicios.compartir.visible());
 }
 
 #[test]

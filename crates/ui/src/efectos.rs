@@ -35,6 +35,60 @@ fn con_alfa(c: Color, a: f32) -> Color {
 
 // --- Umbral ---------------------------------------------------------------
 
+/// Forma en que la luz del Umbral llena la ventana.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EstiloUmbral {
+    /// La luz sale del arco de la lámina (la original).
+    #[default]
+    Arco,
+    /// Un círculo que se abre desde el centro.
+    Iris,
+    /// Un barrido de izquierda a derecha.
+    Barrido,
+    /// Persianas verticales que se abren a la vez.
+    Persianas,
+}
+impl EstiloUmbral {
+    pub const TODOS: [Self; 4] = [Self::Arco, Self::Iris, Self::Barrido, Self::Persianas];
+    /// Estilo para una semilla: cambia en cada pulsación de Jugar.
+    pub fn de_semilla(semilla: u64) -> Self {
+        Self::TODOS[(semilla % Self::TODOS.len() as u64) as usize]
+    }
+}
+
+/// Cómo se ve el Umbral: su entrada y si es de noche (sin luz blanca).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AspectoUmbral {
+    pub estilo: EstiloUmbral,
+    pub nocturno: bool,
+}
+impl AspectoUmbral {
+    /// De noche la luz es tinta oscura con texto claro, para no deslumbrar.
+    fn paleta(self, p: Paleta) -> Paleta {
+        if !self.nocturno {
+            return p;
+        }
+        Paleta {
+            fulgor: Color::from_rgb8(0x16, 0x16, 0x14),
+            on_fulgor: Color::from_rgb8(0xec, 0xec, 0xe8),
+            ..p
+        }
+    }
+    /// Intensidad del halo blanco: de noche apenas un brillo.
+    fn halo(self) -> f32 {
+        if self.nocturno {
+            0.12
+        } else {
+            1.0
+        }
+    }
+}
+
+/// Es de noche entre las 21:00 y las 7:00, hora local.
+pub fn es_de_noche(hora: u32) -> bool {
+    hora >= 21 || hora < 7
+}
+
 fn lamina_umbral() -> &'static Handle {
     static CELDA: OnceLock<Handle> = OnceLock::new();
     CELDA.get_or_init(|| {
@@ -47,6 +101,62 @@ struct CapaUmbral {
     paleta: Paleta,
     /// Fundido de entrada o retirada por fallo de toda la capa.
     retirada: f32,
+    aspecto: AspectoUmbral,
+}
+
+/// Rellena con `color` la región de la luz para un avance `k` según el estilo.
+/// Con `rayas`, solo líneas de 2 px cada 6 px dentro de esa región.
+fn region_luz(
+    frame: &mut Frame,
+    estilo: EstiloUmbral,
+    tam: Size,
+    arco: Rectangle,
+    k: f32,
+    color: Color,
+    rayas: bool,
+) {
+    let ventana = Rectangle::new(Point::ORIGIN, tam);
+    let rect = |frame: &mut Frame, r: Rectangle| {
+        if rayas {
+            let mut y = r.y;
+            while y < r.y + r.height {
+                frame.fill_rectangle(Point::new(r.x, y), Size::new(r.width, 2.0), color);
+                y += 6.0;
+            }
+        } else {
+            frame.fill_rectangle(r.position(), r.size(), color);
+        }
+    };
+    match estilo {
+        EstiloUmbral::Arco => rect(frame, movimiento::mezclar(arco, ventana, k)),
+        EstiloUmbral::Barrido => rect(frame, Rectangle::new(Point::ORIGIN, Size::new(tam.width * k, tam.height))),
+        EstiloUmbral::Persianas => {
+            const N: usize = 8;
+            let ancho = tam.width / N as f32;
+            for i in 0..N {
+                rect(
+                    frame,
+                    Rectangle::new(Point::new(i as f32 * ancho, 0.0), Size::new(ancho * k, tam.height)),
+                );
+            }
+        }
+        EstiloUmbral::Iris => {
+            let c = ventana.center();
+            let radio = k * (tam.width.hypot(tam.height) / 2.0);
+            if rayas {
+                // Franjas del círculo: cada línea ocupa el ancho de su cuerda.
+                let mut y = (c.y - radio).max(0.0);
+                while y < (c.y + radio).min(tam.height) {
+                    let dy = y - c.y;
+                    let media = (radio * radio - dy * dy).max(0.0).sqrt();
+                    frame.fill_rectangle(Point::new(c.x - media, y), Size::new(2.0 * media, 2.0), color);
+                    y += 6.0;
+                }
+            } else {
+                frame.fill(&Path::circle(c, radio), color);
+            }
+        }
+    }
 }
 
 impl<M> canvas::Program<M> for CapaUmbral {
@@ -60,10 +170,11 @@ impl<M> canvas::Program<M> for CapaUmbral {
         limites: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
-        let p = self.paleta;
+        let p = self.aspecto.paleta(self.paleta);
         let f = self.fase;
         let tam = limites.size();
         let mut frame = Frame::new(renderer, tam);
+        let estilo = self.aspecto.estilo;
 
         // La lámina va debajo, como widget de imagen: el lienzo pinta las
         // imágenes por encima de sus formas, y la luz debe quedar sobre ella.
@@ -79,36 +190,34 @@ impl<M> canvas::Program<M> for CapaUmbral {
         }
 
         let arco = movimiento::arco_en(tam);
-        let ventana = Rectangle::new(Point::ORIGIN, tam);
 
-        // Halo del arco: círculos concéntricos que aproximan el degradado
-        // radial de 360 px.
-        if f.halo > 0.0 {
-            let centro = arco.center();
+        // Halo: círculos concéntricos que aproximan el degradado radial de
+        // 360 px, en el arco o en el centro según el estilo. De noche, tenue.
+        if f.halo > 0.0 && matches!(estilo, EstiloUmbral::Arco | EstiloUmbral::Iris) {
+            let centro = if estilo == EstiloUmbral::Arco {
+                arco.center()
+            } else {
+                Rectangle::new(Point::ORIGIN, tam).center()
+            };
+            let intensidad = self.aspecto.halo();
             let radio = 180.0 * f.escala_halo;
             const ANILLOS: usize = 14;
             let a = 1.0 - 0.3_f32.powf(1.0 / ANILLOS as f32);
             for i in 0..ANILLOS {
                 let r = radio * (1.0 - i as f32 / ANILLOS as f32);
-                frame.fill(&Path::circle(centro, r), con_alfa(Color::WHITE, a * f.halo * self.retirada));
+                frame.fill(&Path::circle(centro, r), con_alfa(Color::WHITE, a * f.halo * intensidad * self.retirada));
             }
         }
 
-        // Líneas horizontales de 2 px, paso de 6 px, desde el arco al borde.
+        // Líneas horizontales de 2 px, paso de 6 px, que llenan la ventana.
         if f.lineas > 0.0 {
-            let r = movimiento::mezclar(arco, ventana, f.lineas);
-            let mut y = r.y;
-            while y < r.y + r.height {
-                frame.fill_rectangle(Point::new(r.x, y), Size::new(r.width, 2.0), con_alfa(p.fulgor, self.retirada));
-                y += 6.0;
-            }
+            region_luz(&mut frame, estilo, tam, arco, f.lineas, con_alfa(p.fulgor, self.retirada), true);
         }
 
         // Luz sólida, un poco detrás de las líneas.
-        let luz = movimiento::mezclar(arco, ventana, f.luz);
         let alfa = f.luz_alfa * self.retirada;
         if alfa > 0.0 {
-            frame.fill_rectangle(luz.position(), luz.size(), con_alfa(p.fulgor, alfa));
+            region_luz(&mut frame, estilo, tam, arco, f.luz, con_alfa(p.fulgor, alfa), false);
         }
 
         vec![frame.into_geometry()]
@@ -122,6 +231,7 @@ fn salida<'a, M: Clone + 'a>(
     lineas: &[String],
     opacidad: f32,
     al_volver: M,
+    al_cancelar: Option<M>,
 ) -> Element<'a, M> {
     let mut log = column![].spacing(2);
     for (i, l) in lineas.iter().enumerate() {
@@ -145,6 +255,22 @@ fn salida<'a, M: Clone + 'a>(
         border: Border { color: con_alfa(p.on_fulgor, opacidad), width: borde::MEDIO, radius: 0.0.into() },
         ..Default::default()
     });
+    // Cancelar junto a Volver, con el mismo contorno.
+    let mut botones = iced::widget::row![].spacing(espacio::S2);
+    if let Some(c) = al_cancelar {
+        botones = botones.push(
+            button(text("Cancelar").font(fuentes::ETIQUETA).size(12).color(con_alfa(p.on_fulgor, opacidad)))
+                .padding(Padding::from([8.0, 14.0]))
+                .on_press(c)
+                .style(move |_, _| button::Style {
+                    background: None,
+                    text_color: con_alfa(p.on_fulgor, opacidad),
+                    border: Border { color: con_alfa(p.on_fulgor, opacidad), width: borde::MEDIO, radius: 0.0.into() },
+                    ..Default::default()
+                }),
+        );
+    }
+    let botones = botones.push(volver);
     container(
         column![
             text("ABRIENDO\nEL UMBRAL")
@@ -153,7 +279,7 @@ fn salida<'a, M: Clone + 'a>(
                 .line_height(iced::widget::text::LineHeight::Absolute(66.0.into()))
                 .color(con_alfa(p.on_fulgor, opacidad)),
             log,
-            volver,
+            botones,
         ]
         .spacing(espacio::S6)
         .align_x(Alignment::Start),
@@ -171,6 +297,7 @@ pub fn umbral<'a, M: Clone + 'a>(
     p: Paleta,
     ms: f32,
     pref: Preferencia,
+    aspecto: AspectoUmbral,
     instancia: &str,
     al_volver: M,
 ) -> Element<'a, M> {
@@ -183,7 +310,7 @@ pub fn umbral<'a, M: Clone + 'a>(
         format!("[{}] Cargando el cargador de mods", hora()),
         format!("[{}] Minecraft arrancando", hora()),
     ];
-    umbral_registro(p, ms, pref, &lineas, al_volver)
+    umbral_registro(p, ms, pref, aspecto, &lineas, al_volver)
 }
 
 /// Mismo Umbral, alimentado por el registro real en vez de datos de demostración.
@@ -191,10 +318,11 @@ pub fn umbral_registro<'a, M: Clone + 'a>(
     p: Paleta,
     ms: f32,
     pref: Preferencia,
+    aspecto: AspectoUmbral,
     lineas: &[String],
     al_volver: M,
 ) -> Element<'a, M> {
-    umbral_registro_transicion(p, ms, pref, lineas, None, al_volver)
+    umbral_registro_transicion(p, ms, pref, aspecto, lineas, None, al_volver, None)
 }
 
 /// Entrada original, retirada por fallo de 200 ms y Rastrillo al volver.
@@ -203,9 +331,11 @@ pub fn umbral_registro_transicion<'a, M: Clone + 'a>(
     p: Paleta,
     ms: f32,
     pref: Preferencia,
+    aspecto: AspectoUmbral,
     lineas: &[String],
     retirada: Option<(f32, bool)>,
     al_volver: M,
+    al_cancelar: Option<M>,
 ) -> Element<'a, M> {
     let fase = movimiento::umbral(ms, pref);
     let (opacidad, recorte) = estado_capa_umbral(ms, pref, retirada);
@@ -213,6 +343,7 @@ pub fn umbral_registro_transicion<'a, M: Clone + 'a>(
         fase,
         paleta: p,
         retirada: opacidad,
+        aspecto,
     })
     .width(Length::Fill)
     .height(Length::Fill);
@@ -222,7 +353,7 @@ pub fn umbral_registro_transicion<'a, M: Clone + 'a>(
     let mut pila = stack![fondo, capa];
     if fase.salida {
         pila = pila.push(salida(
-            p,
+            aspecto.paleta(p),
             if ms > 1700. {
                 lineas.len()
             } else {
@@ -231,6 +362,7 @@ pub fn umbral_registro_transicion<'a, M: Clone + 'a>(
             lineas,
             opacidad,
             al_volver,
+            al_cancelar,
         ));
     }
     // El Umbral bloquea la interfaz mientras dura: nada debajo recibe clics.
@@ -385,6 +517,57 @@ impl<M> Widget<M, iced::Theme, iced::Renderer> for EntradaAviso<'_, M> {
         self.contenido.as_widget().draw(&arbol.children[0], renderer, tema, estilo, layout.children().next().unwrap(), cursor, visible);
     }
 }
+/// Descubre una tarjeta flotante desde su borde inferior: el recorte crece
+/// hacia arriba y la tarjeta sube 12 px hasta asentarse. `progreso` de 0 a 1.
+pub fn descubrir_desde_abajo<'a, M: 'a>(contenido: Element<'a, M>, progreso: f32) -> Element<'a, M> {
+    Element::new(Descubrir { contenido, progreso: progreso.clamp(0.0, 1.0) })
+}
+
+struct Descubrir<'a, M> {
+    contenido: Element<'a, M>,
+    progreso: f32,
+}
+
+impl<M> Widget<M, iced::Theme, iced::Renderer> for Descubrir<'_, M> {
+    fn size(&self) -> Size<Length> { self.contenido.as_widget().size() }
+    fn children(&self) -> Vec<Tree> { vec![Tree::new(&self.contenido)] }
+    fn diff(&self, arbol: &mut Tree) { arbol.diff_children(std::slice::from_ref(&self.contenido)); }
+    fn layout(&self, arbol: &mut Tree, renderer: &iced::Renderer, limites: &layout::Limits) -> layout::Node {
+        self.contenido.as_widget().layout(&mut arbol.children[0], renderer, limites)
+    }
+    fn operate(&self, arbol: &mut Tree, layout: Layout<'_>, renderer: &iced::Renderer, operacion: &mut dyn iced::advanced::widget::Operation) {
+        self.contenido.as_widget().operate(&mut arbol.children[0], layout, renderer, operacion);
+    }
+    fn on_event(&mut self, arbol: &mut Tree, evento: Event, layout: Layout<'_>, cursor: mouse::Cursor,
+        renderer: &iced::Renderer, portapapeles: &mut dyn Clipboard, shell: &mut Shell<'_, M>, visible: &Rectangle) -> iced::event::Status {
+        self.contenido.as_widget_mut().on_event(&mut arbol.children[0], evento, layout, cursor, renderer, portapapeles, shell, visible)
+    }
+    fn mouse_interaction(&self, arbol: &Tree, layout: Layout<'_>, cursor: mouse::Cursor, visible: &Rectangle, renderer: &iced::Renderer) -> mouse::Interaction {
+        self.contenido.as_widget().mouse_interaction(&arbol.children[0], layout, cursor, visible, renderer)
+    }
+    fn draw(&self, arbol: &Tree, renderer: &mut iced::Renderer, tema: &iced::Theme,
+        estilo: &renderer::Style, layout: Layout<'_>, cursor: mouse::Cursor, visible: &Rectangle) {
+        use iced::advanced::Renderer as _;
+        if self.progreso >= 1.0 {
+            self.contenido.as_widget().draw(&arbol.children[0], renderer, tema, estilo, layout, cursor, visible);
+            return;
+        }
+        let caja = layout.bounds();
+        let k = crate::movimiento::Curva::Salida.aplicar(self.progreso);
+        let alto = caja.height * k;
+        // Margen para el borde y la sombra dura de la tarjeta.
+        let recorte = Rectangle::new(
+            Point::new(caja.x - 2.0, caja.y + caja.height - alto),
+            Size::new(caja.width + 12.0, alto + 12.0),
+        );
+        renderer.with_layer(recorte, |renderer| {
+            renderer.with_translation(iced::Vector::new(0.0, (1.0 - k) * 12.0), |renderer| {
+                self.contenido.as_widget().draw(&arbol.children[0], renderer, tema, estilo, layout, cursor, visible);
+            });
+        });
+    }
+}
+
 /// La imagen estándar crea su propio recorte y puede escapar del Rastrillo.
 /// Este fondo cruza el viewport recibido con la imagen, sin cambiar su cover.
 struct FondoUmbral { opacidad: f32 }

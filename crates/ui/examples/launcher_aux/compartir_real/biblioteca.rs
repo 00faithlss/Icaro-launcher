@@ -27,6 +27,12 @@ impl std::fmt::Debug for Biblioteca {
             .finish()
     }
 }
+impl Biblioteca {
+    /// Tras pausar, abrir la publicación la reconecta sin revocar a nadie.
+    pub fn marcar_reconexion(&mut self) {
+        self.pendiente_reconexion = true;
+    }
+}
 pub fn pedir(s: &mut Estado) -> u64 {
     s.biblioteca.generacion = s.biblioteca.generacion.wrapping_add(1);
     s.biblioteca.cargando = true;

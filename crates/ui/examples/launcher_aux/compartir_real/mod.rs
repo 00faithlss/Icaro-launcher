@@ -4,6 +4,7 @@ mod acciones;
 mod avance;
 mod biblioteca;
 mod biblioteca_tareas;
+mod compartidas;
 mod contadores;
 mod estado;
 mod invitaciones;
@@ -12,6 +13,7 @@ mod invitado_diseno;
 mod invitado_instalacion;
 mod invitado_tareas;
 mod invitado_vistas;
+mod listo;
 mod modelos;
 #[cfg(test)]
 mod pruebas;
@@ -24,6 +26,7 @@ mod pruebas_invitado;
 #[cfg(test)]
 mod pruebas_worker;
 mod resultados;
+mod selector;
 mod servicio;
 mod sincronizar;
 #[cfg(test)]
@@ -36,9 +39,10 @@ mod tareas;
 mod vistas;
 pub use acciones::{actualizar, Accion, Operacion};
 pub use biblioteca::cargar as cargar_biblioteca;
+pub use compartidas::pagina as pagina_compartidas;
 pub use estado::{Estado, Etapa};
 pub use invitado_diseno::preparar as preparar_invitado_diseno;
 pub use modelos::tamano;
 pub use sincronizar::antes_de_jugar;
-pub use vistas::{accesos, vista};
+pub use vistas::{accesos, clave as clave_fase, vista};
 pub use vistas::transferencias;

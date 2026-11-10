@@ -35,7 +35,8 @@ pub enum Modo {
     Piedra,
 }
 
-/// Solo el bloque primario cambia de metal; los estados permanecen monocromos.
+/// Metal de acento: tiñe la tinta de la interfaz (bloque primario, líneas,
+/// marcos, iconos y textos); fondos y colores de estado no cambian.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Metal {
     #[default]
@@ -127,6 +128,21 @@ impl Paleta {
         self.accent_hover = mezcla(iced::Color::WHITE, 0.12);
         self.accent_pressed = mezcla(iced::Color::BLACK, 0.12);
         self.on_accent = match self.modo { Modo::Tinta => hex(0x0a0a0a), Modo::Piedra => hex(0xf4f4f2) };
+        // Decisión del usuario, por encima del System Design: todo lo que en
+        // Mármol es tinta (líneas, marcos, selección, iconos y textos) toma el
+        // metal. El texto atenuado se acerca al metal sin perder jerarquía y
+        // los estados (éxito, aviso, error, info) siguen con su color.
+        let hacia = |base: iced::Color, t: f32| iced::Color {
+            r: base.r + (valor.r - base.r) * t,
+            g: base.g + (valor.g - base.g) * t,
+            b: base.b + (valor.b - base.b) * t,
+            a: 1.,
+        };
+        self.text = valor;
+        self.accent_text = valor;
+        self.focus = valor;
+        self.text_muted = hacia(self.text_muted, 0.45);
+        self.text_disabled = hacia(self.text_disabled, 0.3);
         self
     }
 }
@@ -277,21 +293,24 @@ pub mod duracion {
 mod tests {
     use super::*;
     #[test]
-    fn el_metal_solo_modifica_los_cuatro_tokens_primarios() {
+    fn el_metal_tine_la_tinta_y_conserva_fondos_y_estados() {
         for p in [TINTA, PIEDRA] {
-            assert_eq!(p.con_metal(Metal::Marmol).accent, p.accent);
+            let marmol = p.con_metal(Metal::Marmol);
+            assert_eq!((marmol.accent, marmol.text), (p.accent, p.text));
             for m in [Metal::Plata, Metal::Bronce] {
                 let metal = p.con_metal(m);
                 assert_ne!(metal.accent, p.accent);
+                // Líneas, marcos, iconos y textos toman el metal.
+                assert_eq!(metal.text, metal.accent);
+                assert_eq!(metal.focus, metal.accent);
+                assert_ne!(metal.text_muted, p.text_muted);
                 assert_eq!(metal.bg, p.bg);
-                assert_eq!(metal.text, p.text);
+                assert_eq!(metal.surface, p.surface);
                 assert_eq!(metal.border, p.border);
                 assert_eq!(metal.success, p.success);
                 assert_eq!(metal.warning, p.warning);
                 assert_eq!(metal.error, p.error);
                 assert_eq!(metal.info, p.info);
-                assert_eq!(metal.accent_soft, p.accent_soft);
-                assert_eq!(metal.accent_text, p.accent_text);
                 assert_eq!(metal.selection, p.selection);
             }
         }

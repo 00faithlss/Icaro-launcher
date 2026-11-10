@@ -38,6 +38,16 @@ mod sincronizacion_real;
 mod almacenamiento_real;
 #[path = "launcher_aux/estadisticas_reales.rs"]
 mod estadisticas_reales;
+#[path = "launcher_aux/hora_local.rs"]
+mod hora_local;
+#[path = "launcher_aux/arranque_real.rs"]
+mod arranque_real;
+#[path = "launcher_aux/canal_real.rs"]
+mod canal_real;
+#[path = "launcher_aux/novedades.rs"]
+mod novedades;
+#[path = "launcher_aux/saludo.rs"]
+mod saludo;
 #[path = "launcher_aux/java_real.rs"]
 mod java_real;
 #[path = "launcher_aux/capt.rs"]
@@ -112,7 +122,7 @@ mod cierre_compartir;
 
 use archivos::Explorador;
 use icaro_ui::scroll::desplazable;
-use icaro_ui::shell::{app_shell, Cuenta, DescargasActivas, MensajesShell, Seccion};
+use icaro_ui::shell::{Cuenta, DescargasActivas, MensajesShell, Seccion};
 use icaro_ui::superficies::{con_velo_losa, dialogo, menu_contextual, posicion_menu, tamano_menu, toast_con_opacidad, ElementoMenu};
 use icaro_ui::tema::{espacio, texto, Modo};
 use iced::widget::{column, container, row, text, Space};
@@ -121,6 +131,7 @@ use iced::{window, Alignment, Element, Length, Padding, Point, Size, Task};
 struct App {
     cierre: cierre_compartir::Estado,
     actualizacion: actualizacion_real::Estado,
+    canal: canal_real::Estado,
     verificacion: verificacion_real::Estado,
     iconos: icono_instancia::Estado,
     exportar_lista: exportar_lista_mods::Estado,
@@ -147,6 +158,8 @@ struct App {
     detalle_error: Option<String>,
     almacenamiento: almacenamiento_real::Estado,
     estadisticas: estadisticas_reales::Estado,
+    saludo: saludo::Estado,
+    novedades: novedades::Estado,
     java_global: java_real::Preferencias,
     java_detectadas: Vec<icaro_core::java::Java>,
     java_estado: String,
@@ -211,6 +224,8 @@ struct App {
     maximizada: bool,
     /// Instante en que se pulsó Jugar; mientras exista, el Umbral cubre la ventana.
     umbral: Option<std::time::Instant>,
+    /// «Probar» en AjusteArranque: transición sin abrir Minecraft.
+    arranque_prueba: Option<icaro_ui::arranque::Estilo>,
     /// Eliminación en curso manteniendo Supr sobre la instancia seleccionada.
     picar: Option<Picar>,
     picar_objetivo: Option<usize>,
@@ -285,6 +300,10 @@ enum Mensaje {
     Java(java_real::Accion),
     Almacenamiento(almacenamiento_real::Accion),
     Estadisticas(estadisticas_reales::Accion),
+    Saludo(saludo::Accion),
+    Novedades(novedades::Accion),
+    Arranque(arranque_real::Accion),
+    Canal(canal_real::Accion),
     Verificacion(verificacion_real::Accion),
     Icono(icono_instancia::Accion),
     ExportarLista(exportar_lista_mods::Accion),
@@ -415,6 +434,8 @@ enum Mensaje {
     AlternarBarra,
     Jugar(usize),
     UmbralVolver,
+    /// Cancelar el arranque desde la pantalla de carga.
+    UmbralCancelar,
     Picar(picar_real::Accion),
     PicarEmpezar,
     PicarSoltar,
@@ -505,7 +526,14 @@ fn actualizar(app: &mut App, m: Mensaje) -> Task<Mensaje> {
     mods::fijar_recurso(app.editor == Some(3));
     let deshacer_captura = matches!(&m, Mensaje::Capt(capt::Accion::Deshacer));
     let habia = hay_dialogo(app);
-    let tarea = actualizar_estado(app, m);
+    let compartiendo = app.servicios.compartir.visible();
+    let mut tarea = actualizar_estado(app, m);
+    // Compartir ya no es un diálogo: sus fases viven en Servidores. Si un flujo
+    // empieza desde otra sección (por ejemplo, Jugar con cambios por revisar),
+    // se navega hasta allí; la consulta previa a Jugar no navega.
+    if !compartiendo && app.servicios.compartir.visible() && app.seccion != Seccion::Servidores {
+        tarea = Task::batch([tarea, Task::done(Mensaje::Ir(Seccion::Servidores))]);
+    }
     app.servicios.servidores.avanzar();
     if let Some(aviso)=app.aviso.take(){app.avisos.agregar(aviso);}
     if deshacer_captura { app.aviso = None; }
@@ -526,12 +554,32 @@ fn actualizar(app: &mut App, m: Mensaje) -> Task<Mensaje> {
     Task::batch([tarea, estadisticas_reales::pedir(app)])
 }
 
+/// Entrada del Umbral para esta pulsación de Jugar y si es de noche (21–7 h).
+/// En capturas de diseño, `ICARO_UMBRAL_ESTILO` (0–3) e `ICARO_UMBRAL_NOCHE=1` los fijan.
+fn aspecto_umbral(pulsado: std::time::Instant) -> icaro_ui::efectos::AspectoUmbral {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    pulsado.hash(&mut h);
+    let semilla = std::env::var("ICARO_UMBRAL_ESTILO")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| h.finish());
+    let hora = hora_local::local(std::time::SystemTime::now()).hora;
+    icaro_ui::efectos::AspectoUmbral {
+        estilo: icaro_ui::efectos::EstiloUmbral::de_semilla(semilla),
+        nocturno: std::env::var("ICARO_UMBRAL_NOCHE").map_or_else(
+            |_| icaro_ui::efectos::es_de_noche(hora),
+            |v| v == "1",
+        ),
+    }
+}
+
 fn hay_dialogo(app: &App) -> bool {
     if app.servicios.sincronizacion.modal(){return true;}
     if app.ventana.width<1100. && app.servicios.servidores.panel_abierto(){return true;}
     if app.servicios.mods.confirmacion.is_some() || app.servicios.mods.confirmacion_recurso.is_some()
         || app.servicios.mods.packs.confirmacion.is_some() { return true; }
-    app.exportar_lista.dialogo.is_some() || app.picar_objetivo.is_some() || app.iconos.dialogo.is_some() || app.dialogo || app.asistente.is_some() || app.importar.is_some() || app.exportar.as_ref().is_some_and(|s|!s.guardando) || app.cambiar.is_some()
+    app.exportar_lista.dialogo.is_some() || app.picar_objetivo.is_some() || app.iconos.dialogo.is_some() || app.dialogo || app.importar.is_some() || app.exportar.as_ref().is_some_and(|s|!s.guardando) || app.cambiar.is_some()
 }
 
 /// Desfase de la losa del diálogo según su progreso.
@@ -541,7 +589,7 @@ fn desfase_losa(app: &App) -> f32 {
 
 /// Escribe el estado organizado por el usuario solo cuando cambia.
 fn guardar_si_cambio(app: &mut App) {
-    if app.config_error.is_some() { return; }
+    if app.config_error.is_some() || app.canal.sin_guardar { return; }
     // Modpacks ya instalados (las 5 primeras instancias son las de ejemplo).
     let instalados: Vec<String> = instancias()
         .into_iter()
@@ -555,8 +603,20 @@ fn guardar_si_cambio(app: &mut App) {
         guardado.compartir_experimental = app.servicios.compartir.activado_por_usuario;
     }
     guardado.java_global = app.java_global.clone();
-    guardado.apariencia = estado::AparienciaGuardada { tema: app.tema, metal: app.aj.metal, escala: app.aj.escala, reducir: app.reducir };
+    guardado.apariencia = estado::AparienciaGuardada {
+        tema: app.tema, metal: app.aj.metal, escala: app.aj.escala, reducir: app.reducir,
+        arranque: arranque_real::texto_estilo(app.aj.arranque).into(),
+        tono_arranque: arranque_real::texto_tono(app.aj.tono_arranque).into(),
+        arranque_azar: app.aj.arranque_azar,
+        frase_al_cargar: app.aj.frase_al_cargar,
+        registro_al_cargar: app.aj.registro_al_cargar,
+    };
     guardado.canal = (app.aj.canal != actualizacion_real::canal_compilado()).then_some(app.aj.canal);
+    guardado.copias_antes = app.aj.copias_antes;
+    if !app.servicios.demo {
+        guardado.novedades_vistas = Some(env!("CARGO_PKG_VERSION").into());
+        guardado.aviso_minimizado = app.actualizacion.minimizada.clone();
+    }
     let texto = guardado.texto();
     if texto != app.ultimo_guardado {
         match estado::Guardado::escribir(&texto, &app.ultimo_guardado, &app.servicios.instancias.almacen, app.servicios.demo) {
@@ -574,7 +634,8 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
         return Task::none();
     }
     if app.servicios.sincronizacion.modal() && matches!(m,Mensaje::Ir(_)){return Task::none();}
-    if app.servicios.compartir.modal() && matches!(m,Mensaje::Ir(_)|Mensaje::Jugar(_)){return Task::none();}
+    // Durante un flujo de compartir se puede navegar; jugar espera a que termine.
+    if app.servicios.compartir.modal() && matches!(m,Mensaje::Jugar(_)){return Task::none();}
     if matches!(&m, Mensaje::Pant(pantallas::Accion::Abrir(pantallas::Pantalla::Actualizacion))) {
         return actualizacion_real::actualizar(app, actualizacion_real::Accion::Abrir);
     }
@@ -595,6 +656,8 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
         Mensaje::Sincronizacion(a)=>return sincronizacion_real::actualizar(app,a),
         Mensaje::Almacenamiento(a) => return almacenamiento_real::actualizar(app,a),
         Mensaje::Estadisticas(a) => return estadisticas_reales::actualizar(app, a),
+        Mensaje::Saludo(a) => return saludo::actualizar(app, a),
+        Mensaje::Novedades(a) => return novedades::actualizar(app, a),
         Mensaje::Java(a) => return java_real::actualizar(app, a),
         Mensaje::Actualizacion(a) => return actualizacion_real::actualizar(app, a),
         Mensaje::Juego(a) => return juego_real::actualizar(app, a),
@@ -1108,7 +1171,21 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
             app.umbral = Some(ahora);
             app.ahora = ahora;
         }
+        Mensaje::Arranque(a) => return arranque_real::actualizar(app, a),
+        Mensaje::Canal(a) => return canal_real::actualizar(app, a),
+        Mensaje::UmbralCancelar => {
+            if app.arranque_prueba.take().is_some() || app.servicios.demo {
+                app.umbral = None;
+                return Task::none();
+            }
+            return juego_real::actualizar(app, juego_real::Accion::CancelarArranque);
+        }
         Mensaje::UmbralVolver => {
+            // Una prueba desde Ajustes no tiene partida detrás.
+            if app.arranque_prueba.take().is_some() {
+                app.umbral = None;
+                return Task::none();
+            }
             if app.servicios.demo {
                 app.umbral = None;
             } else {
@@ -1300,6 +1377,8 @@ fn actualizar_estado(app: &mut App, m: Mensaje) -> Task<Mensaje> {
         Mensaje::Maximizar => return window::get_oldest().and_then(window::toggle_maximize),
         Mensaje::Cerrar => {
             if !actualizacion_real::al_cerrar(app) { return Task::none(); }
+            // Con Minecraft abierto, cerrar oculta Ícaro en la bandeja y la partida sigue.
+            if let Some(tarea) = cierre_compartir::ocultar_por_juego(app) { return tarea; }
             if let Some(tarea) = cierre_compartir::solicitar(app) { return tarea; }
             if !app.servicios.demo && app.editor.is_some() {
                 let nombre = app.general.nombre.clone();
@@ -1452,6 +1531,16 @@ fn suave<'a>(app: &'a App, cuerpo: impl Into<Element<'a, Mensaje>>) -> Element<'
     con_entrada(app, desplazable(cuerpo))
 }
 
+/// Instancias y Crear instancia comparten lugar: la página del asistente entra
+/// deslizándose y aparece, y cada paso avanza o vuelve con el mismo movimiento.
+fn pantalla_instancias_con_asistente(app: &App) -> Element<'_, Mensaje> {
+    let (clave, contenido) = match &app.asistente {
+        Some(s) => (10 + s.paso as u64, pantallas::asistente(app, s)),
+        None => (0, pantalla_instancias(app)),
+    };
+    icaro_ui::transicion::fase(app.paleta().bg, clave, contenido)
+}
+
 fn pantalla_instancias(app: &App) -> Element<'_, Mensaje> {
     let p = app.paleta();
     if let Some(pestana) = app.editor {
@@ -1511,7 +1600,13 @@ fn pantalla_instancias(app: &App) -> Element<'_, Mensaje> {
         for i in miembros {
             let mut d = todas[i].clone();
             d.seleccionada = Some(i) == app.seleccionada;
-            let tarjeta = icaro_ui::instancias::tarjeta_instancia_con_icono(
+            let propia = app.servicios.instancias.registros.get(i).and_then(|r| app.iconos.portadas.get(&r.id).cloned());
+            let menu = (app.menu == Some(i) && app.editor.is_none()).then(|| icaro_ui::instancias::MenuTarjeta {
+                contenido: menu_instancia(app, i, &d),
+                cerrar: Mensaje::Menu(None),
+                progreso: if app.reducir { 1.0 } else { progreso(app.anim_menu, app.ahora, MS_MENU) },
+            });
+            let tarjeta = icaro_ui::instancias::tarjeta_instancia_completa(
                 p,
                 &d,
                 AccionesTarjeta {
@@ -1520,6 +1615,8 @@ fn pantalla_instancias(app: &App) -> Element<'_, Mensaje> {
                     mas: Mensaje::Menu(Some(i)),
                 },
                 Some(icono_instancia::imagen(app,i,64.)),
+                propia,
+                menu,
             );
             tarjetas.push(con_efectos(app, i, &d.nombre, tarjeta));
         }
@@ -1561,6 +1658,11 @@ fn pantalla_instancias(app: &App) -> Element<'_, Mensaje> {
         );
     }
     cuerpo_col = cuerpo_col.push(cuadricula);
+    // SaludoInicio: frase bajo la banda, antes de las herramientas.
+    let cuerpo_col = column![
+        icaro_ui::saludo::saludo_inicio(p, &saludo::datos(app)),
+        cuerpo_col
+    ];
     let cuerpo = cuerpo_col
         .spacing(espacio::S6)
         .padding(Padding::from([espacio::S6, espacio::S12]));
@@ -1568,6 +1670,67 @@ fn pantalla_instancias(app: &App) -> Element<'_, Mensaje> {
         banda(p, Lamina::CaidaCielo, "Instancias", Some(todas.len())),
         suave(app, cuerpo)
     ]
+    .into()
+}
+
+/// MenuAnclado de una instancia: cabecera con sobre qué actúa, Jugar en
+/// negrita, grupos Organizar, Versión y Compartir, y Eliminar al final.
+/// «Mover a grupo» abre su submenú al lado.
+fn menu_instancia<'a>(app: &'a App, i: usize, d: &DatosInstancia) -> Element<'a, Mensaje> {
+    let p = app.paleta();
+    let op = |icono, texto: &'static str, atajo, mensaje| ElementoMenu::Opcion { icono, texto: texto.into(), atajo, peligro: false, mensaje };
+    let mut e = vec![
+        ElementoMenu::Cabecera { titulo: d.nombre.clone().into(), detalle: format!("{} · {}", d.version, d.mods).into() },
+        ElementoMenu::Principal { icono: Icono::Jugar, texto: "Jugar".into(), atajo: Some("Enter"), mensaje: Mensaje::Jugar(i) },
+    ];
+    if !app.servicios.demo && app.servicios.compartir.habilitado {
+        e.push(op(Icono::Actualizar, "Sincronizar publicación", None, Mensaje::Compartir(compartir_real::Accion::RevisarVinculo(i))));
+    }
+    e.extend([
+        ElementoMenu::Separador,
+        ElementoMenu::Rotulo("Organizar".into()),
+        op(Icono::Carpeta, "Abrir carpeta", Some("O"), Mensaje::Pant(pantallas::Accion::AbrirCarpetaInstancia(i))),
+        op(Icono::Editar, "Editar", Some("E"), Mensaje::Editar),
+        op(Icono::Imagen, "Cambiar icono", None, Mensaje::Icono(icono_instancia::Accion::Abrir(i))),
+        ElementoMenu::Submenu { icono: Icono::Carpeta, texto: "Mover a grupo".into(), abierto: app.menu_grupos, mensaje: Mensaje::VerGrupos(!app.menu_grupos) },
+        op(Icono::Copiar, "Duplicar", None, Mensaje::Pant(pantallas::Accion::Duplicar(i))),
+        ElementoMenu::Separador,
+        ElementoMenu::Rotulo("Versión".into()),
+        op(Icono::Actualizar, "Cambiar versión de Minecraft", None, Mensaje::Pant(pantallas::Accion::CambiarVersion(i))),
+    ]);
+    let vanilla = !app.servicios.demo && app.servicios.instancias.registros.get(i).is_some_and(|r| r.loader == "vanilla");
+    if !vanilla {
+        e.push(op(Icono::Actualizar, "Cambiar versión del loader", None, Mensaje::Pant(pantallas::Accion::CambiarVersionLoader(i))));
+    }
+    e.extend([
+        ElementoMenu::Separador,
+        ElementoMenu::Rotulo("Compartir".into()),
+        op(Icono::Subir, "Exportar instancia", None, Mensaje::Pant(pantallas::Accion::Exportar(i))),
+        op(Icono::Externo, "Crear acceso directo", None, Mensaje::Menu(None)),
+        ElementoMenu::Separador,
+        ElementoMenu::Opcion { icono: Icono::Papelera, texto: "Eliminar".into(), atajo: Some("Supr"), peligro: true, mensaje: Mensaje::PedirEliminar },
+    ]);
+    // Altura hasta la fila «Mover a grupo», para alinear su submenú con ella.
+    let hasta_mover = e.iter().position(|x| matches!(x, ElementoMenu::Submenu { .. })).unwrap_or(0);
+    let alto_previo = icaro_ui::superficies::tamano_menu(&e[..hasta_mover]).height;
+    let menu = menu_contextual(p, e);
+    if !app.menu_grupos {
+        return menu;
+    }
+    let actual = app.grupos.get(i).cloned().flatten();
+    let mut sub: Vec<ElementoMenu<Mensaje>> = app.lista_grupos.iter().map(|g| ElementoMenu::Marcada {
+        texto: g.clone().into(), detalle: None, marcada: actual.as_ref() == Some(g), mensaje: Some(Mensaje::MoverGrupo(Some(g.clone()))),
+    }).collect();
+    sub.push(ElementoMenu::Marcada { texto: "Sin grupo".into(), detalle: None, marcada: actual.is_none(), mensaje: Some(Mensaje::MoverGrupo(None)) });
+    sub.push(ElementoMenu::Separador);
+    sub.push(ElementoMenu::Opcion { icono: Icono::Mas, texto: "Nuevo grupo…".into(), atajo: None, peligro: false, mensaje: Mensaje::NuevoGrupoParaInstancia });
+    // El menú se alinea al borde derecho del botón: el submenú va a su izquierda.
+    row![
+        container(icaro_ui::superficies::menu_contextual_ancho(p, sub, 220.0))
+            .padding(Padding { top: (alto_previo - 16.0).max(0.0), ..Padding::ZERO }),
+        menu,
+    ]
+    .spacing(6)
     .into()
 }
 
@@ -3142,7 +3305,17 @@ fn pantalla_capturas(app: &App) -> Element<'_, Mensaje> {
     capt::pantalla(app)
 }
 
+/// Servidores y las fases de compartir comparten lugar: la transición desliza
+/// y hace aparecer la fase nueva sin velo ni diálogo.
 fn pantalla_servidores(app: &App) -> Element<'_, Mensaje> {
+    let clave = compartir_real::clave_fase(&app.servicios.compartir);
+    let contenido = compartir_real::vista(app)
+        .or_else(|| compartir_real::pagina_compartidas(app))
+        .unwrap_or_else(|| pantalla_servidores_base(app));
+    icaro_ui::transicion::fase(app.paleta().bg, clave, contenido)
+}
+
+fn pantalla_servidores_base(app: &App) -> Element<'_, Mensaje> {
     if !app.servicios.demo || app.servicios.servidores.visual {return servidores_reales::vista(app);}
     if app.capt.vacio || app.red.servidores.is_empty() {
         return capt::vacio_servidores(app);
@@ -3256,7 +3429,10 @@ fn pantalla_descargas(app: &App) -> Element<'_, Mensaje> {
 fn pantalla_ajustes(app: &App) -> Element<'_, Mensaje> {
     let p = app.paleta();
     let secciones = pantallas::SECCIONES;
-    let pagina = pantallas::pagina_ajustes(app);
+    let acerca = app.ajuste == pantallas::SECCIONES.len() - 1;
+    let canal = if acerca { canal_real::pagina(app) } else { None };
+    let en_canal = canal.is_some();
+    let pagina = canal.unwrap_or_else(|| pantallas::pagina_ajustes(app));
     let fila = row![
         indice_ajustes(p, &secciones, app.ajuste, Mensaje::Ajuste),
         pagina
@@ -3264,7 +3440,7 @@ fn pantalla_ajustes(app: &App) -> Element<'_, Mensaje> {
     .spacing(40.0);
     let mut contenido = column![fila].spacing(espacio::S12);
     // Acerca de cierra con el Gabinete, a todo el ancho.
-    if app.ajuste == pantallas::SECCIONES.len() - 1 {
+    if acerca && !en_canal {
         contenido = contenido.push(capt::pared(app));
     }
     let cuerpo = contenido.padding(Padding::from([espacio::S6, espacio::S12]));
@@ -3297,7 +3473,7 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
         pantallas::vista_pantalla(app, pant)
     } else {
         match app.seccion {
-        Seccion::Instancias => pantalla_instancias(app),
+        Seccion::Instancias => pantalla_instancias_con_asistente(app),
         Seccion::Servidores => iced::widget::stack![
             pantalla_servidores(app),
             container(componentes::insignia(
@@ -3311,16 +3487,18 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
         ]
         .into(),
         Seccion::Descargas => pantalla_descargas(app),
-        Seccion::Ajustes => pantalla_ajustes(app),
+        // Novedades es una página de Ajustes: entra y sale como una fase.
+        Seccion::Ajustes => icaro_ui::transicion::fase(
+            app.paleta().bg,
+            u64::from(app.novedades.abierta),
+            if app.novedades.abierta { novedades::pagina(app) } else { pantalla_ajustes(app) },
+        ),
         Seccion::Modpacks => pantalla_modpacks(app),
         Seccion::Consola => pantalla_consola(app),
         Seccion::Capturas => pantalla_capturas(app),
         }
     };
     let contenido = if let Ok(scene)=std::env::var("ICARO_VISTA_DISENO") {componentes_nuevos_qa::vista(app,&scene).unwrap_or(contenido)}else{contenido};
-    let contenido = if let Some(banner) = actualizacion_real::banner(app) {
-        column![banner, container(contenido).height(Length::Fill)].height(Length::Fill).into()
-    } else { contenido };
     let pie = app.seleccionada.and_then(|i| {
         let lista = instancias();
         let datos = lista.get(i)?;
@@ -3358,14 +3536,18 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
         };
         Some(pie)
     });
+    // La tarjeta de actualización no tapa el botón Jugar de la barra de juego.
+    let alto_pie = if pie.is_some() { 72. } else { 0. };
     let mut ventana = if app.pantalla == Some(pantallas::Pantalla::Actualizacion) {
         con_barra_ventana(app, contenido)
-    } else { app_shell(
+    } else { icaro_ui::shell::app_shell_con_aviso(
         p,
         if matches!(app.pantalla, Some(pantallas::Pantalla::Cuenta | pantallas::Pantalla::Estudio)) { None } else { Some(app.seccion) },
         app.barra_colapsada(),
         Cuenta { nombre: app.servicios.nombre(app.sesion.estado.nombre()), proveedor: if app.servicios.session.as_ref().is_some_and(|s|s.es_local()) {"Sin conexión"} else {"Microsoft"}, estado: app.sesion.estado, textura:cuenta_sin_conexion::textura_activa(app) },
         if app.servicios.demo {Some(DescargasActivas { cantidad: 2, velocidad: "6,1 MB/s".into(), avance: 0.58 })}else{juego_real::indicador(app)},
+        actualizacion_real::pastilla(app),
+        if app.pantalla.is_none() { servicios::menu_cuenta(app) } else { None },
         contenido,
         pie,
         MensajesShell {
@@ -3379,7 +3561,9 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
             cerrar: Mensaje::Cerrar,
         },
     ) };
-    let capa_menu = if app.menu.is_some() {
+    // En la cuadrícula el menú va unido a su botón (MenuAnclado); aquí queda
+    // solo el del editor, que se abre desde su cabecera.
+    let capa_menu = if app.menu.is_some() && app.editor.is_some() {
         let grupo_menu = app.grupos[app.menu.unwrap_or(0)].clone();
         let mut elementos_grupos: Vec<ElementoMenu<Mensaje>> = app
             .lista_grupos
@@ -3450,11 +3634,8 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
     } else { None };
     ventana = icaro_ui::superficies::capa_flotante(ventana, capa_mod);
     ventana=icaro_ui::superficies::capa_flotante(ventana,servidores_reales::panel(app));
-    if let Some(vista)=cierre_compartir::vista(app).or_else(|| compartir_real::vista(app)) {
+    if let Some(vista)=cierre_compartir::vista(app) {
         ventana=con_velo_losa(p,ventana,vista,Mensaje::Compartir(compartir_real::Accion::Vista(icaro_ui::compartir::Accion::Cerrar)),desfase_losa(app));
-    }
-    if let Some(s) = &app.asistente {
-        ventana = con_velo_losa(p, ventana, pantallas::asistente(app, s), Mensaje::Pant(pantallas::Accion::AsistenteCancelar), desfase_losa(app));
     }
     if app.servicios.modpacks.abierto {
         ventana=con_velo_losa(p,ventana,modpacks_reales::vista(app),Mensaje::Modpacks(modpacks_reales::Accion::Cerrar),desfase_losa(app));
@@ -3510,14 +3691,20 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
     let umbral: Element<'_, Mensaje> = if let Some(t) = app.umbral {
         let nombre = app.seleccionada.and_then(|i| con_instancias(|l| l.get(i).map(|d| d.nombre.clone()))).unwrap_or_default();
         let pref = icaro_ui::movimiento::Preferencia { reducir: app.reducir };
-        if app.servicios.demo {
-            icaro_ui::efectos::umbral(p, ms_desde(t, app.ahora), pref, &nombre, Mensaje::UmbralVolver)
+        let aspecto = aspecto_umbral(t);
+        let estilo = arranque_real::estilo_para(app, t);
+        if estilo != icaro_ui::arranque::Estilo::Umbral {
+            // ArranqueSuave: misma información, sin espectáculo.
+            let retirada = if app.servicios.demo || app.arranque_prueba.is_some() { None } else { juego_real::retirada_umbral(app).map(|r| r.0) };
+            arranque_real::capa(app, estilo, ms_desde(t, app.ahora), retirada)
+        } else if app.servicios.demo || app.arranque_prueba.is_some() {
+            icaro_ui::efectos::umbral(p, ms_desde(t, app.ahora), pref, aspecto, &nombre, Mensaje::UmbralVolver)
         } else {
             icaro_ui::efectos::umbral_registro_transicion(
-                p, ms_desde(t,app.ahora), pref,
+                p, ms_desde(t,app.ahora), pref, aspecto,
                 &juego_real::lineas(app).iter().rev().take(8).collect::<Vec<_>>().into_iter().rev()
                     .map(|l|format!("[{}] {}",l.hora,l.mensaje)).collect::<Vec<_>>(),
-                juego_real::retirada_umbral(app), Mensaje::UmbralVolver,
+                juego_real::retirada_umbral(app), Mensaje::UmbralVolver, Some(Mensaje::UmbralCancelar),
             )
         }
     } else {
@@ -3535,6 +3722,13 @@ fn vista(app: &App) -> Element<'_, Mensaje> {
         avisos=avisos.push(iced::widget::mouse_area(icaro_ui::efectos::aviso_desde_abajo(toast,a.entrada(app.ahora,app.reducir))).on_enter(Mensaje::PausarAviso(id,true)).on_exit(Mensaje::PausarAviso(id,false)));
     }
     if let Some(a)=&app.aviso {avisos=avisos.push(toast_con_opacidad(p,if a.error{Icono::Alerta}else{Icono::Check},&a.texto,a.accion.clone().map(|m|(a.etiqueta_accion.as_str(),m)),Some(Mensaje::CerrarAviso),a.error,a.opacidad(app.ahora,app.reducir)));}
+    // AvisoActualizacion: tarjeta flotante abajo a la derecha, sin velo.
+    if let Some(tarjeta) = actualizacion_real::tarjeta(app) {
+        ventana = iced::widget::stack![ventana, container(tarjeta)
+            .align_x(iced::alignment::Horizontal::Right).align_y(iced::alignment::Vertical::Bottom)
+            .width(Length::Fill).height(Length::Fill)
+            .padding(Padding { top: 0., right: 24. + 6., bottom: 24. + 6. + alto_pie, left: 0. })].into();
+    }
     let aviso:Element<Mensaje>=container(avisos).align_x(iced::alignment::Horizontal::Left).align_y(iced::alignment::Vertical::Bottom).width(Length::Fill).height(Length::Fill).padding(Padding {left:if app.barra_colapsada(){88.}else{256.},bottom:24.,top:0.,right:24.}).into();
     ventana = iced::widget::stack![ventana, aviso].into();
     if app.busqueda.abierta {
@@ -3598,16 +3792,22 @@ fn main() -> iced::Result {
                 || progreso(app.anim_panel, app.ahora, MS_PANEL) < 1.0
                 || (hay_dialogo(app) && progreso(app.anim_dialogo, app.ahora, MS_LOSA) < 1.0)
                 || sesion::animando(app)
+                || actualizacion_real::animando(app)
                 || app.capt.animando(app.ahora, app.reducir)
                 || (!app.reducir && app.servicios.instancias.cambio.as_ref().is_some_and(|c| !c.confirmando && !c.cargando_compatibilidad.is_empty()))
             {
                 subs.push(window::frames().map(Mensaje::Cuadro));
             }
-            let umbral_activo = if app.servicios.demo {
+            // Las transiciones suaves se animan mientras dura la capa (Respiro
+            // respira hasta que abre Minecraft); el Umbral, su secuencia.
+            let suave = app.umbral.is_some_and(|t| arranque_real::estilo_para(app, t) != icaro_ui::arranque::Estilo::Umbral);
+            let umbral_activo = (if suave {
+                true
+            } else if app.servicios.demo || app.arranque_prueba.is_some() {
                 app.umbral.is_some_and(|t| ms_desde(t, app.ahora) < 1700.0)
             } else {
                 juego_real::animando_umbral(app)
-            };
+            }) || arranque_real::animando(app);
             let picar_activo = app.picar.as_ref().is_some_and(|p| {
                 p.rota.map_or(true, |t| ms_desde(t, app.ahora) < icaro_ui::movimiento::PICAR_ROTURA_MS + 80.0)
             });
@@ -3701,7 +3901,7 @@ fn main() -> iced::Result {
                 }));
             }
             subs.push(servicios::suscripcion(app));
-            if app.cierre.solicitado || app.cierre.esperando || app.cierre.bandeja.is_some() {
+            if app.cierre.solicitado || app.cierre.esperando || app.cierre.bandeja.is_some() || app.cierre.por_juego {
                 subs.push(iced::time::every(std::time::Duration::from_millis(250)).map(|_| Mensaje::CierreCompartir(cierre_compartir::Accion::Tic)));
             }
             if !app.servicios.demo && diagnostico_real::activo() {
@@ -3761,12 +3961,22 @@ fn iniciar_app(seccion: Seccion, piedra: bool, menu: Option<usize>, con_dialogo:
     if !servicios.demo { servicios.instancias.cargar(); let _=icaro_core::almacenamiento::registrar(&estado::directorio(false),"Inicio del launcher"); icaro_core::mods::sincronizacion::activar_registro(&estado::directorio(false)); }
     let mut guardado = estado::Guardado::cargar(servicios.demo);
     if let Some(g)=&mut guardado {g.apariencia.normalizar();}
+    // Versión cuyas novedades ya se vieron; sin estado es una instalación nueva.
+    let vistas = guardado.as_ref().map(|g| g.novedades_vistas.clone());
+    let minimizada = guardado.as_ref().and_then(|g| g.aviso_minimizado.clone());
     let (mut app, inicio) = iniciar_con_guardado(seccion, piedra, menu, con_dialogo, servicios, guardado);
+    app.actualizacion.minimizada = minimizada;
     if let Some(error)=app.config_error.clone(){app.avisar(error);}
     if !app.servicios.demo {
+        novedades::al_iniciar(&mut app, vistas);
         if let Some(resultado)=icaro_core::actualizacion::tomar_resultado(env!("CARGO_PKG_VERSION"),env!("ICARO_COMPILACION").parse().unwrap_or(0)) {
+            // Una actualización correcta abre las novedades; un fallo, su pantalla.
+            if resultado.correcto {
+                let _ = novedades::actualizar(&mut app, novedades::Accion::Abrir { recien: true });
+            } else {
+                app.pantalla=Some(pantallas::Pantalla::Actualizacion);
+            }
             app.actualizacion.resultado=Some(resultado);
-            app.pantalla=Some(pantallas::Pantalla::Actualizacion);
         }
         app.actualizacion.comprobando = true;
         {
@@ -3776,7 +3986,8 @@ fn iniciar_app(seccion: Seccion, piedra: bool, menu: Option<usize>, con_dialogo:
             let iconos = icono_instancia::cargar(&app);
             let java = java_real::detectar(&mut app);
             let actualizacion = actualizacion_real::comprobar(app.aj.canal);
-            (app, Task::batch([inicio, actualizacion, iconos, java, servidores]))
+            let ultima = saludo::cargar(&app);
+            (app, Task::batch([inicio, actualizacion, iconos, java, servidores, ultima]))
         }
     } else { (app, inicio) }
 }
@@ -3837,7 +4048,10 @@ fn iniciar_con_guardado(seccion: Seccion, piedra: bool, menu: Option<usize>, con
                 detalle_error: None,
                 almacenamiento: Default::default(),
                 estadisticas: Default::default(),
+                saludo: Default::default(),
+                novedades: Default::default(),
                 actualizacion: actualizacion_real::Estado::default(),
+                canal: canal_real::Estado::default(),
                 verificacion: Default::default(),
                 iconos: Default::default(),
                 exportar_lista: Default::default(),
@@ -3892,7 +4106,9 @@ fn iniciar_con_guardado(seccion: Seccion, piedra: bool, menu: Option<usize>, con
                     Some("estudio") => Some(pantallas::Pantalla::Estudio),
                     _ => guardado.is_none().then_some(pantallas::Pantalla::Primera),
                 } },
-                aj: pantallas::Ajustes {metal:prefs.metal,escala:prefs.escala,canal:guardado.as_ref().and_then(|g|g.canal).unwrap_or_else(actualizacion_real::canal_compilado),..Default::default()},
+                aj: pantallas::Ajustes {copias_antes:guardado.as_ref().is_none_or(|g|g.copias_antes),metal:prefs.metal,escala:prefs.escala,canal:guardado.as_ref().and_then(|g|g.canal).unwrap_or_else(actualizacion_real::canal_compilado),
+                    arranque:arranque_real::estilo_de(&prefs.arranque),tono_arranque:arranque_real::tono_de(&prefs.tono_arranque),
+                    arranque_azar:prefs.arranque_azar,frase_al_cargar:prefs.frase_al_cargar,registro_al_cargar:prefs.registro_al_cargar,..Default::default()},
                 asistente: (demo && std::env::var("ICARO_DIALOGO_NUEVO").is_ok()).then(|| pantallas::Asistente {
                     paso: std::env::var("ICARO_PASO").ok().and_then(|v| v.parse().ok()).unwrap_or(0),
                     tipo_version: 0,
@@ -3901,6 +4117,7 @@ fn iniciar_con_guardado(seccion: Seccion, piedra: bool, menu: Option<usize>, con
                     loader: 1,
                     nombre: "Fabric 1.21.4".into(),
                     portada: 0,
+                    portada_propia: None,
                 }),
                 cambiar: (demo && std::env::var("ICARO_CAMBIAR").is_ok()).then_some(0),
                 importar: (demo && std::env::var("ICARO_IMPORTAR").is_ok()).then(|| pantallas::Importar { origen: 0, archivo: None, launchers: [true, false, false], clon_origen: 0, con_mundos: false }),
@@ -3972,6 +4189,7 @@ fn iniciar_con_guardado(seccion: Seccion, piedra: bool, menu: Option<usize>, con
                 ventana: Size::new(1280.0, 800.0),
                 maximizada: false,
                 umbral: std::env::var_os("ICARO_UMBRAL").is_some().then(std::time::Instant::now),
+                arranque_prueba: None,
                 // ICARO_PICAR=<etapa>[:<instancia>]: abre con la eliminación detenida en esa etapa.
                 picar_objetivo: None,
                 picar_revision: None,

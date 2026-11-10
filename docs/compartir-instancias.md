@@ -234,6 +234,10 @@ inválida rechaza publicar antes de escribir la selección o la revisión.
 Escenas: `compartir-publicacion`, `compartir-privados`, `compartir-retirada`,
 `compartir-packs`, `compartir-conflicto`, `compartir-invitacion`, `compartir-cupo`,
 `compartir-cierre`, `compartir-error`, `compartir-propios` y `compartir-destino`.
+Las fases de compartir son páginas dentro de Servidores (paquete v3): escenas
+`compartir-compartidas` (`-recibes`, `-vacio`, `-menu`), `compartir-selector`
+(`-buscando`, `-vacio`) y `compartir-listo` (`-personas`, `-cambiar`, `-nuevo`,
+`-completo`, `-vencido`).
 RevisionPublicacion por tipo (versión 32 del diseño) tiene además un estado por
 escena: `compartir-publicacion-analizando`, `-sin-cambios`, `-atajo`,
 `-bloqueada`, `-autorizacion`, `-preparando`, `-publicada`, `-error`,

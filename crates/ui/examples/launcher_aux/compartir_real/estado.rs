@@ -13,6 +13,8 @@ pub enum Etapa {
     Analizando,
     Revision,
     Propios,
+    /// CompartidoListo, justo después de publicar.
+    Listo,
     Publicando,
     Guardando,
     Panel,
@@ -51,6 +53,16 @@ pub struct Estado {
     pub cupo: u32,
     pub opcion_cierre: v::OpcionCierre,
     pub codigo_entrada: String,
+    /// Servidores › Instancias compartidas abierta; sobrevive a los flujos.
+    pub compartidas: Option<v::PestanaCompartidas>,
+    pub menu_compartida: Option<String>,
+    /// Publicación en pausa que pide confirmar «Quitar de compartidas».
+    pub confirmar_quitar: Option<String>,
+    pub recibidas: Vec<super::compartidas::Recibida>,
+    pub recibidas_generacion: u64,
+    pub copiado_de: Option<String>,
+    pub selector: super::selector::Selector,
+    pub listo: super::listo::Listo,
 }
 impl Default for Estado {
     fn default() -> Self {
@@ -77,6 +89,14 @@ impl Default for Estado {
             cupo: 10,
             opcion_cierre: Default::default(),
             codigo_entrada: String::new(),
+            compartidas: None,
+            menu_compartida: None,
+            confirmar_quitar: None,
+            recibidas: Vec::new(),
+            recibidas_generacion: 0,
+            copiado_de: None,
+            selector: Default::default(),
+            listo: Default::default(),
         }
     }
 }
@@ -119,6 +139,12 @@ impl Estado {
     }
     pub fn modal(&self) -> bool {
         self.etapa != Etapa::Cerrada
+    }
+    /// Hay una fase que mostrar en Servidores. Consultar si una instancia
+    /// está vinculada a una compartida (al pulsar Jugar) no lo es: casi
+    /// siempre termina en jugar sin nada que revisar.
+    pub fn visible(&self) -> bool {
+        !matches!(self.etapa, Etapa::Cerrada | Etapa::ConsultandoVinculo)
     }
 }
 impl Drop for Estado {

@@ -143,8 +143,8 @@ impl<'a, M> canvas::Program<M> for Visor<'a, M> {
                     let pasos = ((pos.x - origen) / PX_POR_GIRO).trunc() as i32;
                     if pasos != 0 {
                         estado.origen = Some(origen + pasos as f32 * PX_POR_GIRO);
-                        // Arrastrar a la derecha gira el cuerpo hacia su izquierda.
-                        return (Status::Captured, Some((self.al_girar)(-pasos.signum())));
+                        // Arrastrar a la derecha gira el cuerpo hacia la derecha.
+                        return (Status::Captured, Some((self.al_girar)(pasos.signum())));
                     }
                 }
             }

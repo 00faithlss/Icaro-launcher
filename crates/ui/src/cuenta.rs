@@ -730,7 +730,8 @@ pub fn bloque_cuenta<'a, M: Clone + 'a>(
             .spacing(espacio::S3)
             .align_y(Alignment::Center),
         )
-        .padding(espacio::S2)
+        // Pegado al borde: el relleno conserva la posición de la cabeza.
+        .padding(Padding::from([espacio::S3, espacio::S4]))
         .width(Length::Fill)
         .style(move |_: &Theme| container::Style {
             background: fondo.map(Background::Color),

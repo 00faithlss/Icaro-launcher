@@ -279,3 +279,23 @@ fn diagnostico_de_la_lista_no_incluye_nombres_de_instancia() {
     let texto = format!("{lista:?}");
     assert!(!texto.contains("Servidor de prueba"), "{texto}");
 }
+
+#[test]
+fn eliminar_quita_solo_la_publicacion_propia_y_conserva_los_archivos_de_juego() {
+    let (root, store, instancia) = entorno();
+    let ctx = vinculos::publicacion(&root.0, &store, &instancia, &clave()).unwrap();
+    publicar(&ctx, 2, None);
+    let juego = store.juego(&instancia.id).unwrap();
+    fs::create_dir_all(juego.join("mods")).unwrap();
+    fs::write(juego.join("mods/propio.jar"), b"jar").unwrap();
+    // Otra identidad no puede quitarla.
+    assert!(biblioteca::eliminar(&root.0, &store, &instancia, &"cd".repeat(32)).is_err());
+    assert_eq!(biblioteca::listar(&root.0, &store, &clave()).unwrap().len(), 1);
+    biblioteca::eliminar(&root.0, &store, &instancia, &clave()).unwrap();
+    assert!(biblioteca::listar(&root.0, &store, &clave()).unwrap().is_empty());
+    assert!(!ctx.almacen.exists());
+    assert!(!juego.join(".icaro-compartir-publicacion.json").exists());
+    assert_eq!(fs::read(juego.join("mods/propio.jar")).unwrap(), b"jar");
+    // Quitar otra vez no encuentra nada que borrar.
+    assert!(biblioteca::eliminar(&root.0, &store, &instancia, &clave()).is_err());
+}

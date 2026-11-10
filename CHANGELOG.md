@@ -1,5 +1,27 @@
 # Changelog
 
+## [Sin publicar]
+
+- Compartir ya no abre diálogos: sus fases son páginas dentro de Servidores, con migas, contenido centrado y desplazamiento suave, y pasan de una a otra deslizándose 24 px y apareciendo (sin movimiento con «reducir movimiento»). Se puede navegar a otra sección y volver; la fase espera en Servidores.
+- Servidores › Instancias compartidas reúne lo que compartes (estado, revisión, personas, código con copiar, caducidad, acción principal y menú con Pausar, Cambiar código y Dejar de compartir) y lo que recibes (de quién es, si el anfitrión está disponible, revisión y Jugar o Sincronizar), con sus estados vacíos.
+- «¿Qué instancia compartes?» muestra versión, loader, mods, tamaño y cuándo se jugó por última vez; las ya compartidas abren su publicación y la que está en uso queda bloqueada. Incluye buscador y estado sin instancias.
+- Tras publicar aparece «Ya compartes…»: código para copiar o enviar con instrucciones, personas con barra de cupo, caducidad con fecha exacta, límite de personas, cambiar código con confirmación y anular. Las personas se muestran como «Equipo 9e2a 7b14» hasta que el servicio comparta nombres.
+- Instancias abre con un saludo bajo la banda (SaludoInicio): una frase según la hora del día, o de regreso tras una semana sin jugar, con el nombre de la cuenta, y debajo la última instancia jugada y cuándo. Las frases vienen en el launcher y cambian al abrirlo. El núcleo guarda cuándo terminó la última partida de cada instancia.
+- Novedades de cada versión (NovedadesVersion): lista de versiones, filtros Todo, Nuevo, Mejoras y Correcciones con su número, funciones nuevas en tarjetas con acceso directo y aviso de versión de mantenimiento. Se abre sola la primera vez que se entra a una versión nueva y queda en Ajustes › Acerca de. Las notas salen de `docs/releases`; una nota nueva puede llevar `titulo` y `accion` (`servidores`, `cuenta` o `tienda`).
+- Aviso de actualización (AvisoActualizacion): una tarjeta flotante abajo a la derecha reemplaza al banner. Muestra disponible, descargando (con velocidad y Cancelar), lista para reiniciar, espera a Minecraft, importante y error con «Descargar desde la web»; «Ver todo lo que cambia» abre Novedades en la versión nueva. Minimizada queda como pastilla en la barra lateral y no vuelve como tarjeta hasta la siguiente versión. El manifiesto admite un motivo `importante` opcional.
+- Plata y Bronce tiñen toda la tinta de la interfaz (líneas, marcos, selección, iconos y textos), no solo el botón principal.
+- Crear instancia permite usar una imagen propia como portada y marca con un marco grueso la portada elegida; las tarjetas de loader tienen el mismo alto.
+- Jugar ya no lleva a Servidores mientras comprueba si la instancia viene de una compartida. «Publicación» de Compartir cabe en una pantalla, con la invitación junto a los accesos.
+- Transición al pulsar Jugar (AjusteArranque, en Ajustes › Apariencia): Marea, Horizonte, Tinta, Bloques, Respiro o el Umbral de siempre, con tono, variación al azar, frase y registro mientras carga, y «Probar». Quien ya usaba Ícaro conserva el Umbral.
+- Los menús de las instancias y de la cuenta salen unidos a su botón, hacia arriba si no caben, con cabecera, grupos y «Mover a grupo» como submenú. El menú de cuenta permite elegir con qué cuenta jugar, añadir cuentas, abrir Cuenta y skin y cerrar sesión.
+- Canal de actualizaciones (CanalActualizaciones): antes de pasar a Beta se guarda una copia de ajustes, cuentas sin conexión y grupos. Volver a Estable explica qué se deja de tener y ofrece esperar a la próxima estable o volver ahora restaurando una copia compatible; sin copia, esperar o empezar de cero. «Copias antes de actualizar» guarda una copia antes de cada cambio de versión y conserva las 3 últimas, sin borrar nunca la última hecha en una versión estable. Los mundos, mods e instancias no se tocan.
+- En Instancias compartidas se puede quitar una instancia que ya no compartes, con confirmación en la misma fila, y «Volver a compartir» muestra un esqueleto mientras carga. El panel de Publicación ya no va dentro de un recuadro.
+- El menú de una instancia ya no tapa su botón al desplazar: si no cabe ni abajo ni arriba se abre al costado, y al cambiar de lado se desliza en 180 ms en vez de saltar.
+- El bloque de cuenta ocupa la barra lateral hasta sus bordes y, al abrir su menú, la pestaña coincide con la línea de la barra. Los bordes de los menús ya no desaparecen al pasar el mouse y su sombra no deja ver lo que hay debajo.
+- Al pulsar Jugar, la pantalla de carga ofrece «Cancelar» desde el primer momento: detiene la preparación o cierra el juego que aún no abrió su ventana. Los textos largos del registro y el nombre de la instancia se recortan con «…» en vez de salirse de la pantalla.
+- Arrastrar la skin hacia la derecha la gira hacia la derecha. La tarjeta de actualización aparece con una transición suave al abrirla desde la barra lateral.
+- El saludo de Instancias suma frases sobre el Nether, el End, granjas técnicas, redstone y las Ciudades Antiguas: 67 en total.
+
 ## [0.4.0] - 2026-11-09
 
 - «Revisar publicación» sigue RevisionPublicacion versión 32 del System Design: lo que se publica se ordena por tipo (mods, configuraciones, resourcepacks, shaders y scripts) con atajos, casillas por tipo de tres estados, búsqueda y filtros, y una casilla por fila. El núcleo lee nombre, versión y entorno de `fabric.mod.json`, `quilt.mod.json` y `neoforge.mods.toml` y asocia cada configuración a su mod. Los tamaños se muestran legibles.

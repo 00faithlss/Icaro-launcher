@@ -14,6 +14,10 @@ pub struct Estado {
     pub oculta: bool,
     pub transferencias: usize,
     pub bandeja: Option<Arc<bandeja::Bandeja>>,
+    /// Cerrar con Minecraft abierto: Ícaro espera en la bandeja a que termine.
+    pub por_juego: bool,
+    /// «Salir» desde la bandeja o la partida terminó: cerrar sin volver a esperar.
+    pub forzar: bool,
     iniciando: bool,
     cerrando_host: bool,
     ahora: CancellationToken,
@@ -68,6 +72,41 @@ pub fn solicitar(app: &mut App) -> Option<Task<Mensaje>> {
     app.cierre.solicitado = true;
     Some(Task::none())
 }
+/// Cerrar con una partida abierta no la corta: Ícaro se oculta en la bandeja
+/// y termina de cerrarse cuando Minecraft se cierra. `None` si no hay partida.
+pub fn ocultar_por_juego(app: &mut App) -> Option<Task<Mensaje>> {
+    if app.servicios.demo || app.cierre.forzar || app.servicios.juego.procesos.is_empty() {
+        return None;
+    }
+    app.cierre.por_juego = true;
+    if app.cierre.bandeja.is_some() {
+        return Some(ocultar(app));
+    }
+    if app.cierre.iniciando {
+        return Some(Task::none());
+    }
+    app.cierre.iniciando = true;
+    Some(Task::perform(
+        async {
+            tokio::task::spawn_blocking(bandeja::Bandeja::iniciar)
+                .await
+                .map_err(|_| "No se pudo iniciar la bandeja.".to_string())?
+                .map(Arc::new)
+        },
+        |r| mensaje(Accion::Bandeja(r)),
+    ))
+}
+
+/// En la bandeja por una partida: al cerrarse Minecraft, termina el cierre.
+fn seguir_por_juego(app: &mut App) -> Option<Task<Mensaje>> {
+    if app.cierre.por_juego && app.servicios.juego.procesos.is_empty() {
+        app.cierre.por_juego = false;
+        app.cierre.forzar = true;
+        return Some(Task::done(Mensaje::Cerrar));
+    }
+    None
+}
+
 pub fn vista(app: &App) -> Option<Element<'_, Mensaje>> {
     if !app.cierre.solicitado {
         return None;
@@ -198,11 +237,22 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
     match a {
         Accion::Tic => {
             match app.cierre.bandeja.as_ref().and_then(|b| b.siguiente()) {
-                Some(bandeja::Evento::Mostrar) => return mostrar(app),
+                Some(bandeja::Evento::Mostrar) => {
+                    // Volver a Ícaro cancela el cierre pendiente por la partida.
+                    app.cierre.por_juego = false;
+                    return mostrar(app);
+                }
                 Some(bandeja::Evento::NoDisponible) => {
                     app.cierre.bandeja = None;
+                    app.cierre.por_juego = false;
                     app.avisar("La bandeja dejó de estar disponible; Ícaro sigue visible mientras termina.".into());
                     return mostrar(app);
+                }
+                Some(bandeja::Evento::Salir) if app.cierre.por_juego => {
+                    // Salir pedido a mano: se cierra también Minecraft.
+                    app.cierre.por_juego = false;
+                    app.cierre.forzar = true;
+                    return Task::done(Mensaje::Cerrar);
                 }
                 Some(bandeja::Evento::Salir) => {
                     app.cierre.ahora.cancel();
@@ -210,17 +260,23 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                 }
                 None => (),
             }
+            if let Some(tarea) = seguir_por_juego(app) {
+                return tarea;
+            }
         }
         Accion::Bandeja(r) => {
             app.cierre.iniciando = false;
             match r {
                 Ok(b) => {
                     app.cierre.bandeja = Some(b);
-                    if app.cierre.esperando && !app.cierre.aprobado {
+                    if (app.cierre.esperando && !app.cierre.aprobado) || app.cierre.por_juego {
                         return ocultar(app);
                     }
                 }
                 Err(e) => {
+                    // Sin bandeja se minimiza; la partida sigue igual. No se cierra
+                    // solo después: la ventana sigue a mano en la barra de tareas.
+                    app.cierre.por_juego = false;
                     app.avisar(e);
                     return window::get_oldest().and_then(|id| window::minimize(id, true));
                 }

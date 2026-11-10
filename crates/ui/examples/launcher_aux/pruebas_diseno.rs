@@ -14,6 +14,8 @@ pub fn iniciar(piedra: bool) -> (App, Task<Mensaje>) {
     );
     a.reducir = true;
     a.modo=if piedra {Modo::Piedra}else{Modo::Tinta};a.tema=usize::from(piedra);
+    // ICARO_METAL=plata|bronce para revisar el metal de acento.
+    a.aj.metal = match std::env::var("ICARO_METAL").as_deref() { Ok("plata") => 1, Ok("bronce") => 2, _ => a.aj.metal };
     a.pantalla = None;
     a.umbral = None;
     let scene = std::env::var("ICARO_VISTA_DISENO").unwrap_or_else(|_| "asistente".into());
@@ -38,10 +40,37 @@ pub fn iniciar(piedra: bool) -> (App, Task<Mensaje>) {
         "almacenamiento" => { a.seccion=Seccion::Ajustes;a.ajuste=3;a.almacenamiento.informe=Some(icaro_core::almacenamiento::Informe{categorias:vec![("Assets".into(),484486173),("Bibliotecas".into(),80695893),("Java".into(),250000000),("Instancias".into(),2000000),("Caché".into(),1000000)],total:818182066,papeleras:vec![std::path::PathBuf::from("fixture/.papelera")]}); },
         "java-global" => { a.seccion = Seccion::Ajustes; a.ajuste = 2; },
         "acerca-de" => { a.seccion = Seccion::Ajustes; a.ajuste = 7; },
+        s if s.starts_with("canal-") => { a.seccion = Seccion::Ajustes; a.ajuste = 7; crate::canal_real::preparar_diseno(&mut a, s); },
         s if s.starts_with("exportar-lista-") => crate::exportar_lista_mods::preparar_diseno(&mut a,s),
         "icono-generado" | "icono-imagen" => crate::icono_instancia::preparar_diseno(&mut a,&scene),
         "exportar-lista-html" | "exportar-lista-json" | "exportar-lista-personalizado" => crate::exportar_lista_mods::preparar_diseno(&mut a,&scene),
         "noverif" => crate::verificacion_real::preparar_diseno(&mut a),
+        s if s.starts_with("novedades") => crate::novedades::preparar_diseno(&mut a, s),
+        "menu-cuenta" => {
+            a.seccion = Seccion::Instancias;
+            a.sesion.estado = icaro_ui::cuenta::EstadoSesion::Activa;
+            a.sesion.menu = true;
+        }
+        "menu-instancia" | "menu-instancia-grupos" | "menu-instancia-abajo" => {
+            a.seccion = Seccion::Instancias;
+            a.editor = None;
+            let i = if scene.ends_with("-abajo") { 3 } else { 0 };
+            a.menu = Some(i);
+            a.menu_grupos = scene.ends_with("-grupos");
+            a.anim_menu = None;
+        }
+        "ajustes-apariencia" | "arranque-ajuste" => { a.seccion = Seccion::Ajustes; a.ajuste = 1; a.reducir = false; },
+        // arranque-<estilo>-<ms>: la capa de ArranqueSuave en ese instante.
+        s if s.starts_with("arranque-") => {
+            let partes: Vec<&str> = s.split('-').collect();
+            let estilo = crate::arranque_real::estilo_de(partes.get(1).copied().unwrap_or("marea"));
+            let ms: u64 = partes.get(2).and_then(|v| v.parse().ok()).unwrap_or(2500);
+            a.reducir = false;
+            a.seleccionada = Some(0);
+            a.arranque_prueba = Some(estilo);
+            a.umbral = Some(std::time::Instant::now() - std::time::Duration::from_millis(ms));
+        }
+        s if s.starts_with("aviso-actualizacion-") => crate::actualizacion_real::preparar_diseno_aviso(&mut a, s),
         "actualizacion" => crate::actualizacion_real::preparar_diseno(&mut a),
         "actualizacion-al-cerrar" => crate::actualizacion_real::preparar_diseno_al_cerrar(&mut a),
         s if s.starts_with("actualizacion-") => crate::actualizacion_real::preparar_diseno_estado(&mut a,s),
@@ -49,15 +78,16 @@ pub fn iniciar(piedra: bool) -> (App, Task<Mensaje>) {
             crate::mods_reales::preparar_diseno(&mut a, &scene)
         }
         s if s.starts_with("juego-") => crate::juego_real::preparar_diseno(&mut a, &scene),
-        "asistente" | "asistente-version" | "asistente-loader" => {
+        "asistente" | "asistente-version" | "asistente-loader" | "asistente-angosto" => {
             a.asistente = Some(pantallas::Asistente {
-                paso: if scene == "asistente-version" { 0 } else { 1 },
+                paso: std::env::var("ICARO_PASO").ok().and_then(|v| v.parse().ok()).unwrap_or(if scene == "asistente-version" { 0 } else { 1 }),
                 tipo_version: 0,
                 busqueda: String::new(),
                 version: 0,
                 loader: 1,
                 nombre: String::new(),
-                portada: 0,
+                portada: std::env::var("ICARO_PORTADA").ok().and_then(|v| v.parse().ok()).unwrap_or(0),
+                portada_propia: None,
             })
         }
         "cambiar-loader" => {
@@ -105,6 +135,15 @@ pub fn iniciar(piedra: bool) -> (App, Task<Mensaje>) {
         }
     }
     crate::componentes_nuevos_qa::preparar(&mut a,&scene);
+    // Cuadrícula de Instancias con la frase de bienvenida; `-nombre` simula una cuenta.
+    if scene.starts_with("instancias-inicio") {
+        a.editor = None;
+        a.seccion = Seccion::Instancias;
+        if scene.ends_with("-nombre") {
+            a.servicios.demo = true;
+            a.sesion.estado = icaro_ui::cuenta::EstadoSesion::Activa;
+        }
+    }
     if scene == "capturas-instancia-vacia" {
         a.editor = Some(5);
         a.capt.capturas.clear();

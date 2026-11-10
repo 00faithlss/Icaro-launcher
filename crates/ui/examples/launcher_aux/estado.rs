@@ -51,9 +51,18 @@ pub struct Guardado {
     /// Canal elegido en Ajustes; sin valor se usa el de la compilación.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub canal: Option<icaro_core::actualizacion::Canal>,
+    /// Copia de ajustes y datos antes de cada cambio de versión.
+    #[serde(default = "verdadero")]
+    pub copias_antes: bool,
     /// Activación explícita en Servidores, independiente de la variable de pruebas.
     #[serde(default)]
     pub compartir_experimental: bool,
+    /// Versión cuyas novedades ya se mostraron al abrir Ícaro.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub novedades_vistas: Option<String>,
+    /// Versión cuya tarjeta de actualización se minimizó («0.4.1+123»).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aviso_minimizado: Option<String>,
 }
 
 /// Preferencias de Apariencia compatibles con estados anteriores.
@@ -64,10 +73,34 @@ pub struct AparienciaGuardada {
     pub metal: usize,
     pub escala: i32,
     pub reducir: bool,
+    /// Transición al pulsar Jugar. Quien ya usaba Ícaro conserva el Umbral;
+    /// las instalaciones nuevas empiezan con Marea.
+    #[serde(default = "arranque_anterior")]
+    pub arranque: String,
+    pub tono_arranque: String,
+    pub arranque_azar: bool,
+    pub frase_al_cargar: bool,
+    pub registro_al_cargar: bool,
+}
+
+fn arranque_anterior() -> String {
+    "umbral".into()
 }
 
 impl Default for AparienciaGuardada {
-    fn default() -> Self { Self { tema: 0, metal: 0, escala: 100, reducir: false } }
+    fn default() -> Self {
+        Self {
+            tema: 0,
+            metal: 0,
+            escala: 100,
+            reducir: false,
+            arranque: "marea".into(),
+            tono_arranque: "tema".into(),
+            arranque_azar: false,
+            frase_al_cargar: true,
+            registro_al_cargar: true,
+        }
+    }
 }
 
 impl AparienciaGuardada {
@@ -125,7 +158,10 @@ impl Guardado {
                 })
                 .collect(),
             canal: None,
+            copias_antes: true,
             compartir_experimental: false,
+            novedades_vistas: None,
+            aviso_minimizado: None,
         }
     }
 

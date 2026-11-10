@@ -354,7 +354,7 @@ pub fn error_compartir<'a>(p: Paleta, m: &ErrorCompartir) -> Element<'a, Accion>
 }
 
 /// Barra adicional para Servidores; la lista existente se compone debajo.
-/// Repite la misma tarjeta por cada publicación guardada.
+/// Lo compartido y lo recibido se gestionan en Servidores › Instancias compartidas.
 pub fn accesos_servidores<'a>(
     p: Paleta,
     publicaciones: &[ResumenPublicacion],
@@ -369,15 +369,15 @@ pub fn accesos_servidores<'a>(
     let mut c = column![row![
         boton(
             p,
-            "Compartir instancia",
+            "Instancias compartidas",
             Variante::Secundario,
-            Some(Accion::AbrirCompartir)
+            Some(Accion::VerCompartidas)
         ),
         boton(
             p,
-            "Aceptar invitación",
+            "Compartir instancia",
             Variante::Secundario,
-            Some(Accion::AceptarInvitacion)
+            Some(Accion::AbrirCompartir)
         ),
         Space::new(Length::Fill, 0),
         boton(
@@ -389,19 +389,21 @@ pub fn accesos_servidores<'a>(
     ]
     .spacing(12)]
     .spacing(20);
-    for m in publicaciones {
+    if !publicaciones.is_empty() {
+        let n = publicaciones.len();
         c = c.push(
             container(
                 row![
                     container(
                         column![
-                            heading(p, &m.instancia),
+                            heading(p, "Instancias compartidas"),
                             mono(
                                 p,
-                                format!(
-                                    "Revisión {} · {} accesos · {} transferencias",
-                                    m.revision, m.sesiones, m.transferencias
-                                )
+                                if n == 1 {
+                                    "Compartes 1 instancia".to_string()
+                                } else {
+                                    format!("Compartes {n} instancias")
+                                }
                             )
                         ]
                         .spacing(4)
@@ -409,9 +411,9 @@ pub fn accesos_servidores<'a>(
                     .width(Length::Fill),
                     pequeno(
                         p,
-                        "Ver publicación",
+                        "Ver todas",
                         Variante::Secundario,
-                        Some(Accion::VerPublicacionDe(m.id.clone()))
+                        Some(Accion::VerCompartidas)
                     )
                 ]
                 .spacing(16)

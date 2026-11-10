@@ -158,6 +158,44 @@ pub fn abrir(
     Ok(vinculos::contexto(raiz, juego, origen, perfil))
 }
 
+/// Quita una publicación propia de la biblioteca: borra la marca de
+/// publicación de la instancia y su copia de revisiones y accesos. No toca
+/// mods, mundos ni ajustes. Solo para publicaciones sin nodo activo (en pausa
+/// o detenidas). Ejecutar fuera del hilo de iced.
+pub fn eliminar(
+    raiz: &Path,
+    store: &Almacen,
+    instancia: &Instancia,
+    anfitrion: &str,
+) -> Result<(), Error> {
+    anfitrion_valido(anfitrion)?;
+    let juego = store.juego(&instancia.id).map_err(|_| Error::Disco)?;
+    let _bloqueo = crate::mods::guardia(&juego).map_err(|_| Error::Datos("instancia ocupada"))?;
+    let origen = vinculos::origen_guardado(&juego)?
+        .ok_or(Error::Datos("la instancia no tiene una publicación guardada"))?;
+    if origen.anfitrion != anfitrion {
+        return Err(Error::Datos("la publicación pertenece a otra identidad"));
+    }
+    // El identificador forma parte de una ruta: debe ser hexadecimal.
+    if origen.publicacion.is_empty()
+        || !hexadecimal(&origen.publicacion, origen.publicacion.len())
+    {
+        return Err(Error::Datos("identificador de publicación"));
+    }
+    let marca = juego.join(vinculos::PUBLICACION);
+    crate::almacenamiento::regular(&marca).map_err(|_| Error::Datos("marca de publicación"))?;
+    fs::remove_file(&marca).map_err(|_| Error::Disco)?;
+    let carpeta = raiz.join("compartir/publicaciones").join(&origen.publicacion);
+    if !carpeta.exists() {
+        return Ok(());
+    }
+    // Nunca sigue enlaces ni uniones fuera de la carpeta de Ícaro.
+    match crate::almacenamiento::regular(&carpeta) {
+        Ok(m) if m.is_dir() => fs::remove_dir_all(&carpeta).map_err(|_| Error::Disco),
+        _ => Err(Error::Datos("carpeta de publicación")),
+    }
+}
+
 /// Recupera una identidad existente; sin clave guardada devuelve `None` y no crea otra.
 pub fn identidad_existente(almacen: &impl AlmacenClave) -> Result<Option<Identidad>, Error> {
     Identidad::existente(almacen)

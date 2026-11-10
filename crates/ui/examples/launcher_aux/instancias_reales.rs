@@ -752,7 +752,11 @@ pub fn crear(app: &mut App) -> Task<Mensaje> {
     } else {
         s.nombre.trim().into()
     };
-    let portada = s.portada.min(3) as u8;
+    let portada = s.portada.min(pantallas::PORTADAS.len() - 1) as u8;
+    // La imagen propia se guarda junto a la instancia recién creada.
+    let propia = (s.portada == pantallas::PORTADAS.len())
+        .then(|| s.portada_propia.as_ref().map(|(png, _)| png.clone()))
+        .flatten();
     let loader = pantallas::LOADERS[s.loader.min(4)].0.to_lowercase();
     let loader_version = app.servicios.instancias.loader_elegida.clone().or_else(|| {
         app.servicios
@@ -777,6 +781,14 @@ pub fn crear(app: &mut App) -> Task<Mensaje> {
                 if let Some(v) = loader_version {
                     if let Err(e) =
                         icaro_core::versiones_instancia::guardar_loader(&store, &record, &v)
+                    {
+                        let _ = store.eliminar(&record.id);
+                        return Err(e);
+                    }
+                }
+                if let Some(png) = &propia {
+                    if let Err(e) =
+                        icaro_core::icono_instancia::guardar_portada(&store, &record.id, Some(png))
                     {
                         let _ = store.eliminar(&record.id);
                         return Err(e);
@@ -1077,6 +1089,14 @@ pub fn actualizar(app: &mut App, action: Accion) -> Task<Mensaje> {
             match result {
                 Ok(i) => {
                     let name = i.nombre.clone();
+                    // La portada propia ya está en memoria: no hace falta releerla.
+                    if let Some((_, handle)) = app.asistente.as_ref().and_then(|s| {
+                        (s.portada == pantallas::PORTADAS.len())
+                            .then_some(s.portada_propia.as_ref())
+                            .flatten()
+                    }) {
+                        app.iconos.portadas.insert(i.id.clone(), handle.clone());
+                    }
                     crate::lista_instancias()
                         .lock()
                         .unwrap()
