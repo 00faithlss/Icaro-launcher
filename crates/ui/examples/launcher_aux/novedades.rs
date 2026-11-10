@@ -25,6 +25,7 @@ const NOTAS: &[&str] = &[
     include_str!("../../../../docs/releases/0.3.3.json"),
     include_str!("../../../../docs/releases/0.3.4.json"),
     include_str!("../../../../docs/releases/0.4.0.json"),
+    include_str!("../../../../docs/releases/0.4.1.json"),
 ];
 const CHANGELOG: &str = include_str!("../../../../CHANGELOG.md");
 const ACTUAL: &str = env!("CARGO_PKG_VERSION");
