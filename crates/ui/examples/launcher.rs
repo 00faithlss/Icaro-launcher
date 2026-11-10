@@ -517,6 +517,25 @@ fn abrir_instancia(app: &mut App, i: usize) {
     arrancar(app);
 }
 
+/// Dónde está quien usa Ícaro: sección, pantalla, pestaña, ajuste y página.
+/// Un menú desplegable o un diálogo no cuentan como cambio de lugar.
+fn firma_navegacion(app: &App) -> String {
+    format!(
+        "{:?}|{:?}|{}|{:?}|{}|{}|{}|{:?}|{:?}|{}|{}",
+        app.seccion,
+        app.pantalla,
+        app.ajuste,
+        app.editor,
+        app.mod_pestana,
+        app.modpack_pestana,
+        app.mods_vista,
+        app.mod_pagina,
+        app.modpack_pagina,
+        app.novedades.abierta,
+        app.servicios.compartir.visible(),
+    )
+}
+
 fn actualizar(app: &mut App, m: Mensaje) -> Task<Mensaje> {
     let guardar = !matches!(&m, Mensaje::CierreCompartir(_) | Mensaje::Diagnostico | Mensaje::Cuadro(_) | Mensaje::Cursor(_)
         | Mensaje::Tamano(_) | Mensaje::AlternarBarra | Mensaje::Maximizada(_) | Mensaje::AvisoTic(_) | Mensaje::Nada | Mensaje::ImagenesActualizadas
@@ -527,7 +546,14 @@ fn actualizar(app: &mut App, m: Mensaje) -> Task<Mensaje> {
     let deshacer_captura = matches!(&m, Mensaje::Capt(capt::Accion::Deshacer));
     let habia = hay_dialogo(app);
     let compartiendo = app.servicios.compartir.visible();
+    let lugar = firma_navegacion(app);
+    let aviso_previo = app.avisos.ultimo().unwrap_or(0);
     let mut tarea = actualizar_estado(app, m);
+    // Al cambiar de sección, página, pestaña o ajuste, todo vuelve arriba: lo
+    // nuevo no debe abrirse a la altura en que quedó lo anterior.
+    if firma_navegacion(app) != lugar {
+        tarea = Task::batch([tarea, icaro_ui::scroll::volver_arriba()]);
+    }
     // Compartir ya no es un diálogo: sus fases viven en Servidores. Si un flujo
     // empieza desde otra sección (por ejemplo, Jugar con cambios por revisar),
     // se navega hasta allí; la consulta previa a Jugar no navega.
@@ -536,6 +562,11 @@ fn actualizar(app: &mut App, m: Mensaje) -> Task<Mensaje> {
     }
     app.servicios.servidores.avanzar();
     if let Some(aviso)=app.aviso.take(){app.avisos.agregar(aviso);}
+    // Lo que se le avisó a quien usa Ícaro queda también en logs/latest.log.
+    for e in app.avisos.entradas().filter(|e| e.id > aviso_previo) {
+        let gravedad = if e.aviso.error { icaro_core::diagnostico::Gravedad::Error } else { icaro_core::diagnostico::Gravedad::Info };
+        icaro_core::diagnostico::anotar(gravedad, "aviso", &e.aviso.texto);
+    }
     if deshacer_captura { app.aviso = None; }
     if let Some(aviso) = app.capt.aviso.take() {
         app.aviso = Some(icaro_ui::avisos::Aviso::nuevo(aviso.texto,
@@ -3276,7 +3307,8 @@ fn lineas_consola() -> Vec<Linea> {
 }
 
 fn pantalla_consola(app: &App) -> Element<'_, Mensaje> {
-    if !app.servicios.demo && (!juego_real::lineas(app).is_empty() || !app.servicios.juego.procesos.is_empty()) {return juego_real::consola(app);}
+    let icaro = juego_real::mostrando_icaro(app);
+    if icaro || (!app.servicios.demo && (!juego_real::lineas(app).is_empty() || !app.servicios.juego.procesos.is_empty())) {return juego_real::consola(app);}
     if app.capt.vacio || !app.servicios.demo {
         return capt::vacio_consola(app);
     }

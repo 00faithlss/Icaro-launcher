@@ -14,6 +14,8 @@ pub struct Inicio {
     pub fallo: Option<ErrorRegistro>,
 }
 pub fn iniciar() -> Inicio {
+    // Los registros legibles usan la hora local.
+    diagnostico::usar_desfase_local(crate::hora_local::desfase());
     if std::env::var("ICARO_DEMO").as_deref() == Ok("1")
         || std::env::var_os("ICARO_CAPTURA_DISENO").is_some()
     {

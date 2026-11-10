@@ -956,7 +956,9 @@ pub fn pestana_archivos<'a, M: Clone + 'a>(
     ]
     .height(Length::Fill);
 
-    pagina(
+    // El panel ocupa todo el alto de la ventana: el árbol y la vista previa
+    // se desplazan por dentro y la página no se mueve.
+    container(
         column![
             barra,
             container(
@@ -964,15 +966,19 @@ pub fn pestana_archivos<'a, M: Clone + 'a>(
                     container(crate::scroll::desplazable(nodos))
                         .padding(borde::MEDIO)
                         .width(Length::FillPortion(2))
-                        .height(420),
+                        .height(Length::Fill),
                     container(Space::new(1, Length::Fill)).style(estilo::bloque(p.border)),
-                    container(derecha).width(Length::FillPortion(3)).height(420),
+                    container(derecha).width(Length::FillPortion(3)).height(Length::Fill),
                 ]
-                .height(420)
+                .height(Length::Fill)
             )
+            .height(Length::Fill)
             .style(estilo::marco(p)),
         ]
         .spacing(espacio::S4)
-        .into(),
+        .height(Length::Fill),
     )
+    .padding(Padding::from([espacio::S6, espacio::S12]))
+    .height(Length::Fill)
+    .into()
 }

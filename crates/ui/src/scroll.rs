@@ -190,6 +190,86 @@ pub fn llevar_a<M: Clone + Send + 'static>(
     .map(move |()| avisar.clone())
 }
 
+thread_local! {
+    /// Un desplazable de dentro ya se quedó con la muesca de rueda en curso.
+    static RUEDA_TOMADA: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Lee o fija el desplazamiento del `scrollable` propio (el primero que
+/// aparece al recorrer el contenido); no entra en los anidados.
+struct Primero {
+    fijar: Option<Vector>,
+    leido: Option<Vector>,
+    hecho: bool,
+}
+
+impl Operation for Primero {
+    fn container(&mut self, _: Option<&iced::advanced::widget::Id>, _: Rectangle, hijos: &mut dyn FnMut(&mut dyn Operation)) {
+        if !self.hecho {
+            hijos(self);
+        }
+    }
+    fn scrollable(
+        &mut self,
+        estado: &mut dyn iced::advanced::widget::operation::Scrollable,
+        _: Option<&iced::advanced::widget::Id>,
+        _: Rectangle,
+        _: Rectangle,
+        traslado: Vector,
+    ) {
+        if self.hecho {
+            return;
+        }
+        self.hecho = true;
+        self.leido = Some(traslado);
+        if let Some(v) = self.fijar {
+            estado.scroll_to(scrollable::AbsoluteOffset { x: v.x, y: v.y });
+        }
+    }
+}
+
+fn desplazamiento<M>(contenido: &Element<'_, M>, arbol: &mut Tree, layout: Layout<'_>, renderer: &Renderer) -> Option<Vector> {
+    let mut op = Primero { fijar: None, leido: None, hecho: false };
+    contenido.as_widget().operate(arbol, layout, renderer, &mut op);
+    op.leido
+}
+
+fn fijar_desplazamiento<M>(contenido: &Element<'_, M>, arbol: &mut Tree, layout: Layout<'_>, renderer: &Renderer, a: Option<Vector>) {
+    let Some(v) = a else { return };
+    let mut op = Primero { fijar: Some(v), leido: None, hecho: false };
+    contenido.as_widget().operate(arbol, layout, renderer, &mut op);
+}
+
+/// Lleva arriba, sin animación, todos los desplazables de la ventana. La
+/// aplicación lo pide al cambiar de sección, página, pestaña o ajuste, para
+/// que lo nuevo no aparezca a media altura.
+pub fn volver_arriba<M: Send + 'static>() -> iced::Task<M> {
+    struct Arriba;
+    impl Operation for Arriba {
+        fn container(&mut self, _: Option<&iced::advanced::widget::Id>, _: Rectangle, hijos: &mut dyn FnMut(&mut dyn Operation)) {
+            hijos(self);
+        }
+        fn scrollable(
+            &mut self,
+            estado: &mut dyn iced::advanced::widget::operation::Scrollable,
+            _: Option<&iced::advanced::widget::Id>,
+            _: Rectangle,
+            _: Rectangle,
+            _: Vector,
+        ) {
+            estado.snap_to(scrollable::RelativeOffset::START);
+        }
+        fn custom(&mut self, estado: &mut dyn std::any::Any, _: Option<&iced::advanced::widget::Id>) {
+            if let Some(e) = estado.downcast_mut::<Estado>() {
+                e.objetivo = 0.0;
+                e.actual = 0.0;
+                e.ultimo = None;
+            }
+        }
+    }
+    iced::advanced::widget::operate(Arriba).discard()
+}
+
 #[derive(Debug, Default)]
 struct Estado {
     objetivo: f32,
@@ -284,13 +364,14 @@ impl<'a, M> Widget<M, Theme, Renderer> for Suave<'a, M> {
         let Some(hijo) = layout.children().next() else {
             return;
         };
+        // [`volver_arriba`] encuentra el estado de todos, tengan o no id.
+        operacion.custom(arbol.state.downcast_mut::<Estado>(), self.id.as_ref());
         if self.id.is_none() {
             self.contenido
                 .as_widget()
                 .operate(&mut arbol.children[0], hijo, renderer, operacion);
             return;
         }
-        operacion.custom(arbol.state.downcast_mut::<Estado>(), self.id.as_ref());
         let contenido = &self.contenido;
         let hijos = &mut arbol.children;
         operacion.container(self.id.as_ref(), layout.bounds(), &mut |op| {
@@ -325,9 +406,43 @@ impl<'a, M> Widget<M, Theme, Renderer> for Suave<'a, M> {
                     mouse::ScrollDelta::Lines { y, .. } => *y * PASO_MUESCA,
                     mouse::ScrollDelta::Pixels { y, .. } => *y,
                 };
+                // Primero el contenido: un desplazable anidado (el árbol de
+                // Archivos dentro de su página) se mueve antes que este. Si
+                // nadie lo toma, el `scrollable` interno se mueve solo y ese
+                // salto se deshace para animarlo aquí.
+                let antes = desplazamiento(&self.contenido, &mut arbol.children[0], hijo, renderer);
+                RUEDA_TOMADA.with(|t| t.set(false));
+                let _ = self.contenido.as_widget_mut().on_event(
+                    &mut arbol.children[0],
+                    evento.clone(),
+                    hijo,
+                    cursor,
+                    renderer,
+                    portapapeles,
+                    shell,
+                    visible,
+                );
+                let despues = desplazamiento(&self.contenido, &mut arbol.children[0], hijo, renderer);
+                if RUEDA_TOMADA.with(|t| t.get()) {
+                    // Un desplazable de dentro se movió.
+                    if despues != antes {
+                        fijar_desplazamiento(&self.contenido, &mut arbol.children[0], hijo, renderer, antes);
+                    }
+                    return event::Status::Captured;
+                }
+                if despues != antes {
+                    fijar_desplazamiento(&self.contenido, &mut arbol.children[0], hijo, renderer, antes);
+                }
                 let estado = arbol.state.downcast_mut::<Estado>();
                 estado.limitar(maximo);
+                // En el borde no se queda con la rueda: sigue el desplazable de
+                // fuera, para no dejar la página fija bajo un panel.
+                let sube = dy > 0.0;
+                if (sube && estado.objetivo <= 0.0) || (!sube && estado.objetivo >= maximo) {
+                    return event::Status::Ignored;
+                }
                 estado.objetivo = (estado.objetivo - dy).clamp(0.0, maximo);
+                RUEDA_TOMADA.with(|t| t.set(true));
                 shell.request_redraw(RedrawRequest::NextFrame);
                 return event::Status::Captured;
             }
