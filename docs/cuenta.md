@@ -1,5 +1,7 @@
 # Cuenta y estudio de skin
 
+[Documentación](README.md) · [Estado y pendientes](roadmap.md)
+
 Las [cuentas sin conexión](cuentas-sin-conexion.md) reemplazan Invitado con perfiles locales guardados. Su botón **Skin** abre el componente local `SkinSinConexion`, con PNG, modelo y vista previa. El estudio, historial y servicios descritos a continuación corresponden a Microsoft.
 
 **Gestionar cuenta y skin**, en el menú de la barra lateral, abre `PantallaCuenta` según el System Design actualizado: Apolo Belvedere, visor 3D de la skin con giro de a 90°, Abrir estudio y Descargar skin, y los bloques Perfil, Capa, Historial de skins y cierre de sesión. Perfil muestra el nombre, cuándo se puede cambiar, el tiempo jugado sumando todas las instancias y la instancia más jugada; por decisión del usuario no muestra UUID, correo ni el estado de la sesión. **Abrir estudio** usa `EstudioSkin`: visor 3D con vista 3D o plana, encuadre de cuerpo o busto, caminata, caras como segmentado, y un panel con modelo, capas visibles junto a la textura plana (marca la zona de cada capa), capa, biblioteca, Cargar .png, Descargar y Aplicar a la cuenta. Se conservan los componentes, medidas, fuentes, iconos y temas del System Design; los iconos de los botones van centrados en ambos ejes.

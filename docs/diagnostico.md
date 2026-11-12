@@ -1,5 +1,7 @@
 # Registros de diagnóstico
 
+[Documentación](README.md) · [Estado y pendientes](roadmap.md)
+
 El launcher normal inicia automáticamente un registro local. No requiere cuenta,
 servicio de pago ni envío de información. Demo y capturas de diseño no lo activan.
 Este bloque está en desarrollo en `v0.4.x`; no constituye una versión publicada.

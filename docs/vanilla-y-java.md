@@ -1,5 +1,7 @@
 # Vanilla y Java
 
+[Documentación](README.md) · [Estado y pendientes](roadmap.md)
+
 La creación de una instancia Vanilla prepara Minecraft y su Java automáticamente. Las instancias Vanilla anteriores se preparan al pulsar **Jugar**. La descarga no necesita una cuenta; para ejecutar el juego se requiere una sesión de Minecraft Java activa.
 
 Assets y bibliotecas se reutilizan entre instancias desde la raíz de datos. Al preparar una instalación antigua, el launcher verifica y traslada sus archivos reutilizables al almacén común y retira las copias redundantes verificadas después de guardar el perfil actualizado. Mundos, mods y ajustes del juego permanecen en la instancia.

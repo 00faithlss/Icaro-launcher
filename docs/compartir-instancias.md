@@ -1,9 +1,11 @@
 # Compartir instancias: implementación en desarrollo
 
-Actualizado el **08-11-2026**. El [registro de progreso](superpowers/progreso/2026-11-07-compartir-instancias.md)
+[Documentación](README.md) · [Estado y pendientes](roadmap.md)
+
+Navegación revisada el **11-11-2026**; evidencias técnicas del 08-11-2026. El [registro de progreso](superpowers/progreso/2026-11-07-compartir-instancias.md)
 enumera etapas, resultados de pruebas y el orden del trabajo siguiente.
 
-Trabajo de `v0.4.x`, sin publicación del launcher. Existen controladores experimentales
+Guía de `v0.4.x`, con cambios posteriores a la beta 0.4.2 publicada. Existen controladores experimentales
 del publicador y del invitado, con activación explícita desde Servidores. La aceptación e instalación,
 Sincronizar y la consulta previa a Jugar ya están conectados en modo experimental. El perfil
 real y las validaciones entre equipos todavía no completan el recorrido normal. Las escenas
@@ -25,10 +27,9 @@ launcher solo registra mensajes, la capa modal y los bloqueos de navegación.
 
 ## Controlador experimental del publicador
 
-En **Servidores**, pulsa **Activar Compartir experimental**. La elección se guarda
-en este equipo y aparecen **Compartir instancia** y **Aceptar invitación**. La
-primera abre la revisión de una instancia y, al publicarla, permite generar el
-código. La segunda abre la entrada del código en el equipo invitado.
+En **Servidores → Con amigos**, pulsa **Activar Compartir experimental**. La elección se guarda en este equipo. **Compartir una instancia** recorre Instancia, Qué compartes y Código; **Unirme con un código** abre la entrada de invitación en tres grupos de cuatro caracteres. Las listas **Compartes** y **Recibes** reúnen las publicaciones y los destinos vinculados. La beta 0.4.2 publicada conserva la navegación anterior de Servidores.
+
+**Salir de esta instancia**, con confirmación, quita el vínculo de una instancia recibida y la conserva como local con sus mundos, mods y ajustes. No borra los archivos ni equivale a revocar el acceso desde el anfitrión.
 
 `ICARO_COMPARTIR_DESARROLLO=1` permite activar el controlador desde la consola
 para pruebas. Usa el endpoint gratuito desplegado de invitaciones. La variable

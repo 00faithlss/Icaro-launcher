@@ -1,5 +1,7 @@
 # Preferencias compartidas de Minecraft
 
+[Documentación](README.md) · [Estado y pendientes](roadmap.md)
+
 Ícaro comparte automáticamente sensibilidad, controles y ajustes gráficos entre las instancias. Se aplican antes de iniciar Minecraft y se recogen del `options.txt` que el juego guarda al terminar. La primera sesión aporta las preferencias iniciales; los cambios posteriores pasan a las siguientes instancias que abras.
 
 El archivo global es `Icaro/opciones-minecraft.json`, separado de las opciones y de los ajustes de Java de cada instancia. No necesita una pantalla nueva ni cambios en los componentes del System Design.

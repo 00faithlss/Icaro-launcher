@@ -1,8 +1,10 @@
 # Invitaciones de Ícaro (HTTP v1)
 
+[Documentación](../../docs/README.md) · [Compartir instancias](../../docs/compartir-instancias.md)
+
 Estado del 08-11-2026: 24 pruebas locales del servicio pasadas y una prueba de
 interoperabilidad Rust/D1/iroh con aplicación y revocación. El [progreso general](../../docs/superpowers/progreso/2026-11-07-compartir-instancias.md)
-separa estas comprobaciones de la integración pendiente del launcher.
+conserva la evidencia de esa fecha; el [roadmap actual](../../docs/roadmap.md#1-compartir-instancias) distingue integración experimental y validación entre equipos.
 
 Worker y D1 desplegados el **08-11-2026**, con la sesión y autorización del usuario,
 en `https://icaro-invitaciones.maurigajardov.workers.dev`. Cloudflare confirmó el
@@ -14,25 +16,6 @@ y autorizaciones; los archivos viajan directamente entre launchers.
 La prueba remota con identidades efímeras pasó creación, resolución, aceptación,
 reconexión, revocación de código conservando acceso y revocación de acceso; terminó
 deteniendo la publicación de prueba. No acredita transferencia entre dos equipos.
-
-## Mantener el despliegue
-
-```powershell
-$env:WRANGLER_SEND_METRICS = 'false'
-npm.cmd test
-npm.cmd exec wrangler deploy -- --config wrangler.production.jsonc --dry-run
-npm.cmd exec wrangler d1 migrations apply -- DB --remote --config wrangler.production.jsonc
-npm.cmd exec wrangler deploy -- --config wrangler.production.jsonc
-```
-
-Los dos últimos comandos modifican el servicio remoto: ejecutarlos solo con
-autorización. No configurar `limits.cpu_ms`: Cloudflare lo rechaza en Free.
-Se mantienen los límites de la cuenta gratuita y el presupuesto del servicio de
-5.000 solicitudes/día y 60/minuto por IP. Este presupuesto propio limita el trabajo
-autenticado; no es una garantía frente a tráfico abusivo ni una reserva de cuota D1.
-La observabilidad remota está desactivada para no almacenar cuerpos/códigos.
-Consultar los [límites oficiales](https://developers.cloudflare.com/workers/platform/limits/)
-antes de cambiarlos. No subir tokens OAuth ni archivos de configuración personales.
 
 ## Desarrollo local
 
@@ -58,6 +41,27 @@ Empaquetado sin publicar:
 ```powershell
 npm.cmd exec wrangler deploy -- --dry-run --outdir ../../target/desarrollo-compartir/invitaciones/worker
 ```
+
+## Mantener el despliegue
+
+Desde `services/invitaciones`, con las dependencias instaladas mediante `npm.cmd ci`:
+
+```powershell
+$env:WRANGLER_SEND_METRICS = 'false'
+npm.cmd test
+npm.cmd exec wrangler deploy -- --config wrangler.production.jsonc --dry-run
+npm.cmd exec wrangler d1 migrations apply -- DB --remote --config wrangler.production.jsonc
+npm.cmd exec wrangler deploy -- --config wrangler.production.jsonc
+```
+
+Los dos últimos comandos modifican el servicio remoto: ejecutarlos solo con
+autorización. No configurar `limits.cpu_ms`: Cloudflare lo rechaza en Free.
+Se mantienen los límites de la cuenta gratuita y el presupuesto del servicio de
+5.000 solicitudes/día y 60/minuto por IP. Este presupuesto propio limita el trabajo
+autenticado; no es una garantía frente a tráfico abusivo ni una reserva de cuota D1.
+La observabilidad remota está desactivada para no almacenar cuerpos/códigos.
+Consultar los [límites oficiales](https://developers.cloudflare.com/workers/platform/limits/)
+antes de cambiarlos. No subir tokens OAuth ni archivos de configuración personales.
 
 ## Firma y tipos
 
@@ -114,7 +118,7 @@ registró esa publicación; conocer un código no permite administrarla.
 | `/v1/revoke-code` | `{code}` | `{ok:true}` |
 | `/v1/revoke-access` | `{publication,guest}` | `{ok:true}` |
 | `/v1/stop` | `{publication}` | `{ok:true}` |
-| `/v1/authorizations` | `{publication,after?:guest}` | `{publication,active,guests:[guest],next:guest|null}` |
+| `/v1/authorizations` | `{publication,after?:guest}` | `{publication,active,guests:[guest],next:guest\|null}` |
 
 `Resolved`:
 
@@ -213,25 +217,8 @@ Fuentes oficiales: [D1 pricing](https://developers.cloudflare.com/d1/platform/pr
 [D1 batch](https://developers.cloudflare.com/d1/worker-api/d1-database/),
 [Workers limits](https://developers.cloudflare.com/workers/platform/limits/).
 
-## Despliegue futuro: requiere autorización independiente
+## Credenciales y operación
 
-Estas instrucciones **no se han ejecutado**. En una cuenta explícitamente Free,
-sin actualizar el plan, un operador autorizado usaría:
+La autorización del protocolo usa firmas Ed25519 por equipo; las claves privadas quedan en el almacén seguro local del launcher. Los tokens de despliegue pertenecen al entorno del operador, nunca al repositorio. Para mantener el servicio existente, usar la configuración de producción indicada arriba; una instalación nueva requiere configurar explícitamente su base D1 y endpoint.
 
-```powershell
-npx wrangler login
-npx wrangler d1 create icaro-invitaciones
-# Sustituir database_name/database_id locales por los devueltos por Cloudflare.
-npx wrangler d1 migrations apply DB --remote
-# Configurar una ruta/dominio propio o workers_dev=true conscientemente.
-npx wrangler deploy
-```
-
-No hay secretos del servicio requeridos: la autorización depende de firmas
-Ed25519 por equipo. Las claves privadas pertenecen al almacén seguro local del
-launcher; nunca se envían al servicio. El token de despliegue, si se usa en vez
-de login, pertenece al entorno del operador, nunca al repositorio ni al chat.
-Antes de publicar hay que revisar retención, métricas reales y protecciones
-disponibles en el plan Free, y configurar explícitamente HTTPS en el cliente.
-Las pruebas locales no acreditan cuota real, disponibilidad, latencia, despliegue
-Cloudflare ni conexión entre dos equipos.
+La política de retención administrativa y las mediciones en redes reales siguen pendientes. Las cuotas y condiciones citadas corresponden a la consulta del 08-11-2026; verificarlas en las fuentes oficiales antes de cambiar el despliegue. Las pruebas locales no acreditan disponibilidad, cuota efectiva ni transferencia entre dos equipos.
