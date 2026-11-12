@@ -122,7 +122,7 @@ pub(crate) struct Editor {
     pub(crate) direccion: String,
     pub(crate) instancia: Option<Instancia>,
     pub(crate) error: Option<String>,
-    sincronizar: bool,
+    pub(crate) sincronizar: bool,
     /// Prueba de la dirección mientras se escribe (solo al agregar).
     pub(crate) prueba: Prueba,
 }
@@ -150,6 +150,8 @@ pub enum Accion {
     Nombre(String),
     Direccion(String),
     Instancia(Instancia),
+    /// «Sincronizar mods al iniciar»: en una fila abierta se guarda al tiro.
+    Sincronizar(bool),
     Guardar,
     Guardados(u64, Result<Vec<Servidor>, String>),
     Cerrar,
@@ -618,6 +620,14 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                 }
             }
         }
+        Accion::Sincronizar(v) => {
+            if let Some(e) = &mut app.servicios.servidores.editor {
+                e.sincronizar = v;
+                if e.id.is_some() {
+                    return actualizar(app, Accion::Guardar);
+                }
+            }
+        }
         Accion::Cerrar => {
             let s = &mut app.servicios.servidores;
             s.editor = None;
@@ -1056,6 +1066,17 @@ mod tests {
         assert!(matches!(prueba(&a), Prueba::NoResponde));
         assert_eq!(nombre_de("play.ejemplo.cl"), "Ejemplo");
         assert_eq!(nombre_de("10.0.0.5:25565"), "10.0.0.5:25565");
+    }
+    #[test]
+    fn el_interruptor_de_sincronizacion_se_guarda_en_la_fila_abierta() {
+        let mut a = app();
+        let _ = actualizar(&mut a, Accion::Editar(0));
+        assert!(!a.servicios.servidores.editor.as_ref().unwrap().sincronizar);
+        let _ = actualizar(&mut a, Accion::Sincronizar(true));
+        let s = &a.servicios.servidores;
+        // La fila sigue abierta y se pidió guardar el valor nuevo.
+        assert!(s.editor.as_ref().unwrap().sincronizar);
+        assert!(s.saving);
     }
     #[test]
     fn las_flechas_cambian_de_pestana() {

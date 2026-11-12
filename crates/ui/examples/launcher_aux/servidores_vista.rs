@@ -537,6 +537,34 @@ fn detalle_fila<'a>(app: &'a App, v: &'a servidores::Servidor, off: bool) -> Ele
     if let Some(error) = &e.error {
         col = col.push(sv::nota(p, Tono::Error, Icono::Alerta, sv::cuerpo_sm(error.clone(), p.text), None));
     }
+    // Antes de jugar, comprobar los mods contra el anfitrión (con instancia vinculada).
+    col = col.push(
+        row![
+            column![
+                text("Sincronizar mods al iniciar")
+                    .font(fuentes::CUERPO_NEGRITA)
+                    .size(texto::BODY_SM.0)
+                    .color(p.text),
+                sv::cuerpo_sm(
+                    if e.instancia.is_some() {
+                        "Al pulsar Jugar se comparan los mods de la instancia con los del servidor y se te muestran las diferencias."
+                    } else {
+                        "Elige primero con qué instancia entrar."
+                    },
+                    p.text_muted,
+                ),
+            ]
+            .spacing(2)
+            .width(Length::Fill),
+            if e.instancia.is_some() {
+                componentes::interruptor(p, e.sincronizar, m(Accion::Sincronizar(!e.sincronizar)))
+            } else {
+                Space::new(0, 0).into()
+            },
+        ]
+        .spacing(16)
+        .align_y(Alignment::Center),
+    );
     // Quitar confirma en el mismo lugar: la franja reemplaza los botones.
     let zona: Element<'a, Mensaje> = if s.confirmar.as_deref() == Some(v.id.as_str()) {
         sv::confirmar(
