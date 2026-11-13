@@ -1,0 +1,34 @@
+{
+  "version": "0.4.3",
+  "notas": [
+    {
+      "tipo": "nuevo",
+      "titulo": "Abre un servidor para tus amigos",
+      "accion": "servidores",
+      "al_bajar": "La sección Servidor deja de estar disponible; la carpeta del servidor y su mundo se conservan en tu carpeta de Ícaro.",
+      "texto": "Desde lo que compartes, abre un servidor de Minecraft en tu equipo con los mods de esa instancia. Tus amigos entran desde Ícaro sin abrir puertos ni estar en tu red. Por ahora, instancias Vanilla y Fabric."
+    },
+    {
+      "tipo": "nuevo",
+      "titulo": "Servidores renovado",
+      "accion": "servidores",
+      "texto": "Servidores, Con amigos y Red privada en pestañas, con todo en la misma página y sin ventanas encima."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "Puedes salir de una instancia recibida y quedártela como una instancia normal."
+    },
+    {
+      "tipo": "correccion",
+      "texto": "Al escribir el código de invitación a mano, el guion ya no desplaza el texto."
+    },
+    {
+      "tipo": "correccion",
+      "texto": "La descarga de lo compartido ya no parpadea."
+    },
+    {
+      "tipo": "correccion",
+      "texto": "Quien se une a lo que compartes aparece en segundos."
+    }
+  ]
+}
