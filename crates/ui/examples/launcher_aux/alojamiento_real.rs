@@ -10,6 +10,7 @@ use crate::{App, Mensaje};
 use icaro_core::{
     alojamiento::{self as al, proceso, propiedades::Propiedades},
     compartir::{self as c, identidad::Identidad, transporte::servidor::Tunel},
+    diagnostico::Gravedad,
     instancias::Instancia,
     java, minecraft,
 };
@@ -274,6 +275,19 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                 proceso::Evento::Listo => {
                     if s.fase == Fase::Iniciando {
                         s.fase = Fase::Abierto;
+                        let puerto = s.puerto.unwrap_or(0);
+                        let publicado = app.servicios.compartir.anfitrion.is_some();
+                        anotar(
+                            Gravedad::Info,
+                            &format!(
+                                "servidor abierto en 127.0.0.1:{puerto}; {}",
+                                if publicado {
+                                    "publicado para los invitados"
+                                } else {
+                                    "la publicación no está activa"
+                                }
+                            ),
+                        );
                     }
                     sincronizar_tunel(app);
                 }
@@ -500,6 +514,7 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             match r {
                 Ok(t) => {
                     let direccion = t.direccion();
+                    anotar(Gravedad::Info, &format!("iniciando el juego hacia {direccion}"));
                     app.servicios.servidores.alojar.tunel = Some((id.clone(), t));
                     let Some((index, _)) = instancia(app, &id) else {
                         return Task::none();
@@ -507,6 +522,7 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                     crate::juego_real::iniciar_con_servidor(app, index, true, Some(direccion))
                 }
                 Err(e) => {
+                    anotar(Gravedad::Aviso, &format!("no se pudo entrar al servidor: {e}"));
                     app.servicios.servidores.alojar.remotos.insert(id, Remoto::Cerrado);
                     app.avisar_error(format!("No se pudo entrar al servidor: {e}"));
                     Task::none()
@@ -696,22 +712,41 @@ fn entrar(app: &mut App, id: String) -> Task<Mensaje> {
         app.servicios.compartir.anfitrion.clone(),
     );
     let id_r = id.clone();
+    anotar(Gravedad::Info, &format!("entrar al servidor de la instancia {id}"));
     Task::perform(
         async move {
-            let conexion = tokio::time::timeout(std::time::Duration::from_secs(40), conexion(raiz, store, id_r, host))
+            let conectar = {
+                let (raiz, store, id, host) = (raiz.clone(), store.clone(), id_r.clone(), host.clone());
+                move || conexion(raiz.clone(), store.clone(), id.clone(), host.clone())
+            };
+            let primera = tokio::time::timeout(std::time::Duration::from_secs(40), conectar())
                 .await
                 .map_err(|_| "Sin respuesta del anfitrión.".to_string())??;
-            if !conexion.abierto().await.map_err(icaro_core::diagnostico_contexto::texto)? {
+            if !primera.abierto().await.map_err(icaro_core::diagnostico_contexto::texto)? {
                 return Err("El servidor de tu amigo está cerrado.".into());
             }
-            conexion
-                .tunel()
+            // Si la conexión se pierde antes de que el juego entre (por ejemplo,
+            // por la comprobación previa a Jugar), el túnel vuelve a conectar.
+            let reconectar: c::transporte::servidor::Reconectar = Arc::new(move || {
+                let conectar = conectar.clone();
+                Box::pin(async move {
+                    conectar().await.map_err(|e| {
+                        anotar(Gravedad::Aviso, &format!("no se pudo volver a conectar con el anfitrión: {e}"));
+                        c::Error::Datos("reconexión")
+                    })
+                })
+            });
+            Tunel::abrir(primera, Some(reconectar))
                 .await
                 .map(Arc::new)
                 .map_err(icaro_core::diagnostico_contexto::texto)
         },
         move |r| m(Accion::Tunel(id.clone(), r)),
     )
+}
+
+fn anotar(gravedad: Gravedad, texto: &str) {
+    icaro_core::diagnostico::anotar(gravedad, "servidor", texto);
 }
 
 /// Cerrar Ícaro con el servidor abierto: primero `stop` para guardar el mundo.

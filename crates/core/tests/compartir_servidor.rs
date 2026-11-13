@@ -143,3 +143,104 @@ async fn el_invitado_entra_al_servidor_por_el_tunel_y_un_extrano_no() {
     nodo.parar().await;
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// El anfitrión reinicia su nodo con el túnel del invitado ya abierto (como
+/// cuando otra conexión de la misma identidad deja inservible la primera): el
+/// juego que llega después entra igual porque el túnel vuelve a conectar.
+#[tokio::test]
+async fn el_tunel_se_reconecta_si_la_conexion_se_pierde_antes_de_que_entre_el_juego() {
+    let host = identidad(None);
+    let invitado = identidad(Some(21));
+    let publicacion = "ef".repeat(16);
+    let root = std::env::temp_dir().join(format!("icaro-tunel-r-{}", host.clave_publica()));
+    std::fs::create_dir_all(root.join("contenido")).unwrap();
+    let m: Manifiesto = serde_json::from_value(serde_json::json!({
+        "esquema":"icaro-compartir/1","origen":{"anfitrion":host.clave_publica(),"publicacion":publicacion},
+        "revision":1,"perfil":{"minecraft":"1.21.1","loader":"vanilla","loader_version":null},
+        "archivos":[],"packs":[]
+    }))
+    .unwrap();
+    std::fs::write(root.join("vigente.json"), serde_json::to_vec(&m).unwrap()).unwrap();
+    let ctx = ContextoPublicacion {
+        juego: root.join("juego"),
+        almacen: root.clone(),
+        origen: m.origen.clone(),
+        perfil: m.perfil.clone(),
+        limites: Limites::default(),
+    };
+    let revision = Arc::new(RwLock::new(revisiones::vigente(&ctx).unwrap().unwrap()));
+    let acl = Arc::new(Accesos::abrir(root.join("accesos.json")).unwrap());
+    acl.autorizar(&invitado.clave_publica()).unwrap();
+    let iniciar = || {
+        NodoAnfitrion::iniciar(
+            host.clone(),
+            revision.clone(),
+            acl.clone(),
+            Arc::new(Permiso),
+            Modo::Local,
+            Limites::default(),
+        )
+    };
+    let mc = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let puerto_mc = mc.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        while let Ok((mut s, _)) = mc.accept().await {
+            tokio::spawn(async move {
+                let mut buf = [0u8; 1024];
+                while let Ok(n) = s.read(&mut buf).await {
+                    if n == 0 || s.write_all(&buf[..n]).await.is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+    });
+    servidor::abrir(&publicacion, puerto_mc);
+
+    let primero = iniciar().await.unwrap();
+    let direccion = Arc::new(Mutex::new(primero.direccion()));
+    let conexion =
+        transporte::conectar_servidor(&invitado, primero.direccion(), &m.origen, Modo::Local)
+            .await
+            .unwrap();
+    assert!(conexion.abierto().await.unwrap());
+    let reconectar: servidor::Reconectar = {
+        let (invitado, origen, direccion) = (invitado.clone(), m.origen.clone(), direccion.clone());
+        Arc::new(move || {
+            let (invitado, origen) = (invitado.clone(), origen.clone());
+            let direccion = direccion.lock().unwrap().clone();
+            Box::pin(async move {
+                transporte::conectar_servidor(&invitado, direccion, &origen, Modo::Local).await
+            })
+        })
+    };
+    let tunel = servidor::Tunel::abrir(conexion, Some(reconectar))
+        .await
+        .unwrap();
+
+    // La conexión del túnel muere y el anfitrión vuelve con otra dirección.
+    primero.parar().await;
+    drop(primero);
+    let segundo = iniciar().await.unwrap();
+    *direccion.lock().unwrap() = segundo.direccion();
+
+    let mut juego = tokio::net::TcpStream::connect(tunel.direccion())
+        .await
+        .unwrap();
+    juego.write_all(b"de vuelta").await.unwrap();
+    let mut eco = [0u8; 9];
+    tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        juego.read_exact(&mut eco),
+    )
+    .await
+    .expect("el túnel debe reconectar a tiempo")
+    .unwrap();
+    assert_eq!(&eco, b"de vuelta");
+    assert!(tunel.activo());
+
+    servidor::cerrar(&publicacion);
+    drop(tunel);
+    segundo.parar().await;
+    let _ = std::fs::remove_dir_all(root);
+}

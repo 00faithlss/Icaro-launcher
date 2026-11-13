@@ -7,9 +7,14 @@
 //! puerto en `127.0.0.1` al que se conecta su juego: iroh elige conexión
 //! directa o relé, así que no hace falta abrir puertos ni estar en la misma red.
 use crate::compartir::{Error, Origen};
-use iroh::{endpoint::Connection, Endpoint, EndpointAddr};
+use iroh::{
+    endpoint::{Connection, RecvStream, SendStream},
+    Endpoint, EndpointAddr,
+};
 use std::{
     collections::BTreeMap,
+    future::Future,
+    pin::Pin,
     sync::{Arc, Mutex},
 };
 use tokio::{
@@ -42,8 +47,14 @@ pub fn puerto(publicacion: &str) -> Option<u16> {
     PUERTOS.lock().ok()?.get(publicacion).copied()
 }
 
+fn anotar(gravedad: crate::diagnostico::Gravedad, texto: &str) {
+    crate::diagnostico::anotar(gravedad, "servidor", texto);
+}
+use crate::diagnostico::Gravedad::{Aviso, Info};
+
 /// Anfitrión: atiende una conexión ya autorizada hasta que se cierre.
 pub(super) async fn servir(conn: Connection, publicacion: String) {
+    anotar(Info, "un invitado se conectó al túnel del servidor");
     let cupo = Arc::new(Semaphore::new(FLUJOS_POR_INVITADO));
     let mut tareas = tokio::task::JoinSet::new();
     while let Ok((mut send, mut recv)) = conn.accept_bi().await {
@@ -74,14 +85,25 @@ pub(super) async fn servir(conn: Connection, publicacion: String) {
                         if send.write_all(&[1]).await.is_err() {
                             return;
                         }
+                        anotar(Info, &format!("juego del invitado unido a 127.0.0.1:{p}"));
                         let mut flujo = tokio::io::join(recv, send);
-                        let _ = tokio::io::copy_bidirectional(&mut flujo, &mut tcp).await;
+                        let fin = match tokio::io::copy_bidirectional(&mut flujo, &mut tcp).await {
+                            Ok((a, b)) => format!("juego del invitado desconectado ({a} B al servidor, {b} B al invitado)"),
+                            Err(e) => format!("juego del invitado desconectado: {e}"),
+                        };
+                        anotar(Info, &fin);
                     }
-                    Err(_) => {
+                    Err(e) => {
+                        anotar(Aviso, &format!("no se pudo abrir 127.0.0.1:{p} para el invitado: {e}"));
                         let _ = send.write_all(&[0]).await;
                         let _ = send.finish();
                     }
                 },
+                (CONECTAR, None) => {
+                    anotar(Aviso, "un invitado intentó entrar con el servidor cerrado");
+                    let _ = send.write_all(&[0]).await;
+                    let _ = send.finish();
+                }
                 _ => {
                     let _ = send.write_all(&[0]).await;
                     let _ = send.finish();
@@ -153,41 +175,9 @@ impl Conexion {
     }
 
     /// Abre `127.0.0.1:<puerto>` para el juego; vive hasta soltar el túnel.
+    /// Sin forma de reconectar: si la conexión se pierde, el túnel termina.
     pub async fn tunel(self) -> Result<Tunel, Error> {
-        let escucha = TcpListener::bind("127.0.0.1:0")
-            .await
-            .map_err(|_| Error::Datos("puerto local"))?;
-        let puerto = escucha
-            .local_addr()
-            .map_err(|_| Error::Datos("puerto local"))?
-            .port();
-        let cancel = CancellationToken::new();
-        let conn = self.conn.clone();
-        let fin = cancel.clone();
-        tokio::spawn(async move {
-            let mut tareas = tokio::task::JoinSet::new();
-            loop {
-                tokio::select! {
-                    _ = fin.cancelled() => break,
-                    _ = conn.closed() => break,
-                    Some(_) = tareas.join_next(), if !tareas.is_empty() => {},
-                    aceptada = escucha.accept() => {
-                        let Ok((tcp, _)) = aceptada else { continue };
-                        let conn = conn.clone();
-                        tareas.spawn(async move {
-                            let _ = reenviar(conn, tcp).await;
-                        });
-                    }
-                }
-            }
-            tareas.abort_all();
-        });
-        Ok(Tunel {
-            puerto,
-            cancel,
-            conn: self.conn.clone(),
-            _conexion: self,
-        })
+        Tunel::abrir(self, None).await
     }
 }
 
@@ -200,8 +190,41 @@ impl Drop for Conexion {
     }
 }
 
-async fn reenviar(conn: Connection, mut tcp: TcpStream) -> Result<(), Error> {
-    let _ = tcp.set_nodelay(true);
+/// Vuelve a pedir el encuentro al servicio y a conectar con el anfitrión.
+pub type Reconectar =
+    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Result<Conexion, Error>> + Send>> + Send + Sync>;
+
+/// Conexión vigente del túnel. Entre abrir el túnel y que el juego termine de
+/// cargar pasa tiempo, y otra conexión de esta misma identidad (por ejemplo,
+/// la comprobación previa a Jugar) puede dejar inservible la primera: el túnel
+/// se reconecta cuando el juego llega y la conexión ya no sirve.
+struct Vigente {
+    actual: tokio::sync::Mutex<Conexion>,
+    reconectar: Option<Reconectar>,
+}
+
+impl Vigente {
+    async fn conn(&self, forzar: bool) -> Result<Connection, Error> {
+        let mut actual = self.actual.lock().await;
+        if forzar || actual.conn.close_reason().is_some() {
+            let Some(reconectar) = &self.reconectar else {
+                return Err(Error::Datos("conexión"));
+            };
+            anotar(Info, "reconectando el túnel con el anfitrión");
+            match reconectar().await {
+                Ok(nueva) => *actual = nueva,
+                Err(e) => {
+                    anotar(Aviso, &format!("no se pudo reconectar el túnel: {e}"));
+                    return Err(e);
+                }
+            }
+        }
+        Ok(actual.conn.clone())
+    }
+}
+
+/// Pide un flujo hacia el servidor. `Ok(None)`: el anfitrión lo tiene cerrado.
+async fn pedir_flujo(conn: &Connection) -> Result<Option<(SendStream, RecvStream)>, Error> {
     let (mut send, mut recv) = conn.open_bi().await.map_err(|_| Error::Datos("conexión"))?;
     send.write_all(&[CONECTAR])
         .await
@@ -210,23 +233,44 @@ async fn reenviar(conn: Connection, mut tcp: TcpStream) -> Result<(), Error> {
     tokio::time::timeout(std::time::Duration::from_secs(15), recv.read_exact(&mut r))
         .await
         .map_err(|_| Error::Datos("tiempo de conexión"))?
-        .map_err(|_| Error::Datos("servidor cerrado"))?;
-    if r[0] != 1 {
-        return Err(Error::Datos("servidor cerrado"));
+        .map_err(|_| Error::Datos("conexión"))?;
+    Ok((r[0] == 1).then_some((send, recv)))
+}
+
+async fn reenviar(vigente: Arc<Vigente>, mut tcp: TcpStream) {
+    let _ = tcp.set_nodelay(true);
+    anotar(Info, "el juego se conectó al túnel");
+    let mut flujo = match vigente.conn(false).await {
+        Ok(conn) => pedir_flujo(&conn).await,
+        Err(e) => Err(e),
+    };
+    if flujo.is_err() && vigente.reconectar.is_some() {
+        flujo = match vigente.conn(true).await {
+            Ok(conn) => pedir_flujo(&conn).await,
+            Err(e) => Err(e),
+        };
     }
-    let mut flujo = tokio::io::join(recv, send);
-    tokio::io::copy_bidirectional(&mut flujo, &mut tcp)
-        .await
-        .map(|_| ())
-        .map_err(|_| Error::Datos("conexión"))
+    match flujo {
+        Ok(Some((send, recv))) => {
+            let mut puente = tokio::io::join(recv, send);
+            let fin = match tokio::io::copy_bidirectional(&mut puente, &mut tcp).await {
+                Ok((a, b)) => {
+                    format!("el juego salió del servidor ({a} B enviados, {b} B recibidos)")
+                }
+                Err(e) => format!("el juego salió del servidor: {e}"),
+            };
+            anotar(Info, &fin);
+        }
+        Ok(None) => anotar(Aviso, "el anfitrión tiene el servidor cerrado"),
+        Err(e) => anotar(Aviso, &format!("el túnel no pudo llegar al anfitrión: {e}")),
+    }
 }
 
 /// Puerto local del invitado hacia el servidor del anfitrión.
 pub struct Tunel {
     puerto: u16,
     cancel: CancellationToken,
-    conn: Connection,
-    _conexion: Conexion,
+    vigente: Arc<Vigente>,
 }
 impl std::fmt::Debug for Tunel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -236,15 +280,59 @@ impl std::fmt::Debug for Tunel {
     }
 }
 impl Tunel {
+    /// Abre el puerto local; con `reconectar`, se recupera de una conexión
+    /// perdida en vez de terminar.
+    pub async fn abrir(inicial: Conexion, reconectar: Option<Reconectar>) -> Result<Self, Error> {
+        let escucha = TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|_| Error::Datos("puerto local"))?;
+        let puerto = escucha
+            .local_addr()
+            .map_err(|_| Error::Datos("puerto local"))?
+            .port();
+        let vigente = Arc::new(Vigente {
+            actual: tokio::sync::Mutex::new(inicial),
+            reconectar,
+        });
+        let cancel = CancellationToken::new();
+        let (fin, v) = (cancel.clone(), vigente.clone());
+        anotar(Info, &format!("túnel abierto en 127.0.0.1:{puerto}"));
+        tokio::spawn(async move {
+            let mut tareas = tokio::task::JoinSet::new();
+            loop {
+                tokio::select! {
+                    _ = fin.cancelled() => break,
+                    Some(_) = tareas.join_next(), if !tareas.is_empty() => {},
+                    aceptada = escucha.accept() => {
+                        let Ok((tcp, _)) = aceptada else { continue };
+                        tareas.spawn(reenviar(v.clone(), tcp));
+                    }
+                }
+            }
+            tareas.abort_all();
+            anotar(Info, "túnel cerrado");
+        });
+        Ok(Tunel {
+            puerto,
+            cancel,
+            vigente,
+        })
+    }
     pub fn puerto(&self) -> u16 {
         self.puerto
     }
     pub fn direccion(&self) -> String {
         format!("127.0.0.1:{}", self.puerto)
     }
-    /// Falso cuando el anfitrión cerró o se perdió la conexión.
+    /// Falso cuando se soltó o, sin forma de reconectar, se perdió la conexión.
     pub fn activo(&self) -> bool {
-        !self.cancel.is_cancelled() && self.conn.close_reason().is_none()
+        !self.cancel.is_cancelled()
+            && (self.vigente.reconectar.is_some()
+                || self
+                    .vigente
+                    .actual
+                    .try_lock()
+                    .map_or(true, |a| a.conn.close_reason().is_none()))
     }
 }
 impl Drop for Tunel {

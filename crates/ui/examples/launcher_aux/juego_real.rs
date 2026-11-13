@@ -707,6 +707,7 @@ fn lanzar(app: &mut App, id: String, preparada: Preparacion) -> Task<Mensaje> {
     let (mut config, _) = config(app, &id);
     config.cuentas_locales=Some(crate::estado::directorio(false));
     config.servidor=app.servicios.juego.servidores.remove(&id);
+    if let Some(destino)=&config.servidor { icaro_core::diagnostico::anotar(icaro_core::diagnostico::Gravedad::Info,"juego",&format!("iniciando Minecraft con el servidor {destino}")); }
     let game = match app.servicios.instancias.almacen.juego(&id) {
         Ok(p) => p,
         Err(e) => {

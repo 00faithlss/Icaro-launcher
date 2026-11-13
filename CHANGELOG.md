@@ -1,5 +1,9 @@
 # Changelog
 
+## [Sin publicar]
+
+- Entrar al servidor de un amigo: si la conexión con el anfitrión se pierde mientras Minecraft carga (por ejemplo, durante la comprobación previa a Jugar), el túnel vuelve a conectar cuando el juego llega, en vez de dejarlo sin servidor. El registro de Ícaro anota cada paso: apertura del túnel, dirección con que se inicia Minecraft, reconexiones, entrada y salida del juego en ambos equipos y el motivo de cualquier fallo.
+
 ## [0.4.3] - 2026-11-13
 
 - Servidores sigue PantallaServidores del System Design: banda de 150 px con «Fase experimental» y tres pestañas (Servidores, Con amigos y Red privada) con una línea que se desliza bajo la activa, contenido que entra con fundido y las flechas izquierda y derecha para cambiar de pestaña. Nada abre un diálogo encima.
