@@ -9,7 +9,7 @@ Internet.
 Desde **Servidores › Con amigos**, el detalle de una instancia que compartes tiene la sección
 **Servidor**. **Abrir servidor** ejecuta un servidor de Minecraft en este equipo con los mods de esa
 instancia. Las personas que ya recibieron la instancia lo ven abierto en su detalle y entran con
-**Entrar al servidor**. Funciona como Essential: no hace falta abrir puertos, configurar el router
+**Entrar al servidor**. No hace falta abrir puertos, configurar el router
 ni estar en la misma red.
 
 - Solo **Vanilla** y **Fabric** por ahora (`alojamiento::loader_alojable`). Forge, NeoForge y Quilt

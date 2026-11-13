@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Alojar una instancia compartida como servidor dedicado (al estilo de
-//! Essential) y entrar al servidor de un amigo por el túnel de Compartir.
+//! Alojar una instancia compartida como servidor dedicado
+//! y entrar al servidor de un amigo por el túnel de Compartir.
 //!
 //! El anfitrión abre el servidor desde el detalle de lo que comparte; Ícaro lo
 //! prepara (`icaro_core::alojamiento`), lo ejecuta y lo publica solo a sus

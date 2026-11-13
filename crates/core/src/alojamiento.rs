@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Alojar una instancia como servidor dedicado en este equipo, al estilo de
-//! Essential: Ícaro prepara la carpeta del servidor con los mismos mods de la
+//! Alojar una instancia como servidor dedicado en este equipo:
+//! Ícaro prepara la carpeta del servidor con los mismos mods de la
 //! instancia, lo ejecuta con Java y lo publica solo por el túnel cifrado de
 //! Compartir (`compartir::transporte::servidor`) a los invitados autorizados.
 //!
