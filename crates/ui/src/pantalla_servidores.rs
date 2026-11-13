@@ -392,10 +392,9 @@ impl<M> Widget<M, Theme, Renderer> for Alterno<'_, M> {
     }
     fn layout(&self, arbol: &mut Tree, renderer: &Renderer, limites: &Limits) -> Node {
         let base = self.normal.as_widget().layout(&mut arbol.children[0], renderer, limites);
-        let encima = self
-            .sobre
-            .as_widget()
-            .layout(&mut arbol.children[1], renderer, &Limits::new(base.size(), base.size()));
+        // Mismos límites que `normal`: acotar el ancho al medido hace que el
+        // texto se parta por redondeo («Conectad / a»).
+        let encima = self.sobre.as_widget().layout(&mut arbol.children[1], renderer, limites);
         Node::with_children(base.size(), vec![base, encima])
     }
     fn draw(
