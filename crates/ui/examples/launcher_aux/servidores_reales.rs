@@ -48,6 +48,8 @@ pub struct Estado {
     pub(crate) red_ocupada: bool,
     /// Con amigos: lo elegido y las confirmaciones.
     pub(crate) amigos: crate::con_amigos::Estado,
+    /// Servidor alojado en este equipo y túnel hacia el de un amigo.
+    pub(crate) alojar: crate::alojamiento_real::Estado,
     pub arrastre: Option<icaro_ui::servidores::Arrastre>,
     toma_y: f32,
     cerrando: Option<std::time::Instant>,
@@ -901,6 +903,7 @@ pub fn preparar_diseno(app: &mut App, scene: &str) {
     s.registros = vec![a, b, c];
     if scene.contains("-amigos") {
         crate::con_amigos::preparar_diseno(app, scene);
+        crate::alojamiento_real::preparar_diseno(app, scene);
     }
 }
 

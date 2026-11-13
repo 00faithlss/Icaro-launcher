@@ -173,6 +173,10 @@ pub fn iniciar(piedra: bool) -> (App, Task<Mensaje>) {
         if scene == "mods-menu-maximizar" {
             Task::perform(async {tokio::time::sleep(std::time::Duration::from_millis(200)).await;}, |_| ())
                 .then(|_| iced::window::get_latest().and_then(|id| iced::window::resize(id, Size::new(1920., 1000.))))
+        } else if scene.contains("-servidor") {
+            // Ventana alta: la sección Servidor y los ajustes caben enteros.
+            Task::perform(async {tokio::time::sleep(std::time::Duration::from_millis(200)).await;}, |_| ())
+                .then(|_| iced::window::get_latest().and_then(|id| iced::window::resize(id, Size::new(1280., 1640.))))
         } else { Task::none() },
         Task::perform(
             async {

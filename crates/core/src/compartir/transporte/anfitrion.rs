@@ -186,6 +186,14 @@ impl NodoAnfitrion {
         )
         .await
     }
+    /// Reutiliza el endpoint para entrar al servidor de otra publicación.
+    pub async fn conectar_servidor(
+        &self,
+        direccion: EndpointAddr,
+        origen: &crate::compartir::Origen,
+    ) -> Result<super::servidor::Conexion, Error> {
+        super::servidor::Conexion::nueva(self.endpoint.clone(), false, direccion, origen).await
+    }
     pub async fn revocar(&self, invitado: &str) -> Result<(), Error> {
         let acl = self.estado.accesos.clone();
         let key = invitado.to_owned();
@@ -282,6 +290,24 @@ async fn conexion(incoming: iroh::endpoint::Incoming, estado: Arc<Estado>) -> Re
     // Segunda comprobación cubre revocación concurrente con el registro de la conexión.
     if !estado.accesos.permitir(&key) {
         conn.close(1u32.into(), b"revocado");
+        return Ok(());
+    }
+    if conn.alpn() == super::servidor::ALPN_SERVIDOR {
+        let publicacion = estado
+            .revision
+            .read()
+            .map_err(|_| Error::Disco)?
+            .manifiesto
+            .origen
+            .publicacion
+            .clone();
+        super::servidor::servir(conn.clone(), publicacion).await;
+        conn.close(0u32.into(), b"fin");
+        if let Ok(mut conexiones) = estado.conexiones.lock() {
+            if let Some(lista) = conexiones.get_mut(&key) {
+                lista.retain(|c| c.stable_id() != conn.stable_id());
+            }
+        }
         return Ok(());
     }
     let mut tareas = tokio::task::JoinSet::new();

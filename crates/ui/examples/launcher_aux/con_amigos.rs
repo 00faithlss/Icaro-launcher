@@ -121,21 +121,29 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
         Accion::Compartida(id) => {
             estado.recibida = None;
             estado.confirmar = None;
+            let aj = &mut app.servicios.servidores.alojar;
+            if aj.editor.as_ref().is_some_and(|e| e.instancia != id) {
+                aj.editor = None;
+            }
             despachar(app, v::Accion::VerPublicacionDe(id))
         }
         Accion::Recibida(id) => {
-            estado.recibida = Some(id);
+            estado.recibida = Some(id.clone());
             estado.confirmar = None;
+            app.servicios.servidores.alojar.editor = None;
+            // Se pregunta al anfitrión si tiene su servidor abierto.
+            let servidor = crate::alojamiento_real::actualizar(app, crate::alojamiento_real::Accion::Consultar(id));
             let s = &mut app.servicios.compartir;
             // Una publicación abierta se cierra; un flujo pide cerrar como siempre.
-            if s.etapa == Etapa::Panel {
+            let t = if s.etapa == Etapa::Panel {
                 s.cerrar();
                 Task::none()
             } else if s.etapa != Etapa::Cerrada {
                 despachar(app, v::Accion::Cerrar)
             } else {
                 Task::none()
-            }
+            };
+            Task::batch([servidor, t])
         }
         Accion::Compartir => {
             estado.confirmar = None;
@@ -492,6 +500,13 @@ pub fn vista(app: &App) -> Element<'_, Mensaje> {
             c.into()
         }
         Detalle::Publicacion if s.etapa == Etapa::Cierre => publicacion_detalle(app, &modelo),
+        Detalle::Publicacion
+            if app.servicios.servidores.alojar.editor.as_ref().map(|e| &e.instancia) == publicacion.as_ref() =>
+        {
+            let e = app.servicios.servidores.alojar.editor.as_ref().expect("editor abierto");
+            let nombre = s.panel.as_ref().map_or("", |p| p.instancia.nombre.as_str());
+            icaro_ui::scroll::desplazable(crate::alojamiento_vista::ajustes(app, e, nombre))
+        }
         Detalle::Publicacion => icaro_ui::scroll::desplazable(publicacion_detalle(app, &modelo)),
         Detalle::Recibida(r) => icaro_ui::scroll::desplazable(recibida_detalle(app, r)),
     };
@@ -736,6 +751,8 @@ fn publicacion_detalle<'a>(app: &'a App, modelo: &v::InstanciasCompartidas) -> E
         ]
         .spacing(12),
     );
+    // Servidor alojado en este equipo.
+    c = c.push(crate::alojamiento_vista::seccion_anfitrion(app, &id, en_pausa));
     // Pausar o Reanudar y Dejar de compartir.
     let zona: Element<'a, Mensaje> = if a.confirmar == Some(Confirmacion::Dejar) {
         sv::confirmar(
@@ -810,6 +827,7 @@ fn recibida_detalle<'a>(app: &'a App, r: &v::InstanciaQueRecibes) -> Element<'a,
             bloque(column![sv::rotulo(p, "Tu copia"), sv::cuerpo_sm(copia, p.text)].spacing(12)),
         ]
         .spacing(24),
+        crate::alojamiento_vista::seccion_invitado(app, r),
     ]
     .spacing(22);
     if nueva {
@@ -905,7 +923,7 @@ pub fn preparar_diseno(app: &mut App, scene: &str) {
         },
         ..Default::default()
     });
-    if scene.ends_with("-recibida") {
+    if scene.ends_with("-recibida") || scene.ends_with("-recibida-servidor") {
         app.servicios.servidores.amigos.recibida = Some("create".into());
         return;
     }

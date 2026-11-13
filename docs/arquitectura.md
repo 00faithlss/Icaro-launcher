@@ -29,6 +29,7 @@ Los controladores de `launcher_aux/` traducen mensajes a tareas y resultados a m
 | Catálogo y paquetes | `modrinth`, `mods` | [Peticiones](modrinth-peticiones.md), [importación](importar-modpacks.md) |
 | Servidor dedicado | `servidores`, `zerotier`, `mods/sincronizacion` | [Servidores](servidores.md), [host HTTP](sincronizacion-servidores.md) |
 | Compartir entre launchers | `compartir` | [Compartir instancias](compartir-instancias.md) |
+| Servidor alojado para amigos | `alojamiento`, `minecraft::servidor`, `compartir::transporte::servidor` | [Alojar un servidor](alojar-servidor.md) |
 | Distribución y soporte | `actualizacion`, módulos de diagnóstico | [Actualizador](actualizaciones-launcher.md), [registros](diagnostico.md) |
 
 ## Identidad y credenciales

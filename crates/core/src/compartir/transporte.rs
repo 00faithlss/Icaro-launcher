@@ -2,10 +2,23 @@
 //! Transporte autenticado iroh. No abre ningún servidor HTTP.
 mod anfitrion;
 mod cliente;
+pub mod servidor;
 use super::{identidad::Identidad, protocolo::ALPN, Error};
 pub use anfitrion::{NodoAnfitrion, TransferenciaActiva};
 pub use cliente::{Cliente, RevisionDescarga};
-use iroh::{endpoint::presets, Endpoint, RelayMode};
+
+/// Invitado sin publicación propia: conexión al servidor del anfitrión con un
+/// endpoint nuevo de su identidad.
+pub async fn conectar_servidor(
+    identidad: &Identidad,
+    direccion: EndpointAddr,
+    origen: &super::Origen,
+    modo: Modo,
+) -> Result<servidor::Conexion, Error> {
+    let endpoint = endpoint(identidad, modo).await?;
+    servidor::Conexion::nueva(endpoint, true, direccion, origen).await
+}
+use iroh::{endpoint::presets, Endpoint, EndpointAddr, RelayMode};
 
 #[derive(Clone, Copy, Debug)]
 pub enum Modo {
@@ -22,7 +35,7 @@ async fn endpoint(identidad: &Identidad, modo: Modo) -> Result<Endpoint, Error> 
     };
     builder
         .secret_key(identidad.clave_endpoint())
-        .alpns(vec![ALPN.to_vec()])
+        .alpns(vec![ALPN.to_vec(), servidor::ALPN_SERVIDOR.to_vec()])
         .bind()
         .await
         .map_err(|_| Error::Datos("transporte"))

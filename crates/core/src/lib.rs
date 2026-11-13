@@ -22,6 +22,7 @@ pub mod exportar_lista_mods;
 pub mod modrinth;
 pub mod modpacks;
 pub mod servidores;
+pub mod alojamiento;
 pub mod zerotier;
 pub mod mods;
 pub mod vault;

@@ -18,6 +18,7 @@ Las guías describen el código de `v0.4.x`. Para saber qué incluye una descarg
 | Compartir ajustes entre partidas | [Preferencias de Minecraft](opciones-minecraft.md) |
 | Conectar a un servidor o una red | [Servidores y ZeroTier](servidores.md) |
 | Compartir una instancia por invitación | [Compartir instancias — experimental](compartir-instancias.md) |
+| Abrir un servidor para tus amigos | [Alojar un servidor — experimental](alojar-servidor.md) |
 | Sincronizar con un servidor dedicado | [Servicio del anfitrión HTTP](sincronizacion-servidores.md) |
 | Revisar animaciones o detección en Discord | [Movimiento](movimiento.md), [Discord](discord.md) |
 | Investigar un fallo | [Registros de diagnóstico](diagnostico.md) |

@@ -158,6 +158,28 @@ impl PublicacionActiva {
             .map_err(|_| Error::Disco)??;
         Ok(invitacion)
     }
+    pub fn origen(&self) -> &Origen {
+        &self.origen
+    }
+    /// Publica (o deja de publicar) el servidor local por el túnel de invitados.
+    pub fn abrir_servidor(&self, puerto: Option<u16>) {
+        match puerto {
+            Some(p) => super::transporte::servidor::abrir(&self.origen.publicacion, p),
+            None => super::transporte::servidor::cerrar(&self.origen.publicacion),
+        }
+    }
+    pub async fn conectar_servidor(
+        &self,
+        encuentro: &EncuentroFirmado,
+        origen: &Origen,
+    ) -> Result<super::transporte::servidor::Conexion, Error> {
+        self.nodo
+            .conectar_servidor(
+                encuentro.direccion(&origen.anfitrion, &origen.publicacion)?,
+                origen,
+            )
+            .await
+    }
     /// Comparte el endpoint de este equipo para no abrir otra identidad simultánea.
     pub async fn conectar(
         &self,

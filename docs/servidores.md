@@ -5,7 +5,7 @@
 Guía del código actual de `v0.4.x`, revisada el 11-11-2026. La pantalla con pestañas es posterior a la beta 0.4.2 publicada.
 
 - **Servidores:** lista guardada, búsqueda, consulta de estado y conexión con una instancia.
-- **Con amigos:** publicaciones e instancias recibidas. Requiere **Activar Compartir experimental**; ver [Compartir instancias](compartir-instancias.md).
+- **Con amigos:** publicaciones e instancias recibidas. Requiere **Activar Compartir experimental**; ver [Compartir instancias](compartir-instancias.md). Lo que compartes puede abrirse como servidor para tus amigos; ver [Alojar un servidor](alojar-servidor.md).
 - **Red privada:** estado de ZeroTier, IP, invitación copiada y desconexión.
 
 La flecha al pie de la barra lateral permite plegarla o desplegarla durante la sesión. `ICARO_DEMO=1` conserva las muestras separadas.

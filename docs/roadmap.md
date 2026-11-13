@@ -10,7 +10,7 @@ Revisado el **11-11-2026** contra `v0.4.x` (`8729e21`, workspace 0.4.2). Este es
 | --- | --- |
 | Estable | [0.3.3, compilación 40389040180](https://github.com/00faithlss/Icaro-launcher/releases/tag/v0.3.3-build.40389040180), desde `main`. |
 | Beta | [0.4.2, compilación 42764789581](https://github.com/00faithlss/Icaro-launcher/releases/tag/v0.4.2-beta.42764789581), desde `develop`. |
-| Desarrollo | `v0.4.x` conserva la versión 0.4.2 y añade cambios posteriores a esa beta: nueva pantalla Servidores y salida de instancias recibidas. |
+| Desarrollo | `v0.4.x` conserva la versión 0.4.2 y añade cambios posteriores a esa beta: nueva pantalla Servidores, salida de instancias recibidas y servidor alojado para amigos. |
 
 La revisión documental comprobó referencias remotas y páginas de releases; no volvió a ejecutar CI, descargar artefactos ni probar una actualización instalada. Tener el mismo número en Cargo no implica contener los mismos cambios. El [changelog](../CHANGELOG.md) y las [notas de versiones](releases/README.md) conservan el historial.
 
@@ -27,6 +27,7 @@ La revisión documental comprobó referencias remotas y páginas de releases; no
 | Servidores | Lista persistida, consulta DNS/SRV, instancia vinculada y sincronización HTTP con anfitrión dedicado. | Falta validar conexión y sincronización entre equipos Windows/Linux. |
 | Red privada | Detección de ZeroTier, solicitud de unión, autorización/IP, invitación copiada y desconexión con confirmación. | Instalación/permisos automáticos y administración de miembros pendientes; desconexión nueva sin validación nativa completa. |
 | Compartir instancias | Publicador/invitado experimentales, invitaciones, revisión, contenido verificado, recuperación, biblioteca, reconexión y salida conservando archivos. | Activación explícita. Pruebas locales y HTTP remoto del servicio; faltan perfil/partida reales y dos equipos. |
+| Alojar servidor | Servidor dedicado Vanilla/Fabric con los mods de la instancia compartida, EULA, consola, `server.properties` y túnel iroh para los invitados. | Probado con túnel local y eco TCP; falta una partida real entre dos equipos por Internet. Forge/NeoForge/Quilt pendientes. [Guía](alojar-servidor.md). |
 | Aplicación | Temas Tinta/Piedra, metales, escala, movimiento reducido, transiciones al jugar, consola y registros del launcher. | Falta revisión transversal de foco, teclado, ventanas pequeñas y Linux. |
 | Distribución | Instalador Windows por usuario, portable, canales Estable/Beta, copias de ajustes y actualización verificada. | Releases publicadas; instalación limpia y ciclo completo de actualización/reinstalación/desinstalación pendientes en equipo de prueba. |
 
