@@ -4,6 +4,7 @@
 //! Instancias locales: identidad estable, carpeta aislada y metadatos persistentes.
 
 mod estadisticas;
+mod duplicar;
 
 use serde::{Deserialize, Serialize};
 use std::{

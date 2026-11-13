@@ -196,6 +196,8 @@ pub enum Accion {
     ),
     Versiones(u64, Result<VersionManifest, String>),
     Creada(Result<Instancia, String>),
+    /// Copia terminada: id de la original y la nueva instancia.
+    Duplicada(String, Result<Instancia, String>),
     Eliminada(String, Result<(), String>),
     Restaurada(String, Result<Instancia, String>),
     Loaders(
@@ -456,6 +458,43 @@ pub fn eliminar(app: &mut App) -> Task<Mensaje> {
                 .map_err(|e| e.to_string())
         },
         move |result| Mensaje::Instancias(Accion::Eliminada(id.clone(), result)),
+    )
+}
+
+/// Duplicar: copia independiente con el nombre «X (copia)», «X (copia 2)»…
+/// La copia se hace en segundo plano; mundos y mods grandes pueden tardar.
+pub fn duplicar(app: &mut App, index: usize) -> Task<Mensaje> {
+    let s = &mut app.servicios.instancias;
+    if s.operando {
+        return Task::none();
+    }
+    let Some(original) = s.registros.get(index).cloned() else {
+        return Task::none();
+    };
+    if app.servicios.juego.ocupada(&original.id) || app.servicios.mods.busy.as_ref() == Some(&original.id) {
+        app.avisar("Espera a que termine la actividad de la instancia antes de duplicarla.".into());
+        return Task::none();
+    }
+    let ocupado = |n: &str| s.registros.iter().any(|i| i.nombre.eq_ignore_ascii_case(n));
+    let base: String = original.nombre.chars().take(70).collect();
+    let nombre = std::iter::once(format!("{base} (copia)"))
+        .chain((2..1000).map(|n| format!("{base} (copia {n})")))
+        .find(|n| !ocupado(n))
+        .unwrap_or_else(|| format!("{base} (copia)"));
+    s.operando = true;
+    let store = s.almacen.clone();
+    let id = original.id.clone();
+    app.avisar(format!("Duplicando {}…", original.nombre));
+    Task::perform(
+        async move {
+            let origen = id.clone();
+            let r = tokio::task::spawn_blocking(move || store.duplicar(&origen, &nombre))
+                .await
+                .map_err(|_| "No se pudo duplicar la instancia.".to_owned())
+                .and_then(|r| r.map_err(|e| e.to_string()));
+            (id, r)
+        },
+        |(id, r)| Mensaje::Instancias(Accion::Duplicada(id, r)),
     )
 }
 
@@ -1117,6 +1156,32 @@ pub fn actualizar(app: &mut App, action: Accion) -> Task<Mensaje> {
                     }
                 }
                 Err(e) => app.avisar(e),
+            }
+        }
+        Accion::Duplicada(origen, result) => {
+            app.servicios.instancias.operando = false;
+            match result {
+                Ok(i) => {
+                    // La copia hereda el grupo y la configuración de la original.
+                    let n = app.servicios.instancias.registros.iter().position(|r| r.id == origen);
+                    let grupo = n.and_then(|n| app.grupos.get(n).cloned()).flatten();
+                    let config = n
+                        .and_then(|n| app.configs.get(n).cloned())
+                        .unwrap_or_else(crate::config_por_defecto);
+                    if let Some(portada) = app.iconos.portadas.get(&origen).cloned() {
+                        app.iconos.portadas.insert(i.id.clone(), portada);
+                    }
+                    crate::lista_instancias()
+                        .lock()
+                        .unwrap()
+                        .push(Estado::datos(&app.servicios.instancias.almacen, &i));
+                    let nombre = i.nombre.clone();
+                    app.servicios.instancias.registros.push(i);
+                    app.grupos.push(grupo);
+                    app.configs.push(config);
+                    app.avisar(format!("Se creó {nombre}."));
+                }
+                Err(e) => app.avisar_error(format!("No se pudo duplicar la instancia: {e}")),
             }
         }
         _ => {}

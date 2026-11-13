@@ -351,8 +351,12 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             Accion::CambiarVersionLoader(i) => return crate::instancias_reales::abrir_cambio_loader(app,*i),
             Accion::AplicarVersionLoader => return crate::instancias_reales::aplicar_cambio_loader(app),
             Accion::Importar => return crate::modpacks_reales::actualizar(app,crate::modpacks_reales::Accion::Importar),
-            Accion::ImportarConfirmar | Accion::Duplicar(_) => {
-                app.avisar("La importación y duplicación todavía están en preparación.".into());
+            Accion::Duplicar(i) => {
+                app.menu = None;
+                return crate::instancias_reales::duplicar(app, *i);
+            }
+            Accion::ImportarConfirmar => {
+                app.avisar("La importación todavía está en preparación.".into());
                 return Task::none();
             }
             Accion::LimpiarCache => {
