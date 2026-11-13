@@ -88,6 +88,10 @@ async fn dos_endpoints_revision_offset_integridad_y_revocacion() {
     )
     .await
     .unwrap();
+    let nombres = Arc::new(icaro_core::compartir::nombres::Nombres::abrir(
+        root.join("nombres.json"),
+    ));
+    nodo.guardar_nombres(nombres.clone());
     let cliente = Cliente::conectar(
         &guest,
         nodo.direccion(),
@@ -99,6 +103,15 @@ async fn dos_endpoints_revision_offset_integridad_y_revocacion() {
     .unwrap();
     let consultada = cliente.consultar().await.unwrap();
     assert_eq!(m, consultada);
+    // El invitado se presenta con su nombre de jugador; el anfitrión lo guarda
+    // por la identidad del equipo y lo ve conectado.
+    cliente.presentarse("Forjador").await.unwrap();
+    assert_eq!(
+        nombres.todos().get(&guest.clave_publica()).map(String::as_str),
+        Some("Forjador")
+    );
+    assert!(cliente.presentarse("uno\ndos").await.is_err());
+    assert!(nodo.conectados().contains(&guest.clave_publica()));
     // Recorrido completo: la red prepara, solo la confirmación final modifica destino.
     let destino = root.join("destino");
     std::fs::create_dir_all(destino.join("mods")).unwrap();

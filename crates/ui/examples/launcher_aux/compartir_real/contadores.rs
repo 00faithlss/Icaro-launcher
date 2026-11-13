@@ -82,6 +82,32 @@ pub fn pedir(s: &mut Estado) -> Option<Task<Mensaje>> {
         move |r| Mensaje::Compartir(Accion::Contadores(id, generacion, r)),
     ))
 }
+/// Personas autorizadas con el nombre de cuenta con que se presentaron (o,
+/// si su Ícaro todavía no lo envía, una etiqueta derivada de su equipo).
+pub fn personas(
+    h: Option<&icaro_core::compartir::anfitrion::PublicacionActiva>,
+    claves: Vec<String>,
+) -> Vec<v::Acceso> {
+    let nombres = h.map(|h| h.nombres()).unwrap_or_default();
+    let conectados = h.map(|h| h.conectados()).unwrap_or_default();
+    claves
+        .into_iter()
+        .map(|k| {
+            let conectado = conectados.contains(&k);
+            v::Acceso {
+                nombre: nombres
+                    .get(&k)
+                    .cloned()
+                    .unwrap_or_else(|| super::compartidas::equipo(&k)),
+                huella: format!("Clave {}", k.chars().take(12).collect::<String>()),
+                estado: "Autorizado".into(),
+                conectado,
+                aceptado: String::new(),
+                id: k,
+            }
+        })
+        .collect()
+}
 pub fn recibidos(s: &mut Estado, id: u64, generacion: u64, resultado: Contadores) {
     if !s.vigente(id) || generacion != s.biblioteca.contadores || s.etapa != Etapa::Panel {
         return;
@@ -95,18 +121,7 @@ pub fn recibidos(s: &mut Estado, id: u64, generacion: u64, resultado: Contadores
         format!("{} transferencias activas", resultado.transferencias)
     };
     if let Ok(keys) = resultado.accesos {
-        p.accesos.personas = keys
-            .into_iter()
-            .enumerate()
-            .map(|(n, k)| v::Acceso {
-                nombre: format!("Equipo {}", n + 1),
-                huella: format!("Clave {}", k.chars().take(12).collect::<String>()),
-                id: k,
-                estado: "Autorizado".into(),
-                conectado: false,
-                aceptado: String::new(),
-            })
-            .collect();
+        p.accesos.personas = personas(s.anfitrion.as_deref(), keys);
         if p.accesos
             .confirmar
             .as_ref()

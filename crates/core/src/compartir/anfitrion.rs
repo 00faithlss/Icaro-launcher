@@ -3,6 +3,7 @@
 use super::{
     accesos::Accesos,
     identidad::Identidad,
+    nombres::Nombres,
     invitaciones::{
         AutoridadServicio, Caducidad, ClienteInvitaciones, Codigo, EncuentroFirmado,
         InvitacionCreada,
@@ -23,6 +24,7 @@ pub struct PublicacionActiva {
     revision: Arc<RwLock<Revision>>,
     origen: Origen,
     accesos: Arc<Accesos>,
+    nombres: Arc<Nombres>,
 }
 impl std::fmt::Debug for PublicacionActiva {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -42,6 +44,12 @@ impl PublicacionActiva {
     ) -> Result<Self, Error> {
         let servicio = ClienteInvitaciones::nuevo(url, identidad.clone())?;
         let origen = revision.manifiesto.origen.clone();
+        let archivo_nombres = archivo_accesos.with_file_name("nombres.json");
+        let nombres = Arc::new(
+            tokio::task::spawn_blocking(move || Nombres::abrir(archivo_nombres))
+                .await
+                .map_err(|_| Error::Disco)?,
+        );
         let archivo_accesos = archivo_accesos.to_path_buf();
         let accesos = Arc::new(
             tokio::task::spawn_blocking(move || Accesos::abrir(archivo_accesos))
@@ -63,6 +71,7 @@ impl PublicacionActiva {
             limites,
         )
         .await?;
+        nodo.guardar_nombres(nombres.clone());
         Ok(Self {
             nodo,
             identidad,
@@ -70,6 +79,7 @@ impl PublicacionActiva {
             revision,
             origen,
             accesos,
+            nombres,
         })
     }
     pub fn encuentro(&self) -> Result<EncuentroFirmado, Error> {
@@ -117,6 +127,14 @@ impl PublicacionActiva {
         }
         *actual = nueva;
         Ok(())
+    }
+    /// Nombre de jugador con que se presentó cada equipo, por su clave.
+    pub fn nombres(&self) -> std::collections::BTreeMap<String, String> {
+        self.nombres.todos()
+    }
+    /// Equipos invitados con una conexión abierta ahora.
+    pub fn conectados(&self) -> std::collections::BTreeSet<String> {
+        self.nodo.conectados()
     }
     pub fn transferencias(&self) -> usize {
         self.nodo.contar_transferencias()

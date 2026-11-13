@@ -561,6 +561,8 @@ fn actualizar(app: &mut App, m: Mensaje) -> Task<Mensaje> {
     let lugar = firma_navegacion(app);
     let aviso_previo = app.avisos.ultimo().unwrap_or(0);
     let mut tarea = actualizar_estado(app, m);
+    // Los anfitriones ven a sus invitados por el nombre de la cuenta activa.
+    icaro_core::compartir::transporte::fijar_jugador(app.servicios.session.as_ref().map(|s| s.profile.name.as_str()));
     // Al cambiar de sección, página, pestaña o ajuste, todo vuelve arriba: lo
     // nuevo no debe abrirse a la altura en que quedó lo anterior.
     if firma_navegacion(app) != lugar {

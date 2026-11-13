@@ -368,18 +368,8 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             if let Some(p) = &mut s.panel {
                 match r {
                     Ok(keys) => {
-                        p.accesos.personas = keys
-                            .into_iter()
-                            .enumerate()
-                            .map(|(n, k)| v::Acceso {
-                                nombre: format!("Equipo {}", n + 1),
-                                huella: format!("Clave {}", &k[..12]),
-                                id: k,
-                                estado: "Autorizado".into(),
-                                conectado: false,
-                                aceptado: String::new(),
-                            })
-                            .collect()
+                        p.accesos.personas =
+                            super::contadores::personas(s.anfitrion.as_deref(), keys)
                     }
                     Err(e) => p.disponibilidad = e,
                 }

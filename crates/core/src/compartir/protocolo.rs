@@ -18,6 +18,12 @@ pub enum Solicitud {
         sha512: String,
         offset: u64,
     },
+    /// El invitado dice con qué nombre juega. Un anfitrión anterior no la
+    /// entiende y corta ese flujo; el invitado lo ignora.
+    Presentarse {
+        origen: Origen,
+        nombre: String,
+    },
 }
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "respuesta", deny_unknown_fields)]
@@ -25,6 +31,7 @@ pub enum Respuesta {
     Revision { firmada: RevisionFirmada },
     Archivo { restantes: u64 },
     Rechazada,
+    Presentado,
 }
 pub async fn escribir<T: Serialize>(
     send: &mut (impl AsyncWrite + Unpin),

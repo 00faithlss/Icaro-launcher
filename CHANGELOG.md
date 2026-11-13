@@ -11,7 +11,8 @@
 - Al instalar una instancia compartida con un nombre que ya existe, se propone uno libre («Nombre (2)») y editarlo ya no deja la pantalla en «Preparando la instancia…».
 - «Comprobar» el servidor de un amigo muestra que está comprobando, termina en 20 s como máximo y ya no se queda pegado al consultar varias instancias.
 - El servidor alojado reconoce quién está jugando con cualquier formato de consola, y «Jugar en mi servidor» abre el juego aunque la publicación esté abierta. Jugar desde cualquier sección con una publicación a la vista ya no se cancela en silencio.
-- La pestaña Red privada ya no muestra «Conectada» doble al pasar el mouse.
+- La pestaña Red privada ya no muestra «Conectada» doble ni partida en dos líneas al pasar el mouse.
+- Con amigos: «Personas» muestra el nombre de jugador de cada amigo (cuenta Microsoft o sin conexión) en vez de «Equipo», y «en línea» mientras está conectado, por ejemplo jugando en tu servidor. El nombre llega cuando el amigo revisa la publicación con esta versión; es solo una etiqueta y el acceso sigue dependiendo de su equipo.
 - Mods, modpacks y demás listas: al cambiar de pestaña la página ya no queda pegada abajo ni se detiene a media altura al subir.
 - Agregar mods y modpacks: «Mostrar 20 · 30 · 50 · 100» pasa arriba, junto al orden de los resultados.
 

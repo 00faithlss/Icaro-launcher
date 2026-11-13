@@ -20,6 +20,23 @@ pub async fn conectar_servidor(
 }
 use iroh::{endpoint::presets, Endpoint, EndpointAddr, RelayMode};
 
+/// Nombre de la cuenta activa, con el que este equipo se presenta a los
+/// anfitriones al consultar sus publicaciones.
+static JUGADOR: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// La interfaz lo actualiza al cambiar de cuenta; `None` no se presenta.
+pub fn fijar_jugador(nombre: Option<&str>) {
+    if let Ok(mut j) = JUGADOR.lock() {
+        let nuevo = nombre.and_then(super::nombres::limpiar);
+        if *j != nuevo {
+            *j = nuevo;
+        }
+    }
+}
+fn jugador() -> Option<String> {
+    JUGADOR.lock().ok().and_then(|j| j.clone())
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum Modo {
     Internet,

@@ -34,6 +34,7 @@ struct Estado {
     cupos: Mutex<HashMap<String, Arc<Semaphore>>>,
     actividad: Mutex<Actividad>,
     fin: Notify,
+    nombres: std::sync::OnceLock<Arc<crate::compartir::nombres::Nombres>>,
 }
 #[derive(Default)]
 struct Actividad {
@@ -128,6 +129,7 @@ impl NodoAnfitrion {
             cupos: Mutex::new(HashMap::new()),
             actividad: Mutex::new(Actividad::default()),
             fin: Notify::new(),
+            nombres: std::sync::OnceLock::new(),
         });
         let cancel = CancellationToken::new();
         let tarea = tokio::spawn(aceptar(endpoint.clone(), estado.clone(), cancel.clone()));
@@ -143,6 +145,24 @@ impl NodoAnfitrion {
     }
     pub fn contar_transferencias(&self) -> usize {
         self.estado.actividad.lock().map_or(0, |a| a.activas)
+    }
+    /// Dónde guardar el nombre con que se presenta cada invitado. Sin esto,
+    /// las presentaciones se responden pero no se guardan.
+    pub fn guardar_nombres(&self, nombres: Arc<crate::compartir::nombres::Nombres>) {
+        let _ = self.estado.nombres.set(nombres);
+    }
+    /// Equipos con alguna conexión abierta ahora (por ejemplo, jugando en el
+    /// servidor del anfitrión a través del túnel).
+    pub fn conectados(&self) -> std::collections::BTreeSet<String> {
+        self.estado.conexiones.lock().map_or_else(
+            |_| Default::default(),
+            |c| {
+                c.iter()
+                    .filter(|(_, l)| !l.is_empty())
+                    .map(|(k, _)| k.clone())
+                    .collect()
+            },
+        )
     }
     /// Instantánea en memoria, sin rutas absolutas; no se vuelca al logger.
     pub fn transferencias_activas(&self) -> Vec<TransferenciaActiva> {
@@ -443,6 +463,17 @@ async fn servir(
                     );
                 }
             }
+        }
+        Solicitud::Presentarse { origen, nombre } if origen == revision.manifiesto.origen => {
+            if let Some(nombres) = estado.nombres.get().cloned() {
+                let (equipo, nombre) = (invitado.to_owned(), nombre);
+                tokio::task::spawn_blocking(move || nombres.fijar(&equipo, &nombre))
+                    .await
+                    .map_err(|_| Error::Disco)??;
+            } else if crate::compartir::nombres::limpiar(&nombre).is_none() {
+                return Err(Error::Datos("nombre de jugador"));
+            }
+            protocolo::escribir(&mut send, &Respuesta::Presentado, CONTROL_BYTES).await?;
         }
         _ => protocolo::escribir(&mut send, &Respuesta::Rechazada, CONTROL_BYTES).await?,
     }

@@ -97,7 +97,38 @@ impl Cliente {
         if manifiesto.origen != self.origen {
             return Err(Error::Datos("publicación distinta"));
         }
+        if let Some(nombre) = super::jugador() {
+            // Solo una etiqueta: si el anfitrión es anterior o no responde,
+            // la consulta sigue valiendo.
+            let _ = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                self.presentarse(&nombre),
+            )
+            .await;
+        }
         Ok(manifiesto)
+    }
+    /// Dice al anfitrión con qué nombre juega este equipo.
+    pub async fn presentarse(&self, nombre: &str) -> Result<(), Error> {
+        let (mut send, mut recv) = self
+            .conn
+            .open_bi()
+            .await
+            .map_err(|_| Error::Datos("conexión"))?;
+        protocolo::escribir(
+            &mut send,
+            &Solicitud::Presentarse {
+                origen: self.origen.clone(),
+                nombre: nombre.to_owned(),
+            },
+            CONTROL_BYTES,
+        )
+        .await?;
+        send.finish().map_err(|_| Error::Datos("conexión"))?;
+        match protocolo::leer(&mut recv, CONTROL_BYTES).await? {
+            Respuesta::Presentado => Ok(()),
+            _ => Err(Error::Datos("presentación rechazada")),
+        }
     }
     /// Descarga a un parcial externo, con reanudación e integridad completa.
     pub async fn descargar(

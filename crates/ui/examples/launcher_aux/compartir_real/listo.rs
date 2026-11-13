@@ -79,7 +79,7 @@ pub fn modelo(s: &Estado) -> Option<v::CompartidoListo> {
             .personas
             .iter()
             .map(|a| v::PersonaUnida {
-                nombre: super::compartidas::equipo(&a.id),
+                nombre: a.nombre.clone(),
                 detalle: a.aceptado.clone(),
             })
             .collect(),
