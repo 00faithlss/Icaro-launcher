@@ -1,6 +1,6 @@
 # Changelog
 
-## [Sin publicar]
+## [0.4.4] - 2026-11-13
 
 - Entrar al servidor de un amigo: si la conexión con el anfitrión se pierde mientras Minecraft carga (por ejemplo, durante la comprobación previa a Jugar), el túnel vuelve a conectar cuando el juego llega, en vez de dejarlo sin servidor. El registro de Ícaro anota cada paso: apertura del túnel, dirección con que se inicia Minecraft, reconexiones, entrada y salida del juego en ambos equipos y el motivo de cualquier fallo.
 

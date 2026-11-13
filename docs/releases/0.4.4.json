@@ -1,0 +1,13 @@
+{
+  "version": "0.4.4",
+  "notas": [
+    {
+      "tipo": "correccion",
+      "texto": "«Entrar al servidor» restablece la conexión con el anfitrión si se interrumpe mientras Minecraft carga, en vez de abrir el juego sin conectarlo."
+    },
+    {
+      "tipo": "mejora",
+      "texto": "El registro de Ícaro anota cada paso de la conexión al servidor, en ambos equipos, con el motivo de cualquier fallo."
+    }
+  ]
+}
