@@ -350,7 +350,7 @@ pub fn pestanas<'a, M: Clone + 'a>(
         let normal = construir(if sel { p.text } else { p.text_muted });
         let sobre = construir(p.text);
         fila = fila.push(
-            button(iced::widget::hover(normal, sobre))
+            button(alterno(normal, sobre))
                 .padding(0)
                 .on_press(al_elegir(pestana))
                 .style(estilo::sin_estilo(p.text)),
@@ -364,6 +364,63 @@ pub fn pestanas<'a, M: Clone + 'a>(
         regla: p.border,
         linea: p.text,
     })
+}
+
+/// Dibuja `normal` o, con el puntero encima, `sobre`; nunca los dos.
+/// `iced::widget::hover` dibuja `sobre` en una capa encima de `normal` sin
+/// ocultarla, y los textos quedan dos veces, uno sobre otro. Aquí todo va en
+/// la misma capa, así que las reglas que se pintan después siguen encima.
+/// Ambas variantes deben tener el mismo tamaño: la de referencia es `normal`.
+pub fn alterno<'a, M: 'a>(normal: Element<'a, M>, sobre: Element<'a, M>) -> Element<'a, M> {
+    Element::new(Alterno { normal, sobre })
+}
+
+struct Alterno<'a, M> {
+    normal: Element<'a, M>,
+    sobre: Element<'a, M>,
+}
+
+impl<M> Widget<M, Theme, Renderer> for Alterno<'_, M> {
+    fn size(&self) -> Size<Length> {
+        self.normal.as_widget().size()
+    }
+    fn children(&self) -> Vec<Tree> {
+        vec![Tree::new(&self.normal), Tree::new(&self.sobre)]
+    }
+    fn diff(&self, arbol: &mut Tree) {
+        arbol.diff_children(&[&self.normal, &self.sobre]);
+    }
+    fn layout(&self, arbol: &mut Tree, renderer: &Renderer, limites: &Limits) -> Node {
+        let base = self.normal.as_widget().layout(&mut arbol.children[0], renderer, limites);
+        let encima = self
+            .sobre
+            .as_widget()
+            .layout(&mut arbol.children[1], renderer, &Limits::new(base.size(), base.size()));
+        Node::with_children(base.size(), vec![base, encima])
+    }
+    fn draw(
+        &self,
+        arbol: &Tree,
+        renderer: &mut Renderer,
+        tema: &Theme,
+        estilo: &renderer::Style,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+        visible: &Rectangle,
+    ) {
+        let mut hijos = layout.children();
+        let (Some(base), Some(encima)) = (hijos.next(), hijos.next()) else { return };
+        if cursor.is_over(layout.bounds()) {
+            self.sobre.as_widget().draw(&arbol.children[1], renderer, tema, estilo, encima, cursor, visible);
+        } else {
+            self.normal.as_widget().draw(&arbol.children[0], renderer, tema, estilo, base, cursor, visible);
+        }
+    }
+    fn mouse_interaction(&self, arbol: &Tree, layout: Layout<'_>, cursor: mouse::Cursor, visible: &Rectangle, renderer: &Renderer) -> mouse::Interaction {
+        layout.children().next().map_or(mouse::Interaction::None, |base| {
+            self.normal.as_widget().mouse_interaction(&arbol.children[0], base, cursor, visible, renderer)
+        })
+    }
 }
 
 struct LineaPestanas<'a, M> {

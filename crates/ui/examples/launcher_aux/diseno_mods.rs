@@ -533,6 +533,18 @@ pub fn tienda(app: &App) -> Element<'_, Mensaje> {
         );
     }
     }
+    // Cuántos por página: arriba, junto al orden, para elegirlo antes de recorrer.
+    let mut cantidades = row![text("Mostrar").size(texto::BODY_SM.0).color(p.text_muted)]
+        .spacing(icaro_ui::tema::espacio::S2)
+        .align_y(Alignment::Center);
+    for n in servicios::POR_PAGINA {
+        cantidades = cantidades.push(componentes::chip(
+            p,
+            &n.to_string(),
+            s.por_pagina == n,
+            Mensaje::Servicio(servicios::Accion::PorPagina(n)),
+        ));
+    }
     let mut results = column![row![
         text(
             s.results
@@ -545,6 +557,7 @@ pub fn tienda(app: &App) -> Element<'_, Mensaje> {
         .size(texto::BODY_SM.0)
         .color(p.text_muted),
         Space::with_width(Length::Fill),
+        cantidades,
         container(componentes::selector(
             p,
             vec![
@@ -558,6 +571,7 @@ pub fn tienda(app: &App) -> Element<'_, Mensaje> {
         ))
         .width(200)
     ]
+    .spacing(16)
     .align_y(Alignment::Center)]
     .spacing(12);
     if let Some(r) = &s.results {
@@ -632,17 +646,6 @@ pub fn tienda(app: &App) -> Element<'_, Mensaje> {
             ));
         }
         let por_pagina = r.limit.max(1);
-        let mut cantidades = row![text("Mostrar").size(texto::BODY_SM.0).color(p.text_muted)]
-            .spacing(icaro_ui::tema::espacio::S2)
-            .align_y(Alignment::Center);
-        for n in servicios::POR_PAGINA {
-            cantidades = cantidades.push(componentes::chip(
-                p,
-                &n.to_string(),
-                s.por_pagina == n,
-                Mensaje::Servicio(servicios::Accion::PorPagina(n)),
-            ));
-        }
         results = results.push(
             // Margen inferior: los botones quedan enteros al final de la lista.
             container(
@@ -655,7 +658,7 @@ pub fn tienda(app: &App) -> Element<'_, Mensaje> {
                             r.offset.saturating_sub(por_pagina)
                         )))
                     ),
-                    column![
+                    container(
                         text(format!(
                             "{} / {}",
                             r.offset / por_pagina + 1,
@@ -663,11 +666,8 @@ pub fn tienda(app: &App) -> Element<'_, Mensaje> {
                         ))
                         .font(fuentes::MONO)
                         .color(p.text_muted),
-                        cantidades,
-                    ]
-                    .spacing(icaro_ui::tema::espacio::S2)
-                    .align_x(Alignment::Center)
-                    .width(Length::Fill),
+                    )
+                    .center_x(Length::Fill),
                     componentes::boton_compacto(
                         p,
                         "Siguiente",

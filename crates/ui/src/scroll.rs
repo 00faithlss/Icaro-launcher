@@ -73,6 +73,7 @@ pub fn desplazable_con_avisos<'a, M: 'a>(
     Element::new(Suave {
         contenido: lista.into(),
         clave: Some(clave),
+        avisos: true,
         id: None,
     })
 }
@@ -89,6 +90,7 @@ fn suave_widget<'a, M: 'a>(
     Suave {
         contenido: lista.into(),
         clave,
+        avisos: false,
         id: None,
     }
 }
@@ -294,6 +296,8 @@ impl Estado {
 struct Suave<'a, M> {
     contenido: Element<'a, M>,
     clave: Option<u64>,
+    /// Lista virtualizada con `on_scroll`: se mueve con eventos de rueda.
+    avisos: bool,
     /// Permite que [`llevar_a`] encuentre este desplazable.
     id: Option<iced::advanced::widget::Id>,
 }
@@ -434,6 +438,17 @@ impl<'a, M> Widget<M, Theme, Renderer> for Suave<'a, M> {
                     fijar_desplazamiento(&self.contenido, &mut arbol.children[0], hijo, renderer, antes);
                 }
                 let estado = arbol.state.downcast_mut::<Estado>();
+                // Sin animación en curso, la posición real manda: si algo más
+                // movió la lista (otro contenido, teclado, volver arriba), se
+                // parte de ahí y no de una posición vieja.
+                if estado.ultimo.is_none() && !self.avisos {
+                    if let Some(real) = antes {
+                        if (real.y - estado.actual).abs() > 1.0 {
+                            estado.actual = real.y;
+                            estado.objetivo = real.y;
+                        }
+                    }
+                }
                 estado.limitar(maximo);
                 // En el borde no se queda con la rueda: sigue el desplazable de
                 // fuera, para no dejar la página fija bajo un panel.
@@ -465,21 +480,31 @@ impl<'a, M> Widget<M, Theme, Renderer> for Suave<'a, M> {
                     if !pendiente {
                         estado.ultimo = None;
                     }
-                    // Un desplazamiento en píxeles hacia abajo es negativo.
-                    let sintetico = Event::Mouse(mouse::Event::WheelScrolled {
-                        delta: mouse::ScrollDelta::Pixels { x: 0.0, y: -paso },
-                    });
-                    let sobre = mouse::Cursor::Available(caja.center());
-                    self.contenido.as_widget_mut().on_event(
-                        &mut arbol.children[0],
-                        sintetico,
-                        hijo,
-                        sobre,
-                        renderer,
-                        portapapeles,
-                        shell,
-                        visible,
-                    );
+                    if self.avisos {
+                        // La lista virtualizada necesita su aviso `on_scroll`,
+                        // que solo llega con un evento de rueda.
+                        let sintetico = Event::Mouse(mouse::Event::WheelScrolled {
+                            delta: mouse::ScrollDelta::Pixels { x: 0.0, y: -paso },
+                        });
+                        let sobre = mouse::Cursor::Available(caja.center());
+                        self.contenido.as_widget_mut().on_event(
+                            &mut arbol.children[0],
+                            sintetico,
+                            hijo,
+                            sobre,
+                            renderer,
+                            portapapeles,
+                            shell,
+                            visible,
+                        );
+                    } else {
+                        // La posición va directo al desplazable propio: un
+                        // evento de rueda en el centro podía quedárselo un
+                        // desplazable de dentro, y este quedaba desfasado y sin
+                        // poder volver arriba.
+                        let y = estado.actual;
+                        fijar_desplazamiento(&self.contenido, &mut arbol.children[0], hijo, renderer, Some(Vector::new(0.0, y)));
+                    }
                     if pendiente {
                         shell.request_redraw(RedrawRequest::NextFrame);
                     }
