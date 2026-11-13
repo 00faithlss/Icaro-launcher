@@ -170,9 +170,26 @@ pub fn accion(app: &mut App, a: v::Accion) -> Option<Task<Mensaje>> {
         v::Accion::NombreDestino(nombre) if s.etapa == Etapa::Destino => {
             s.invitado.nombre = nombre;
             s.invitado.error = None;
+            // Quien edita el nombre sigue a mano: la vista no vuelve a
+            // «Preparando la instancia…» y el campo queda a la vista.
+            s.invitado.auto = false;
             Task::none()
         }
         v::Accion::RevisarInstalacion if s.etapa == Etapa::Destino => {
+            let ocupado = |n: &str| {
+                app.servicios.instancias.registros.iter().any(|i| {
+                    i.nombre.eq_ignore_ascii_case(n)
+                        && s.invitado.destino.as_ref().is_none_or(|d| d.id != i.id)
+                })
+            };
+            // En el recorrido automático, un nombre repetido no lo detiene:
+            // se propone «Nombre (2)», «Nombre (3)»… y se puede cambiar después.
+            let base = s.invitado.nombre.trim().to_owned();
+            if s.invitado.auto && !base.is_empty() && ocupado(&base) {
+                if let Some(libre) = (2..100).map(|n| format!("{base} ({n})")).find(|n| !ocupado(n)) {
+                    s.invitado.nombre = libre;
+                }
+            }
             let nombre = s.invitado.nombre.trim();
             if nombre.is_empty()
                 || nombre.chars().count() > 80

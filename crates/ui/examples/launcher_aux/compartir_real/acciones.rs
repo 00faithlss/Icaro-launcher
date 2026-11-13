@@ -265,7 +265,10 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             }
         }
         Accion::Recibidas(generacion, lista) => {
-            return super::compartidas::recibidas(&mut app.servicios.compartir, generacion, lista)
+            let t = super::compartidas::recibidas(&mut app.servicios.compartir, generacion, lista);
+            // Con la lista al día se mira qué servidores de amigos están abiertos.
+            let servidores = crate::alojamiento_real::actualizar(app, crate::alojamiento_real::Accion::ConsultarTodas);
+            return Task::batch([t, servidores]);
         }
         Accion::DatosSelector(generacion, datos) => {
             super::selector::recibidos(app, generacion, datos)

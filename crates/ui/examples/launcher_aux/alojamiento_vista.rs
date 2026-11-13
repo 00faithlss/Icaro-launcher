@@ -484,17 +484,30 @@ pub fn ajustes<'a>(app: &'a App, e: &'a Editor, nombre: &str) -> Element<'a, Men
     c.push(sv::pie(p, pie.into())).into()
 }
 
-/// Bloque del servidor del anfitrión en lo que recibes.
+/// Servidor del anfitrión en lo que recibes: va primero en el detalle, en una
+/// caja propia, con «Entrar al servidor» como acción principal.
 pub fn seccion_invitado<'a>(app: &'a App, r: &v::InstanciaQueRecibes) -> Element<'a, Mensaje> {
     let p = app.paleta();
     let s = &app.servicios.servidores.alojar;
     let estado = s.remotos.get(&r.id).cloned().unwrap_or(Remoto::Comprobando);
     let entrando = s.entrando.as_deref() == Some(r.id.as_str());
-    let (color, linea) = match estado {
-        Remoto::Abierto => (p.success, format!("{} tiene su servidor abierto", r.anfitrion)),
-        Remoto::Cerrado => (p.text_disabled, format!("{} no tiene el servidor abierto", r.anfitrion)),
-        Remoto::SinConexion => (p.text_disabled, format!("No se pudo consultar el servidor de {}", r.anfitrion)),
-        Remoto::Comprobando => (p.text_disabled, "Comprobando el servidor…".to_owned()),
+    let (color, linea, ayuda) = match estado {
+        Remoto::Abierto => (
+            p.success,
+            format!("{} tiene su servidor abierto", r.anfitrion),
+            "Entra y Ícaro abre Minecraft conectado. No hace falta ninguna IP.".to_owned(),
+        ),
+        Remoto::Cerrado => (
+            p.text_disabled,
+            format!("{} no tiene el servidor abierto", r.anfitrion),
+            format!("Cuando {} lo abra, podrás entrar desde aquí o desde la pestaña Servidores.", r.anfitrion),
+        ),
+        Remoto::SinConexion => (
+            p.text_disabled,
+            format!("No se pudo consultar el servidor de {}", r.anfitrion),
+            "Puede que no esté conectado ahora. Vuelve a comprobar en un momento.".to_owned(),
+        ),
+        Remoto::Comprobando => (p.text_disabled, "Comprobando el servidor…".to_owned(), String::new()),
     };
     let accion: Element<'a, Mensaje> = match estado {
         Remoto::Abierto => componentes::boton_con_icono(
@@ -503,40 +516,133 @@ pub fn seccion_invitado<'a>(app: &'a App, r: &v::InstanciaQueRecibes) -> Element
             if entrando { "Conectando…" } else { "Entrar al servidor" },
             Variante::Primario,
             (!entrando).then(|| m(Accion::Entrar(r.id.clone()))),
-            true,
+            false,
         ),
-        Remoto::Comprobando => Space::new(0, 0).into(),
+        Remoto::Comprobando => icaro_ui::progreso::spinner(p, app.reducir),
         _ => componentes::boton_con_icono(
             p,
             Icono::Refrescar,
             "Comprobar",
             Variante::Secundario,
             Some(m(Accion::Consultar(r.id.clone()))),
-            true,
+            false,
         ),
     };
     let mut c = column![
-        sv::rotulo(p, "Servidor"),
         row![
             sv::marca(color),
-            container(sv::cuerpo_sm(linea, p.text)).width(Length::Fill),
+            column![negrita(linea, p.text), sv::cuerpo_sm(ayuda, p.text_muted)].spacing(2).width(Length::Fill),
             accion,
         ]
-        .spacing(8)
+        .spacing(12)
         .align_y(Alignment::Center),
     ]
     .spacing(12);
     if estado == Remoto::Abierto && r.cambios.is_some_and(|n| n > 0) {
-        c = c.push(sv::cuerpo_sm(
-            "Sincroniza antes de entrar: el servidor usa la revisión nueva.",
-            p.text_muted,
+        c = c.push(sv::nota(
+            p,
+            Tono::Info,
+            Icono::InfoCaja,
+            sv::cuerpo_sm("Hay cambios nuevos: al entrar, primero los revisas y sincronizas.", p.text),
+            None,
         ));
     }
     if s.tunel_activo(&r.id) {
-        c = c.push(sv::cuerpo_sm(
-            "Conectado. Si cierras Minecraft, vuelve a entrar desde aquí.",
-            p.text_muted,
-        ));
+        c = c.push(sv::cuerpo_sm("Conectado. Si cierras Minecraft, vuelve a entrar desde aquí.", p.text_muted));
     }
-    c.into()
+    column![
+        sv::rotulo(p, "Servidor de tu amigo"),
+        container(c)
+            .padding(18)
+            .width(Length::Fill)
+            .style(sv::caja(
+                Some(if estado == Remoto::Abierto { p.accent_soft } else { p.surface_sunken }),
+                if estado == Remoto::Abierto { p.text } else { p.border },
+                if estado == Remoto::Abierto { borde::MEDIO } else { borde::FINO },
+            )),
+    ]
+    .spacing(10)
+    .into()
+}
+
+fn negrita<'a>(s: String, c: iced::Color) -> Element<'a, Mensaje> {
+    iced::widget::text(s)
+        .font(icaro_ui::fuentes::CUERPO_NEGRITA)
+        .size(icaro_ui::tema::texto::BODY_SM.0)
+        .color(c)
+        .into()
+}
+
+/// Servidores abiertos de tus amigos, para unirse en un clic. `None` si no
+/// recibes nada. Con lo recibido pero ninguno abierto, una línea que explica
+/// dónde aparecerán.
+pub fn servidores_amigos<'a>(app: &'a App, recibes: &[v::InstanciaQueRecibes]) -> Option<Element<'a, Mensaje>> {
+    if recibes.is_empty() || !app.servicios.compartir.habilitado {
+        return None;
+    }
+    let p = app.paleta();
+    let s = &app.servicios.servidores.alojar;
+    let abiertos: Vec<&v::InstanciaQueRecibes> = recibes
+        .iter()
+        .filter(|r| s.remotos.get(&r.id) == Some(&Remoto::Abierto))
+        .collect();
+    let comprobando = recibes.iter().any(|r| matches!(s.remotos.get(&r.id), None | Some(Remoto::Comprobando)));
+    let mut c = column![row![
+        sv::rotulo(p, "Servidores de tus amigos"),
+        Space::with_width(Length::Fill),
+        if comprobando {
+            Element::from(icaro_ui::progreso::spinner(p, app.reducir))
+        } else {
+            sv::mono_sm(if abiertos.len() == 1 { "1 abierto".to_owned() } else { format!("{} abiertos", abiertos.len()) }, p.text_muted)
+        },
+    ]
+    .align_y(Alignment::Center)]
+    .spacing(8);
+    if abiertos.is_empty() {
+        c = c.push(
+            container(sv::cuerpo_sm(
+                if comprobando {
+                    "Comprobando los servidores de tus amigos…"
+                } else {
+                    "Ningún amigo tiene su servidor abierto ahora. Cuando lo abra, aparecerá aquí para entrar."
+                },
+                p.text_muted,
+            ))
+            .padding(Padding::from([10.0, 14.0]))
+            .width(Length::Fill)
+            .style(sv::caja(Some(p.surface_sunken), p.border, borde::FINO)),
+        );
+        return Some(c.into());
+    }
+    for r in abiertos {
+        let entrando = s.entrando.as_deref() == Some(r.id.as_str());
+        let fila = row![
+            pixel(p, &r.nombre, 36.0),
+            column![
+                negrita(r.nombre.clone(), p.text),
+                row![sv::marca(p.success), sv::mono_sm(format!("Abierto · de {} · {}", r.anfitrion, r.version), p.text_muted)]
+                    .spacing(6)
+                    .align_y(Alignment::Center),
+            ]
+            .spacing(3)
+            .width(Length::Fill),
+            componentes::boton_con_icono(
+                p,
+                Icono::Entrar,
+                if entrando { "Conectando…" } else { "Entrar" },
+                Variante::Primario,
+                (!entrando).then(|| m(Accion::Entrar(r.id.clone()))),
+                true,
+            ),
+        ]
+        .spacing(14)
+        .align_y(Alignment::Center);
+        c = c.push(
+            container(fila)
+                .padding(Padding::from([12.0, 14.0]))
+                .width(Length::Fill)
+                .style(sv::caja(Some(p.surface), p.text, borde::MEDIO)),
+        );
+    }
+    Some(c.into())
 }

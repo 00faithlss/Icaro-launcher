@@ -80,8 +80,12 @@ pub struct Estado {
     // Invitado
     pub remotos: BTreeMap<String, Remoto>,
     consulta_gen: u64,
+    /// Última consulta pedida por instancia recibida: las anteriores se descartan.
+    consultas: BTreeMap<String, u64>,
     tunel: Option<(String, Arc<Tunel>)>,
     pub entrando: Option<String>,
+    /// Hay una ronda de comprobación de todos los servidores de amigos.
+    consultando_todas: bool,
 }
 impl std::fmt::Debug for Estado {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -136,6 +140,9 @@ pub enum Accion {
     AbrirCarpeta(String),
     // Invitado
     Consultar(String),
+    /// Comprueba, de a uno, el servidor de cada instancia recibida.
+    ConsultarTodas,
+    FinConsultas,
     Consultado(u64, String, Result<bool, String>),
     Entrar(String),
     Tunel(String, Result<Arc<Tunel>, String>),
@@ -360,7 +367,11 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             if app.servicios.demo {
                 return Task::none();
             }
-            crate::juego_real::iniciar_con_servidor(app, index, true, Some(format!("127.0.0.1:{p}")))
+            // Es tu propia instancia: no pasa por la comprobación previa de las
+            // instancias recibidas, que se cancela con la publicación abierta.
+            let destino = format!("127.0.0.1:{p}");
+            anotar(Gravedad::Info, &format!("jugar en el propio servidor ({destino})"));
+            crate::juego_real::iniciar_revisado(app, index, true, Some(destino), None)
         }
         Accion::Ajustes(id) => {
             if app.servicios.demo {
@@ -494,9 +505,14 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             Task::none()
         }
         Accion::Consultar(id) => consultar(app, id),
+        Accion::ConsultarTodas => consultar_todas(app),
+        Accion::FinConsultas => {
+            app.servicios.servidores.alojar.consultando_todas = false;
+            Task::none()
+        }
         Accion::Consultado(g, id, r) => {
             let s = &mut app.servicios.servidores.alojar;
-            if s.consulta_gen == g {
+            if s.consultas.get(&id) == Some(&g) {
                 s.remotos.insert(
                     id,
                     match r {
@@ -662,13 +678,20 @@ async fn conexion(
 }
 
 fn consultar(app: &mut App, id: String) -> Task<Mensaje> {
-    if app.servicios.demo || !app.servicios.compartir.habilitado {
+    if app.servicios.demo {
+        // La demo no consulta a nadie: el servidor del amigo figura cerrado.
+        app.servicios.servidores.alojar.remotos.entry(id).or_insert(Remoto::Cerrado);
+        return Task::none();
+    }
+    if !app.servicios.compartir.habilitado {
         return Task::none();
     }
     let s = &mut app.servicios.servidores.alojar;
     s.consulta_gen += 1;
     let g = s.consulta_gen;
-    s.remotos.entry(id.clone()).or_insert(Remoto::Comprobando);
+    s.consultas.insert(id.clone(), g);
+    // Siempre vuelve a «Comprobando» para que el botón muestre que está trabajando.
+    s.remotos.insert(id.clone(), Remoto::Comprobando);
     let (raiz, store, host) = (
         crate::estado::directorio(false),
         app.servicios.instancias.almacen.clone(),
@@ -677,12 +700,20 @@ fn consultar(app: &mut App, id: String) -> Task<Mensaje> {
     let id_r = id.clone();
     Task::perform(
         async move {
-            let conexion = tokio::time::timeout(std::time::Duration::from_secs(40), conexion(raiz, store, id_r, host))
-                .await
-                .map_err(|_| "Sin respuesta.".to_string())??;
-            conexion.abierto().await.map_err(icaro_core::diagnostico_contexto::texto)
+            // Una sola espera para todo: servicio, conexión y respuesta.
+            tokio::time::timeout(std::time::Duration::from_secs(20), async move {
+                let conexion = conexion(raiz, store, id_r, host).await?;
+                conexion.abierto().await.map_err(icaro_core::diagnostico_contexto::texto)
+            })
+            .await
+            .map_err(|_| "Sin respuesta del anfitrión.".to_string())?
         },
-        move |r| m(Accion::Consultado(g, id.clone(), r)),
+        move |r| {
+            if let Err(e) = &r {
+                anotar(Gravedad::Aviso, &format!("no se pudo consultar el servidor: {e}"));
+            }
+            m(Accion::Consultado(g, id.clone(), r))
+        },
     )
 }
 
@@ -777,18 +808,79 @@ pub fn al_cerrar(app: &mut App) -> bool {
     }
 }
 
-pub fn suscripcion(app: &App) -> iced::Subscription<Mensaje> {
-    if app.servicios.servidores.alojar.fase == Fase::Abierto {
-        iced::time::every(std::time::Duration::from_secs(2)).map(|_| m(Accion::Tick))
-    } else {
-        iced::Subscription::none()
+/// Comprueba el servidor de cada instancia recibida, de a uno: cada consulta
+/// abre una conexión con la identidad de este equipo, y varias a la vez se
+/// estorban. No corre mientras se juega por un túnel ni durante otro flujo de
+/// Compartir que use la red.
+fn consultar_todas(app: &mut App) -> Task<Mensaje> {
+    if app.servicios.demo || !app.servicios.compartir.habilitado || app.servicios.compartir.red_ocupada {
+        return Task::none();
     }
+    let ids: Vec<String> = crate::con_amigos::modelo(app).recibes.iter().map(|r| r.id.clone()).collect();
+    let s = &mut app.servicios.servidores.alojar;
+    if ids.is_empty() || s.consultando_todas || s.entrando.is_some() || s.tunel.as_ref().is_some_and(|(_, t)| t.activo()) {
+        return Task::none();
+    }
+    s.consultando_todas = true;
+    let mut pedidos = Vec::new();
+    for id in ids {
+        s.consulta_gen += 1;
+        s.consultas.insert(id.clone(), s.consulta_gen);
+        // Sin parpadeo: lo ya sabido se muestra hasta que llegue la respuesta.
+        s.remotos.entry(id.clone()).or_insert(Remoto::Comprobando);
+        pedidos.push((id, s.consulta_gen));
+    }
+    let (raiz, store, host) = (
+        crate::estado::directorio(false),
+        app.servicios.instancias.almacen.clone(),
+        app.servicios.compartir.anfitrion.clone(),
+    );
+    use iced::futures::SinkExt;
+    Task::run(
+        iced::stream::channel(8, move |mut salida| async move {
+            for (id, g) in pedidos {
+                let (raiz, store, host, id_c) = (raiz.clone(), store.clone(), host.clone(), id.clone());
+                let r = tokio::time::timeout(std::time::Duration::from_secs(20), async move {
+                    let conexion = conexion(raiz, store, id_c, host).await?;
+                    conexion.abierto().await.map_err(icaro_core::diagnostico_contexto::texto)
+                })
+                .await
+                .map_err(|_| "Sin respuesta del anfitrión.".to_string())
+                .and_then(|r| r);
+                if salida.send(m(Accion::Consultado(g, id, r))).await.is_err() {
+                    return;
+                }
+            }
+            let _ = salida.send(m(Accion::FinConsultas)).await;
+        }),
+        |mensaje| mensaje,
+    )
+}
+
+pub fn suscripcion(app: &App) -> iced::Subscription<Mensaje> {
+    let mut subs = Vec::new();
+    if app.servicios.servidores.alojar.fase == Fase::Abierto {
+        subs.push(iced::time::every(std::time::Duration::from_secs(2)).map(|_| m(Accion::Tick)));
+    }
+    // En Servidores, los servidores de los amigos se vuelven a mirar cada minuto.
+    if app.seccion == icaro_ui::shell::Seccion::Servidores
+        && app.servicios.compartir.habilitado
+        && !app.servicios.demo
+        && !app.servicios.compartir.recibidas.is_empty()
+    {
+        subs.push(iced::time::every(std::time::Duration::from_secs(60)).map(|_| m(Accion::ConsultarTodas)));
+    }
+    iced::Subscription::batch(subs)
 }
 
 /// Escenas de diseño: `-servidor` (abierto con consola), `-servidor-eula`,
 /// `-servidor-ajustes` y `-recibida-servidor` (el del amigo abierto).
 pub fn preparar_diseno(app: &mut App, scene: &str) {
     let s = &mut app.servicios.servidores.alojar;
+    if scene.contains("-de-amigos") || scene.contains("-inicio") {
+        s.remotos.insert("survival".into(), Remoto::Abierto);
+        s.remotos.insert("create".into(), Remoto::Cerrado);
+    }
     if scene.ends_with("-recibida-servidor") {
         s.remotos.insert("create".into(), Remoto::Abierto);
     } else if scene.ends_with("-servidor") {

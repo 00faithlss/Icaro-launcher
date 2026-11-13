@@ -1,5 +1,20 @@
 # Changelog
 
+## [Sin publicar]
+
+- Unirse al servidor de un amigo sin buscarlo: Ícaro comprueba solo qué servidores de tus amigos están abiertos (al entrar a Servidores y cada minuto, de a uno y nunca mientras juegas por el túnel). La pestaña Servidores muestra arriba «Servidores de tus amigos» con Entrar, la portada de Con amigos también, «Recibes» marca «Servidor abierto» en verde y el detalle de lo que recibes empieza por «Servidor de tu amigo» con Entrar al servidor.
+- Con amigos más claro: el código de invitación se escribe o pega directamente en la columna izquierda («Unirme con un código»), sin confundirse con agregar un servidor; al escribir se abre Unirme con el código en doce celdas grandes, su estado y «Qué pasa después» en tres pasos. Sin nada elegido, el panel muestra un grabado, cómo funciona en tres pasos, «Compartir una instancia» y «Tengo un código», y el resumen de lo que compartes (con el servidor abierto y quién juega) y lo que recibes. En ventanas anchas el detalle se centra con un ancho de lectura. «Pegar» ahora también llena los tres campos.
+- Duplicar instancias: crea «Nombre (copia)» con sus mods, configuración, mundos y recursos, el mismo grupo y los mismos ajustes. No hereda el tiempo jugado ni los vínculos de Compartir, y su instalación se vuelve a verificar al jugar.
+- Con amigos: se puede pasar libremente a Servidores, Red privada, Compartir, Unirme o a otra instancia aunque haya algo abierto; solo espera lo que no se puede cortar (publicar, guardar, instalar o aplicar cambios).
+- Reanudar una publicación en pausa muestra que está trabajando y, si falla, el motivo con Reintentar. Una publicación en pausa se puede quitar de Compartes, con confirmación.
+- Se pueden compartir instancias Vanilla sin mods: comparten su versión de Minecraft.
+- Al instalar una instancia compartida con un nombre que ya existe, se propone uno libre («Nombre (2)») y editarlo ya no deja la pantalla en «Preparando la instancia…».
+- «Comprobar» el servidor de un amigo muestra que está comprobando, termina en 20 s como máximo y ya no se queda pegado al consultar varias instancias.
+- El servidor alojado reconoce quién está jugando con cualquier formato de consola, y «Jugar en mi servidor» abre el juego aunque la publicación esté abierta. Jugar desde cualquier sección con una publicación a la vista ya no se cancela en silencio.
+- La pestaña Red privada ya no muestra «Conectada» doble al pasar el mouse.
+- Mods, modpacks y demás listas: al cambiar de pestaña la página ya no queda pegada abajo ni se detiene a media altura al subir.
+- Agregar mods y modpacks: «Mostrar 20 · 30 · 50 · 100» pasa arriba, junto al orden de los resultados.
+
 ## [0.4.4] - 2026-11-13
 
 - Entrar al servidor de un amigo: si la conexión con el anfitrión se pierde mientras Minecraft carga (por ejemplo, durante la comprobación previa a Jugar), el túnel vuelve a conectar cuando el juego llega, en vez de dejarlo sin servidor. El registro de Ícaro anota cada paso: apertura del túnel, dirección con que se inicia Minecraft, reconexiones, entrada y salida del juego en ambos equipos y el motivo de cualquier fallo.

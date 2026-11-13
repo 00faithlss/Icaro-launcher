@@ -214,6 +214,11 @@ fn pestana_servidores(app: &App) -> Element<'_, Mensaje> {
             Some(componentes::boton_compacto(p, "Releer lista", Variante::Secundario, (!s.loading).then(|| m(Accion::Abrir)))),
         ));
     }
+    // Los servidores abiertos de tus amigos, arriba: es donde se busca unirse.
+    let recibes = crate::con_amigos::modelo(app).recibes;
+    if let Some(amigos) = crate::alojamiento_vista::servidores_amigos(app, &recibes) {
+        col = col.push(amigos).push(sv::rotulo(p, "Tus servidores"));
+    }
     if s.loading && s.registros.is_empty() {
         col = col.push(sv::cuerpo_sm("Cargando servidores…", p.text_muted));
         return col.into();

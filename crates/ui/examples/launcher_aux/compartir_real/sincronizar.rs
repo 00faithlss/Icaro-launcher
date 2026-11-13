@@ -40,8 +40,16 @@ pub fn antes_de_jugar(
     Some(abrir(app, index, true, servidor))
 }
 pub fn abrir(app: &mut App, index: usize, jugar: bool, servidor: Option<String>) -> Task<Mensaje> {
-    if app.servicios.demo || !app.servicios.compartir.habilitado || app.servicios.compartir.modal()
-    {
+    if app.servicios.demo || !app.servicios.compartir.habilitado {
+        return Task::none();
+    }
+    // Ver una publicación no impide jugar: la vista se cierra (la publicación
+    // sigue activa). Otro flujo a medias se avisa en vez de no hacer nada.
+    if app.servicios.compartir.etapa == Etapa::Panel && !app.servicios.compartir.red_ocupada {
+        app.servicios.compartir.cerrar();
+    }
+    if app.servicios.compartir.modal() {
+        app.avisar("Termina o cierra lo que tienes abierto en Con amigos antes de jugar.".into());
         return Task::none();
     }
     let Some(i) = app.servicios.instancias.registros.get(index).cloned() else {

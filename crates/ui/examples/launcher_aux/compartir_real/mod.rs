@@ -48,6 +48,15 @@ pub use sincronizar::antes_de_jugar;
 pub use vistas::fase_pura;
 pub use vistas::transferencias;
 
+/// Carga lo que recibes (y, al llegar, comprueba sus servidores) sin abrir
+/// ninguna página ni cerrar un flujo en curso.
+pub fn cargar_recibidas(app: &mut crate::App) -> iced::Task<crate::Mensaje> {
+    if !app.servicios.compartir.habilitado || app.servicios.demo {
+        return iced::Task::none();
+    }
+    compartidas::abrir(app, None)
+}
+
 /// Con amigos › Cambiar código: anula el código vigente y genera otro.
 pub fn cambiar_codigo(s: &mut Estado) -> iced::Task<crate::Mensaje> {
     s.listo.regenerar = true;

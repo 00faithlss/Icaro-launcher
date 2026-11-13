@@ -467,7 +467,9 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                     s.error = Some(e);
                 }
             }
-            return actualizar(app, Accion::Consultar);
+            // Lo que recibes, para mostrar arriba los servidores abiertos de tus amigos.
+            let amigos = crate::compartir_real::cargar_recibidas(app);
+            return Task::batch([actualizar(app, Accion::Consultar), amigos]);
         }
         Accion::Consultar => {
             let s = &mut app.servicios.servidores;
@@ -843,7 +845,8 @@ pub fn preparar_diseno(app: &mut App, scene: &str) {
         s.pestana = Pestana::Red;
         s.pestana_desde = Pestana::Red;
     }
-    if scene.contains("-amigos") {
+    // `servidores-de-amigos` se queda en la pestaña Servidores con los de tus amigos.
+    if scene.contains("-amigos") && !scene.contains("-de-amigos") {
         s.pestana = Pestana::ConAmigos;
         s.pestana_desde = Pestana::ConAmigos;
     }

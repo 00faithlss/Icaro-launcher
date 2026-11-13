@@ -825,3 +825,43 @@ fn sin_anfitrion_activo_no_se_piden_contadores() {
     s.panel.as_mut().unwrap().estado = v::EstadoPublicacion::Detenida;
     assert!(contadores::pedir(&mut s).is_none());
 }
+
+#[tokio::test]
+async fn pausar_y_reanudar_desde_con_amigos_reconecta_la_publicacion() {
+    let raiz = Temporal::nuevo();
+    let (ctx, revision) = contexto(&raiz.0, 4);
+    let mut a = app();
+    a.servicios
+        .instancias
+        .registros
+        .push(instancia("aa", "Alfa"));
+    let h = std::sync::Arc::new(
+        c::anfitrion::PublicacionActiva::iniciar(
+            identidad(),
+            revision,
+            &ctx.almacen.join("accesos.json"),
+            "https://icaro.invalid",
+            c::transporte::Modo::Local,
+            Default::default(),
+        )
+        .await
+        .unwrap(),
+    );
+    let s = &mut a.servicios.compartir;
+    s.biblioteca
+        .entradas
+        .push(entrada("aa", Some(4), EstadoGuardada::Lista));
+    s.etapa = Etapa::Panel;
+    s.panel = Some(panel("aa"));
+    s.publicacion = Some(local("aa", ctx));
+    s.anfitrion = Some(h);
+    let _ = crate::con_amigos::actualizar(&mut a, crate::con_amigos::Accion::Pausar("aa".into()));
+    assert!(a.servicios.compartir.anfitrion.is_none(), "pausar apaga el nodo");
+    // Volver a Con amigos (otra pestaña o sección) y elegir la publicación de nuevo.
+    let _ = crate::con_amigos::entrar(&mut a);
+    let _ = crate::con_amigos::actualizar(&mut a, crate::con_amigos::Accion::Compartida("aa".into()));
+    let _ = crate::con_amigos::actualizar(&mut a, crate::con_amigos::Accion::Reanudar("aa".into()));
+    let s = &a.servicios.compartir;
+    assert_eq!(s.etapa, Etapa::Panel);
+    assert!(s.red_ocupada, "reanudar debe empezar a reconectar");
+}

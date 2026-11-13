@@ -47,6 +47,8 @@ pub enum Confirmacion {
     Persona(String),
     Dejar,
     Salir(String),
+    /// Quitar de Compartes una publicación en pausa o detenida.
+    Quitar(String),
 }
 
 #[derive(Debug, Clone)]
@@ -82,6 +84,11 @@ pub enum Accion {
     VerNueva,
     // Unirme con un código
     Grupo(usize, String),
+    /// «Pegar»: lee el portapapeles y lo reparte en los tres grupos.
+    Pegar,
+    Pegado(String),
+    /// «Tengo un código» y las celdas grandes: llevan al campo de la izquierda.
+    EnfocarCodigo,
     UnirmeDescargar,
     ConfirmarHuella(bool),
 }
@@ -121,6 +128,11 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
         Accion::Compartida(id) => {
             estado.recibida = None;
             estado.confirmar = None;
+            let misma = app.servicios.compartir.panel.as_ref().is_some_and(|p| p.instancia.id == id)
+                && app.servicios.compartir.etapa == Etapa::Panel;
+            if !misma && !soltar_flujo(app) {
+                return Task::none();
+            }
             let aj = &mut app.servicios.servidores.alojar;
             if aj.editor.as_ref().is_some_and(|e| e.instancia != id) {
                 aj.editor = None;
@@ -133,25 +145,28 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             app.servicios.servidores.alojar.editor = None;
             // Se pregunta al anfitrión si tiene su servidor abierto.
             let servidor = crate::alojamiento_real::actualizar(app, crate::alojamiento_real::Accion::Consultar(id));
-            let s = &mut app.servicios.compartir;
-            // Una publicación abierta se cierra; un flujo pide cerrar como siempre.
-            let t = if s.etapa == Etapa::Panel {
-                s.cerrar();
-                Task::none()
-            } else if s.etapa != Etapa::Cerrada {
-                despachar(app, v::Accion::Cerrar)
-            } else {
-                Task::none()
-            };
-            Task::batch([servidor, t])
+            // Lo abierto a la derecha se cierra para mostrar la recibida.
+            // Si algo no se puede interrumpir, se queda a la vista con su aviso.
+            let _ = soltar_flujo(app);
+            servidor
         }
         Accion::Compartir => {
             estado.confirmar = None;
+            estado.recibida = None;
+            if crate::con_amigos_flujos::paso(app.servicios.compartir.etapa).is_none() && !soltar_flujo(app) {
+                return Task::none();
+            }
             despachar(app, v::Accion::AbrirCompartir)
         }
         Accion::Unirme => {
             estado.confirmar = None;
-            estado.grupos = Default::default();
+            estado.recibida = None;
+            if !es_unirme(app.servicios.compartir.etapa) {
+                if !soltar_flujo(app) {
+                    return Task::none();
+                }
+                app.servicios.servidores.amigos.grupos = Default::default();
+            }
             despachar(app, v::Accion::AceptarInvitacion)
         }
         Accion::CerrarFlujo => despachar(app, v::Accion::Cancelar),
@@ -180,6 +195,16 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             Some(Confirmacion::CambiarCodigo) => cr::cambiar_codigo(&mut app.servicios.compartir),
             Some(Confirmacion::Persona(id)) => despachar(app, v::Accion::RevocarAcceso(id)),
             Some(Confirmacion::Dejar) => despachar(app, v::Accion::DejarDeCompartir),
+            Some(Confirmacion::Quitar(id)) => {
+                // Se cierra el detalle: la publicación deja de existir.
+                let _ = soltar_flujo(app);
+                let s = &mut app.servicios.compartir;
+                if s.publicacion.as_ref().is_some_and(|p| p.instancia_id == id) {
+                    s.publicacion = None;
+                    s.panel = None;
+                }
+                despachar(app, v::Accion::ConfirmarQuitarDe(id))
+            }
             Some(Confirmacion::Salir(id)) => {
                 let Ok(juego) = app.servicios.instancias.almacen.juego(&id) else {
                     return Task::none();
@@ -265,7 +290,30 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             estado.recibida = None;
             despachar(app, v::Accion::VerPublicacion)
         }
+        Accion::Pegar => iced::clipboard::read().map(|c| m(Accion::Pegado(c.unwrap_or_default()))),
+        Accion::Pegado(texto_p) => {
+            estado.grupos = Default::default();
+            actualizar(app, Accion::Grupo(0, texto_p))
+        }
+        Accion::EnfocarCodigo => {
+            let abrir = if es_unirme(app.servicios.compartir.etapa) {
+                Task::none()
+            } else {
+                actualizar(app, Accion::Unirme)
+            };
+            let id = iced::widget::text_input::Id::new(crate::con_amigos_flujos::ID_GRUPO[0]);
+            Task::batch([abrir, iced::widget::text_input::focus(id)])
+        }
         Accion::Grupo(i, texto_g) => {
+            // El campo vive en la columna izquierda: escribir abre Unirme.
+            if !es_unirme(app.servicios.compartir.etapa) {
+                if !soltar_flujo(app) {
+                    return Task::none();
+                }
+                app.servicios.servidores.amigos.recibida = None;
+                let _ = despachar(app, v::Accion::AceptarInvitacion);
+            }
+            let estado = &mut app.servicios.servidores.amigos;
             crate::con_amigos_flujos::repartir(&mut estado.grupos, i, &texto_g);
             let grupos = estado.grupos.clone();
             let s = &mut app.servicios.compartir;
@@ -300,6 +348,26 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             despachar(app, v::Accion::ConfiarAnfitrion)
         }
         Accion::ConfirmarHuella(b) => despachar(app, v::Accion::ConfirmarHuella(b)),
+    }
+}
+
+/// Deja el flujo abierto para mostrar otra cosa del maestro. Lo que no se
+/// puede cortar a la mitad (publicar, guardar, instalar o aplicar cambios)
+/// avisa y se queda; lo demás se cierra sin preguntar.
+fn soltar_flujo(app: &mut App) -> bool {
+    let s = &mut app.servicios.compartir;
+    match s.etapa {
+        Etapa::Cerrada => true,
+        Etapa::Publicando | Etapa::Guardando | Etapa::InstalandoInvitado | Etapa::AplicandoVinculo => {
+            app.avisar("Espera a que termine lo que está en curso.".into());
+            false
+        }
+        _ => {
+            s.red_ocupada = false;
+            s.cerrar_al_terminar = false;
+            s.cerrar();
+            true
+        }
     }
 }
 
@@ -380,14 +448,8 @@ pub fn vista(app: &App) -> Element<'_, Mensaje> {
             matches!(detalle, Detalle::Compartir(_)),
             m(Accion::Compartir),
         ),
-        sv::accion_grande(
-            p,
-            Icono::Llave,
-            "Unirme con un código",
-            "Te pasaron un código de 12 letras",
-            matches!(detalle, Detalle::Unirme),
-            m(Accion::Unirme),
-        ),
+        // El código siempre a la vista: no se confunde con agregar un servidor.
+        crate::con_amigos_flujos::bloque_codigo(app, matches!(detalle, Detalle::Unirme)),
     ]
     .spacing(8)]
     .spacing(10);
@@ -434,12 +496,14 @@ pub fn vista(app: &App) -> Element<'_, Mensaje> {
     }
     for r in recibes {
         let nueva = r.cambios.is_some_and(|n| n > 0);
+        // Con el servidor del anfitrión abierto, la fila lo dice en verde.
+        let abierto = app.servicios.servidores.alojar.remotos.get(&r.id) == Some(&crate::alojamiento_real::Remoto::Abierto);
         items = items.push(sv::item_lista(
             p,
             &r.nombre,
             icaro_core::icono_instancia::patron(&r.nombre, 0),
-            &format!("de {}", r.anfitrion),
-            nueva.then_some(p.info),
+            &if abierto { format!("Servidor abierto · de {}", r.anfitrion) } else { format!("de {}", r.anfitrion) },
+            if abierto { Some(p.success) } else { nueva.then_some(p.info) },
             actual_recibida.as_deref() == Some(r.id.as_str()),
             m(Accion::Recibida(r.id.clone())),
         ));
@@ -455,7 +519,7 @@ pub fn vista(app: &App) -> Element<'_, Mensaje> {
             "Compartir instancias está en fase experimental. Actívalo para compartir una instancia o unirte con un código.",
             Some(componentes::boton(p, "Activar Compartir experimental", Variante::Primario, Some(m(Accion::Activar)))),
         ),
-        Detalle::Vacio => vacio(app, "Juega con amigos sin servidor", "Comparte una instancia o únete con un código.", None),
+        Detalle::Vacio => icaro_ui::scroll::desplazable(portada(app, &modelo)),
         Detalle::Compartir(paso) => {
             let cab = sv::cabecera_detalle(
                 p,
@@ -510,6 +574,10 @@ pub fn vista(app: &App) -> Element<'_, Mensaje> {
         Detalle::Publicacion => icaro_ui::scroll::desplazable(publicacion_detalle(app, &modelo)),
         Detalle::Recibida(r) => icaro_ui::scroll::desplazable(recibida_detalle(app, r)),
     };
+    // En ventanas anchas el detalle no se estira: se centra con un ancho de lectura.
+    let interior = container(container(interior).max_width(ANCHO_DETALLE).width(Length::Fill).height(Length::Fill))
+        .center_x(Length::Fill)
+        .height(Length::Fill);
     let panel = container(icaro_ui::transicion::subir(p.surface, k, 6.0, 260, interior))
         .padding(Padding { top: 28.0, right: 32.0, bottom: 32.0, left: 32.0 })
         .width(Length::Fill)
@@ -520,6 +588,123 @@ pub fn vista(app: &App) -> Element<'_, Mensaje> {
         .height(Length::Fill)
         .align_y(Alignment::Start)
         .into()
+}
+
+/// Ancho máximo del detalle; lo demás queda como margen a los lados.
+const ANCHO_DETALLE: f32 = 820.0;
+
+/// Portada de Con amigos: grabado, cómo funciona en tres pasos, las dos
+/// acciones y, si ya compartes o recibes algo, su resumen.
+fn portada<'a>(app: &'a App, modelo: &v::InstanciasCompartidas) -> Element<'a, Mensaje> {
+    let p = app.paleta();
+    let aloja = &app.servicios.servidores.alojar;
+    let lamina = container(icaro_ui::laminas::grabado(p, icaro_ui::laminas::Lamina::Alas, Length::Fill, 190))
+        .padding(borde::MEDIO)
+        .width(Length::Fill)
+        .style(icaro_ui::estilo::marco(p));
+    let paso = |n: usize, glifo: Icono, titulo_p: &str, linea: &str| -> Element<'a, Mensaje> {
+        container(
+            column![
+                row![
+                    sv::mono_sm(format!("0{n}"), p.text_muted),
+                    Space::with_width(Length::Fill),
+                    icaro_ui::iconos::icono(glifo, icaro_ui::iconos::Tam::Base, p.text),
+                ]
+                .align_y(Alignment::Center),
+                sv::subtitulo(titulo_p.to_owned(), p.text),
+                sv::cuerpo_sm(linea.to_owned(), p.text_muted),
+            ]
+            .spacing(8),
+        )
+        .padding(16)
+        .width(Length::FillPortion(1))
+        .height(132)
+        .style(sv::caja(Some(p.surface_sunken), p.border, borde::FINO))
+        .into()
+    };
+    let mut c = column![
+        lamina,
+        column![
+            sv::titulo("Juega con amigos sin servidor", p.text),
+            sv::cuerpo_sm(
+                "Comparte una instancia y tus amigos la reciben con los mismos mods. Si quieres, abre un servidor en tu equipo y entran sin abrir puertos.",
+                p.text_muted,
+            ),
+        ]
+        .spacing(8),
+        row![
+            paso(1, Icono::Subir, "Comparte", "Eliges la instancia y qué mods y ajustes van."),
+            paso(2, Icono::Copiar, "Envía el código", "12 letras que caducan cuando tú quieras."),
+            paso(3, Icono::Jugar, "Jueguen juntos", "Abre un servidor o únanse donde quieran."),
+        ]
+        .spacing(12),
+        row![
+            sv::accion_grande(p, Icono::Subir, "Compartir una instancia", "Tus amigos reciben los mismos mods", false, m(Accion::Compartir)),
+            sv::accion_grande(p, Icono::Llave, "Tengo un código", "Escríbelo en la columna de la izquierda", false, m(Accion::EnfocarCodigo)),
+        ]
+        .spacing(12),
+    ]
+    .spacing(22);
+    // Primero, los servidores abiertos de tus amigos, con Entrar.
+    if let Some(amigos) = crate::alojamiento_vista::servidores_amigos(app, &modelo.recibes) {
+        c = c.push(amigos);
+    }
+    // Resumen: lo que compartes y lo que recibes, con su estado y un acceso.
+    let fila = |glifo_n: &str, linea: String, estado_w: Element<'a, Mensaje>, al: Mensaje| -> Element<'a, Mensaje> {
+        container(
+            row![
+                pixel(p, glifo_n, 32.0),
+                column![negrita_sm(glifo_n.to_owned(), p.text), sv::mono_sm(linea, p.text_muted)].spacing(2).width(Length::Fill),
+                estado_w,
+                componentes::boton_compacto(p, "Ver", Variante::Secundario, Some(al)),
+            ]
+            .spacing(14)
+            .align_y(Alignment::Center),
+        )
+        .padding(Padding::from([10.0, 14.0]))
+        .width(Length::Fill)
+        .style(sv::caja(Some(p.surface), p.border, borde::FINO))
+        .into()
+    };
+    if !modelo.compartes.is_empty() {
+        let mut lista = column![sv::subtitulo("Lo que compartes", p.text)].spacing(8);
+        for cmp in &modelo.compartes {
+            let servidor = aloja.de(&cmp.id).filter(|f| **f == crate::alojamiento_real::Fase::Abierto).map(|_| {
+                if aloja.jugadores.is_empty() { " · servidor abierto".to_owned() } else { format!(" · servidor abierto · {} jugando", aloja.jugadores.len()) }
+            });
+            let linea = format!(
+                "Revisión {} · {} {}{}",
+                cmp.revision,
+                cmp.personas,
+                if cmp.personas == 1 { "persona" } else { "personas" },
+                servidor.unwrap_or_default()
+            );
+            let estado_w = match cmp.estado {
+                v::EstadoCompartida::Disponible => componentes::insignia(p, componentes::Estado::Exito, "Disponible"),
+                v::EstadoCompartida::CambiosSinPublicar => componentes::insignia(p, componentes::Estado::Info, "Cambios"),
+                v::EstadoCompartida::EnPausa => componentes::insignia(p, componentes::Estado::Aviso, "En pausa"),
+            };
+            lista = lista.push(fila(&cmp.nombre, linea, estado_w, m(Accion::Compartida(cmp.id.clone()))));
+        }
+        c = c.push(lista);
+    }
+    if !modelo.recibes.is_empty() {
+        let mut lista = column![sv::subtitulo("Lo que recibes", p.text)].spacing(8);
+        for r in &modelo.recibes {
+            let estado_w = if r.cambios.is_some_and(|n| n > 0) {
+                componentes::insignia(p, componentes::Estado::Info, "Cambios nuevos")
+            } else {
+                componentes::insignia_contorno(p, &format!("de {}", r.anfitrion))
+            };
+            lista = lista.push(fila(&r.nombre, r.version.clone(), estado_w, m(Accion::Recibida(r.id.clone()))));
+        }
+        c = c.push(lista);
+    }
+    c.into()
+}
+
+fn negrita_sm<'a>(s: String, c: iced::Color) -> Element<'a, Mensaje> {
+    iced::widget::text(s).font(icaro_ui::fuentes::CUERPO_NEGRITA).size(icaro_ui::tema::texto::BODY_SM.0).color(c).into()
 }
 
 fn vacio<'a>(app: &'a App, titulo: &str, linea: &str, accion: Option<Element<'a, Mensaje>>) -> Element<'a, Mensaje> {
@@ -575,11 +760,23 @@ fn publicacion_detalle<'a>(app: &'a App, modelo: &v::InstanciasCompartidas) -> E
             return c.push(f.map(vista_compartir)).into();
         }
     }
-    // Recuperando o reconectando la publicación.
-    if s.red_ocupada && s.anfitrion.is_none() && !en_pausa {
+    // Recuperando, reconectando o reanudando la publicación: también tras una
+    // pausa, para que Reanudar muestre que está trabajando.
+    if s.red_ocupada && s.anfitrion.is_none() {
+        let texto_r = if estado == v::EstadoCompartida::EnPausa { "Reanudando la publicación…" } else { "Abriendo la publicación…" };
         return c
-            .push(row![icaro_ui::progreso::spinner(p, app.reducir), sv::cuerpo_sm("Abriendo la publicación…", p.text_muted)].spacing(10))
+            .push(row![icaro_ui::progreso::spinner(p, app.reducir), sv::cuerpo_sm(texto_r, p.text_muted)].spacing(10))
             .into();
+    }
+    // Un fallo al reconectar o reanudar se muestra con su causa.
+    if let v::EstadoPublicacion::Error(e) = &panel.estado {
+        c = c.push(sv::nota(
+            p,
+            Tono::Error,
+            Icono::Alerta,
+            sv::cuerpo_sm(format!("No se pudo reanudar: {e}"), p.text),
+            Some(componentes::boton_compacto(p, "Reintentar", Variante::Secundario, Some(m(Accion::Reanudar(id.clone()))))),
+        ));
     }
     if estado == v::EstadoCompartida::CambiosSinPublicar {
         c = c.push(sv::nota(
@@ -763,17 +960,38 @@ fn publicacion_detalle<'a>(app: &'a App, modelo: &v::InstanciasCompartidas) -> E
             m(Accion::Confirmar),
             m(Accion::Cancelar),
         )
+    } else if a.confirmar.as_ref() == Some(&Confirmacion::Quitar(id.clone())) {
+        sv::confirmar(
+            p,
+            &format!("¿Quitar {} de lo que compartes?", panel.instancia.nombre),
+            "Tus amigos dejan de recibir cambios y no pueden volver a entrar. Su copia y la tuya no se tocan.",
+            "Quitar",
+            m(Accion::Confirmar),
+            m(Accion::Cancelar),
+        )
     } else {
-        row![
+        let mut fila = row![
             if en_pausa {
                 componentes::boton_con_icono(p, Icono::Jugar, "Reanudar", Variante::Secundario, (!s.red_ocupada).then(|| m(Accion::Reanudar(id.clone()))), true)
             } else {
                 componentes::boton_con_icono(p, Icono::Pausa, "Pausar", Variante::Secundario, (!s.red_ocupada).then(|| m(Accion::Pausar(id.clone()))), true)
             },
-            componentes::boton_compacto(p, "Dejar de compartir", Variante::Peligro, (!s.red_ocupada && !en_pausa).then(|| m(Accion::Pedir(Confirmacion::Dejar)))),
         ]
-        .spacing(8)
-        .into()
+        .spacing(8);
+        // Activa se deja de compartir; en pausa ya no hay nodo: se puede quitar.
+        fila = fila.push(if en_pausa {
+            componentes::boton_con_icono(
+                p,
+                Icono::Papelera,
+                "Quitar de compartidas",
+                Variante::Peligro,
+                (!s.red_ocupada).then(|| m(Accion::Pedir(Confirmacion::Quitar(id.clone())))),
+                true,
+            )
+        } else {
+            componentes::boton_compacto(p, "Dejar de compartir", Variante::Peligro, (!s.red_ocupada).then(|| m(Accion::Pedir(Confirmacion::Dejar))))
+        });
+        fila.into()
     };
     c.push(sv::pie(p, zona)).into()
 }
@@ -814,6 +1032,8 @@ fn recibida_detalle<'a>(app: &'a App, r: &v::InstanciaQueRecibes) -> Element<'a,
     };
     let mut c = column![
         cabecera_recibida(app, r),
+        // Lo primero: el servidor del amigo y cómo entrar.
+        crate::alojamiento_vista::seccion_invitado(app, r),
         row![
             bloque(
                 column![
@@ -827,7 +1047,6 @@ fn recibida_detalle<'a>(app: &'a App, r: &v::InstanciaQueRecibes) -> Element<'a,
             bloque(column![sv::rotulo(p, "Tu copia"), sv::cuerpo_sm(copia, p.text)].spacing(12)),
         ]
         .spacing(24),
-        crate::alojamiento_vista::seccion_invitado(app, r),
     ]
     .spacing(22);
     if nueva {
@@ -923,6 +1142,15 @@ pub fn preparar_diseno(app: &mut App, scene: &str) {
         },
         ..Default::default()
     });
+    // `-inicio`: la portada con el resumen, sin nada elegido.
+    if scene.contains("-inicio") {
+        return;
+    }
+    if scene.contains("-unirme-escrito") {
+        app.servicios.compartir.etapa = Etapa::Entrada;
+        app.servicios.servidores.amigos.grupos = ["7QKM".into(), "4X".into(), String::new()];
+        return;
+    }
     if scene.ends_with("-recibida") || scene.ends_with("-recibida-servidor") {
         app.servicios.servidores.amigos.recibida = Some("create".into());
         return;
@@ -1041,5 +1269,61 @@ pub fn preparar_diseno(app: &mut App, scene: &str) {
     }
     if scene.ends_with("-confirmar") {
         app.servicios.servidores.amigos.confirmar = Some(Confirmacion::Dejar);
+    }
+    // `-pausa`: la publicación en pausa, con Reanudar y Quitar de compartidas;
+    // `-pausa-quitar`: con la confirmación de quitar abierta.
+    if scene.contains("-pausa") {
+        if let Some(m) = &mut app.servicios.servidores.amigos.muestra {
+            if let Some(c) = m.compartes.iter_mut().find(|c| c.id == "amigos") {
+                c.estado = v::EstadoCompartida::EnPausa;
+            }
+        }
+        if scene.ends_with("-quitar") {
+            app.servicios.servidores.amigos.confirmar = Some(Confirmacion::Quitar("amigos".into()));
+        }
+    }
+}
+
+#[cfg(test)]
+mod pruebas {
+    use super::*;
+
+    fn app() -> App {
+        let (mut a, _) = crate::iniciar_con_guardado(
+            icaro_ui::shell::Seccion::Servidores,
+            true,
+            None,
+            false,
+            crate::servicios::Estado::nuevo(true),
+            None,
+        );
+        a.servicios.demo = false;
+        a.servicios.compartir.habilitado = true;
+        a
+    }
+
+    #[test]
+    fn escribir_el_codigo_a_la_izquierda_abre_unirme_y_cierra_lo_demas() {
+        let mut a = app();
+        a.servicios.servidores.amigos.recibida = Some("x".into());
+        let _ = actualizar(&mut a, Accion::Grupo(0, "7qk".into()));
+        assert_eq!(a.servicios.compartir.etapa, Etapa::Entrada);
+        assert_eq!(a.servicios.servidores.amigos.grupos[0], "7QK");
+        assert!(a.servicios.servidores.amigos.recibida.is_none());
+        // Seguir escribiendo no reinicia lo escrito.
+        let _ = actualizar(&mut a, Accion::Grupo(0, "7QKM".into()));
+        assert_eq!(a.servicios.servidores.amigos.grupos[0], "7QKM");
+    }
+
+    #[test]
+    fn lo_pegado_llena_los_tres_grupos_aunque_hubiera_algo_escrito() {
+        let mut a = app();
+        a.servicios.servidores.amigos.grupos = ["ZZZZ".into(), "Z".into(), String::new()];
+        let _ = actualizar(&mut a, Accion::Pegado("7qkm-4xpt-r2c9".into()));
+        assert_eq!(
+            a.servicios.servidores.amigos.grupos,
+            ["7QKM".to_owned(), "4XPT".into(), "R2C9".into()]
+        );
+        assert_eq!(a.servicios.compartir.etapa, Etapa::Entrada);
     }
 }

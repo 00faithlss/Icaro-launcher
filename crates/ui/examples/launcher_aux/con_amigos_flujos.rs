@@ -351,7 +351,8 @@ fn listo(app: &App) -> Element<'_, Mensaje> {
 pub fn unirme(app: &App) -> Option<Element<'_, Mensaje>> {
     let s = &app.servicios.compartir;
     match s.etapa {
-        Etapa::Entrada => Some(entrada(app)),
+        // Desplazable: con el código y «Qué pasa después» no cabe en ventanas bajas.
+        Etapa::Entrada => Some(icaro_ui::scroll::desplazable(entrada(app))),
         Etapa::Identidad => Some(invitacion(app)),
         Etapa::Destino if s.invitado.auto && s.invitado.error.is_none() => {
             let p = app.paleta();
@@ -361,42 +362,132 @@ pub fn unirme(app: &App) -> Option<Element<'_, Mensaje>> {
     }
 }
 
-/// Tres campos de 4 que avanzan solos y reparten lo pegado.
-fn entrada(app: &App) -> Element<'_, Mensaje> {
+/// Estado del código escrito: error, válido o ninguno.
+fn tono_codigo(estado: &v::EstadoEntrada) -> Option<bool> {
+    match estado {
+        v::EstadoEntrada::Invalido | v::EstadoEntrada::Vencido { .. } | v::EstadoEntrada::Completo { .. } | v::EstadoEntrada::Inaccesible(_) => {
+            Some(false)
+        }
+        v::EstadoEntrada::Valido { .. } => Some(true),
+        _ => None,
+    }
+}
+
+/// Columna izquierda: el código siempre a la vista, en tres grupos de 4 que
+/// avanzan solos y reparten lo pegado. Escribir abre Unirme a la derecha.
+pub fn bloque_codigo(app: &App, activo: bool) -> Element<'_, Mensaje> {
     let p = app.paleta();
-    let s = &app.servicios.compartir;
     let a = &app.servicios.servidores.amigos;
-    let estado = &s.invitado.entrada;
-    let error = matches!(
-        estado,
-        v::EstadoEntrada::Invalido | v::EstadoEntrada::Vencido { .. } | v::EstadoEntrada::Completo { .. } | v::EstadoEntrada::Inaccesible(_)
-    );
-    let mut campos = row![].spacing(8).align_y(Alignment::Center);
+    let tono = tono_codigo(&app.servicios.compartir.invitado.entrada).filter(|_| activo);
+    let mut campos = row![].spacing(6).align_y(Alignment::Center);
     for i in 0..3 {
         if i > 0 {
-            campos = campos.push(text("-").font(fuentes::MONO).size(20).color(p.text_muted));
+            campos = campos.push(text("-").font(fuentes::MONO).size(16).color(p.text_muted));
         }
         let entrada = text_input("XXXX", &a.grupos[i])
             .id(text_input::Id::new(ID_GRUPO[i]))
             .on_input(move |t| m(Accion::Grupo(i, t)))
             .font(fuentes::MONO_MEDIO)
-            .size(22)
-            .width(104)
-            .padding(Padding::from([8.0, 12.0]))
+            .size(16)
+            .width(Length::Fill)
+            .padding(Padding::from([7.0, 8.0]))
             .style(move |tema, e| {
                 let mut st = icaro_ui::estilo::campo(p)(tema, e);
                 st.border.width = borde::MEDIO;
-                if error {
-                    st.border.color = p.error;
-                } else if matches!(estado, v::EstadoEntrada::Valido { .. }) {
-                    st.border.color = p.success;
+                match tono {
+                    Some(false) => st.border.color = p.error,
+                    Some(true) => st.border.color = p.success,
+                    None => {}
                 }
                 st
             });
         campos = campos.push(entrada);
     }
-    campos = campos.push(componentes::boton_compacto(p, "Pegar", Variante::Fantasma, Some(Mensaje::Compartir(cr::Accion::Vista(v::Accion::PegarCodigo)))));
-    let mut c = column![campos].spacing(12);
+    let cabeza = row![
+        icono(Icono::Llave, Tam::Base, p.text),
+        column![negrita("Unirme con un código", p.text), sv::cuerpo_sm("Escríbelo o pégalo aquí", p.text_muted)].spacing(2).width(Length::Fill),
+        componentes::boton_compacto(p, "Pegar", Variante::Fantasma, Some(m(Accion::Pegar))),
+    ]
+    .spacing(14)
+    .align_y(Alignment::Center);
+    container(column![cabeza, campos].spacing(12))
+        .padding(if activo { Padding::from([13.0, 15.0]) } else { Padding::from([14.0, 16.0]) })
+        .width(Length::Fill)
+        .style(sv::caja(
+            Some(if activo { p.accent_soft } else { p.surface }),
+            if activo { p.text } else { p.border_strong },
+            if activo { borde::MEDIO } else { borde::FINO },
+        ))
+        .into()
+}
+
+/// Las 12 celdas grandes, como las de «Código para tus amigos». Muestran lo
+/// escrito a la izquierda; la siguiente por llenar lleva borde grueso.
+fn celdas_grandes<'a>(app: &'a App, error: Option<bool>) -> Element<'a, Mensaje> {
+    let p = app.paleta();
+    let grupos = &app.servicios.servidores.amigos.grupos;
+    let escritas: Vec<char> = grupos.iter().flat_map(|g| g.chars().chain(std::iter::repeat(' ')).take(4)).collect();
+    let siguiente = grupos
+        .iter()
+        .enumerate()
+        .find(|(_, g)| g.chars().count() < 4)
+        .map(|(k, g)| k * 4 + g.chars().count());
+    let mut fila = row![].spacing(5).align_y(Alignment::Center);
+    for (n, c) in escritas.iter().enumerate() {
+        if n > 0 && n % 4 == 0 {
+            fila = fila.push(container(text("-").font(fuentes::MONO_MEDIO).size(24).color(p.text_muted)).center_x(14).center_y(48));
+        }
+        let vacia = *c == ' ';
+        let borde_c = match error {
+            Some(false) => p.error,
+            Some(true) => p.success,
+            None if Some(n) == siguiente => p.text,
+            None if vacia => p.border_strong,
+            None => p.text,
+        };
+        let ancho = if Some(n) == siguiente && error.is_none() { borde::MEDIO } else if vacia { borde::FINO } else { borde::MEDIO };
+        fila = fila.push(
+            container(text(if vacia { String::new() } else { c.to_string() }).font(fuentes::MONO_MEDIO).size(24).color(p.text))
+                .center_x(36)
+                .center_y(48)
+                .style(sv::caja(Some(p.surface_sunken), borde_c, ancho)),
+        );
+    }
+    iced::widget::button(fila)
+        .padding(0)
+        .on_press(m(Accion::EnfocarCodigo))
+        .style(icaro_ui::estilo::sin_estilo(p.text))
+        .into()
+}
+
+/// Un paso numerado: número en un cuadro, título y una línea.
+pub fn paso_numerado<'a>(p: icaro_ui::tema::Paleta, n: usize, titulo: &str, linea: &str) -> Element<'a, Mensaje> {
+    row![
+        container(sv::mono_sm(n.to_string(), p.text)).center_x(28).center_y(28).style(sv::caja(None, p.text, borde::FINO)),
+        column![negrita(titulo.to_owned(), p.text), sv::cuerpo_sm(linea.to_owned(), p.text_muted)].spacing(2).width(Length::Fill),
+    ]
+    .spacing(14)
+    .align_y(Alignment::Center)
+    .into()
+}
+
+/// Unirme a la derecha: el código en grande, su estado y qué pasa después.
+fn entrada(app: &App) -> Element<'_, Mensaje> {
+    let p = app.paleta();
+    let s = &app.servicios.compartir;
+    let estado = &s.invitado.entrada;
+    let tono = tono_codigo(estado);
+    let mut c = column![
+        sv::rotulo(p, "Tu código"),
+        celdas_grandes(app, tono),
+        row![
+            componentes::boton_con_icono(p, Icono::Copiar, "Pegar código", Variante::Secundario, Some(m(Accion::Pegar)), true),
+            sv::cuerpo_sm("o escríbelo en la columna de la izquierda.", p.text_muted),
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center),
+    ]
+    .spacing(12);
     match estado {
         v::EstadoEntrada::Validando => {
             c = c.push(row![icaro_ui::progreso::spinner(p, app.reducir), sv::cuerpo_sm("Buscando la invitación…", p.text_muted)].spacing(10));
@@ -415,7 +506,21 @@ fn entrada(app: &App) -> Element<'_, Mensaje> {
         }
         v::EstadoEntrada::Vacio => {}
     }
-    c.into()
+    let despues = column![
+        sv::subtitulo("Qué pasa después", p.text),
+        paso_numerado(p, 1, "Verás quién te invita", "Su nombre y la huella de su equipo, para confirmar que es quien esperas."),
+        paso_numerado(p, 2, "Revisas qué se instala", "La versión, el loader, los mods y cuánto se descarga, antes de aceptar."),
+        paso_numerado(p, 3, "Tus cosas no se tocan", "Se crea una instancia nueva: tus mundos y ajustes quedan como están."),
+        sv::nota(
+            p,
+            Tono::Info,
+            Icono::InfoCaja,
+            sv::cuerpo_sm("El código viene en el mensaje que te mandó tu amigo. Caduca en 24 horas, 2 días o 1 semana, según lo eligió.", p.text),
+            None,
+        ),
+    ]
+    .spacing(16);
+    column![c, sv::regla(borde::FINO, p.border), despues].spacing(24).into()
 }
 
 pub const ID_GRUPO: [&str; 3] = ["codigo-0", "codigo-1", "codigo-2"];

@@ -572,8 +572,10 @@ fn actualizar(app: &mut App, m: Mensaje) -> Task<Mensaje> {
     if !compartiendo && app.servicios.compartir.visible() && app.seccion != Seccion::Servidores {
         tarea = Task::batch([tarea, Task::done(Mensaje::Ir(Seccion::Servidores))]);
     }
-    // Los flujos de compartir viven en el panel de Con amigos.
-    if app.servicios.compartir.visible()
+    // Los flujos de compartir viven en el panel de Con amigos: se va ahí cuando
+    // uno aparece, pero después se puede cambiar de pestaña libremente.
+    if !compartiendo
+        && app.servicios.compartir.visible()
         && app.servicios.servidores.pestana != icaro_ui::pantalla_servidores::Pestana::ConAmigos
     {
         let s = &mut app.servicios.servidores;
