@@ -132,7 +132,12 @@ pub fn preparar_revision(
         if base.archivos == manifiesto.archivos && base.packs == manifiesto.packs {
             return Err(Error::Datos("no hay cambios para publicar"));
         }
-    } else if manifiesto.archivos.is_empty() {
+    } else if manifiesto.archivos.is_empty()
+        && manifiesto.packs.is_empty()
+        && ctx.perfil.loader != "vanilla"
+    {
+        // Una instancia Vanilla comparte su versión de Minecraft aunque no
+        // tenga archivos; con un loader, una publicación vacía es un descuido.
         return Err(Error::Datos("no hay contenido seleccionado"));
     }
     let contenido = ctx.almacen.join("contenido");

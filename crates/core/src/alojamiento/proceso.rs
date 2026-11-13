@@ -64,7 +64,7 @@ pub fn argumentos(jar: &str, memoria_mb: u32) -> Vec<String> {
 }
 
 pub fn es_listo(linea: &str) -> bool {
-    linea.contains("]: Done (") && linea.contains("For help, type")
+    !linea.contains('<') && linea.contains("Done (") && linea.contains("For help, type")
 }
 
 /// Inicia `java -jar <jar> nogui` dentro de `carpeta` sin ventana de consola.
@@ -148,7 +148,7 @@ async fn leer(origen: impl AsyncRead + Unpin, tx: mpsc::Sender<Evento>) {
             Ok(0) | Err(_) => break,
             Ok(_) => {
                 buf.truncate(LINEA_MAX);
-                let linea = String::from_utf8_lossy(&buf).trim_end().to_owned();
+                let linea = super::sin_ansi(String::from_utf8_lossy(&buf).trim_end());
                 if es_listo(&linea) {
                     let _ = tx.send(Evento::Listo).await;
                 }

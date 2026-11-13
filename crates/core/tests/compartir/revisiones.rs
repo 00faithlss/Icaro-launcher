@@ -30,6 +30,36 @@ fn contenido_alterado_despues_de_preparar_no_se_publica() {
 }
 
 #[test]
+fn una_instancia_vanilla_sin_archivos_se_puede_compartir_y_una_con_loader_no() {
+    use icaro_core::compartir::{
+        publicacion::{Borrador, Seleccion},
+        revisiones::{preparar_revision, publicar_revision, vigente, ContextoPublicacion},
+    };
+    let juego = Carpeta::nueva();
+    let almacen = Carpeta::nueva();
+    let cancel = CancellationToken::new();
+    let (origen, mut perfil) = origen_y_perfil();
+    let ctx_de = |perfil: icaro_core::compartir::Perfil| ContextoPublicacion {
+        juego: juego.0.clone(),
+        almacen: almacen.0.clone(),
+        origen: origen.clone(),
+        perfil,
+        limites: Limites::default(),
+    };
+    let inv = inventario::analizar(&juego.0, &cancel, &Limites::default()).unwrap();
+    let borrador = Borrador::comparar(&inv, None, &Seleccion::default()).unwrap();
+    // Con loader, una primera publicación vacía se rechaza.
+    assert!(preparar_revision(&ctx_de(perfil.clone()), &borrador, &cancel).is_err());
+    // Vanilla comparte solo su versión de Minecraft.
+    perfil.loader = "vanilla".into();
+    perfil.loader_version = None;
+    let ctx = ctx_de(perfil);
+    let publicada = publicar_revision(preparar_revision(&ctx, &borrador, &cancel).unwrap()).unwrap();
+    assert!(publicada.manifiesto.archivos.is_empty());
+    assert_eq!(vigente(&ctx).unwrap().unwrap().manifiesto.revision, 1);
+}
+
+#[test]
 fn cancelar_despues_de_preparar_conserva_la_revision_vigente() {
     use icaro_core::compartir::{
         publicacion::{Borrador, Eleccion, Seleccion},

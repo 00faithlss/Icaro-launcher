@@ -389,19 +389,54 @@ pub enum Jugador {
     Sale(String),
 }
 
+/// No depende del prefijo de la consola (`[hora] [hilo/NIVEL]: `, `(Minecraft)`
+/// u otros): toma la palabra justo antes del aviso. Los mensajes de chat
+/// (`<Nombre> …`) nunca cuentan.
 pub fn jugador(linea: &str) -> Option<Jugador> {
-    let (_, mensaje) = linea.rsplit_once("]: ")?;
-    let mensaje = mensaje.trim();
+    let limpia = sin_ansi(linea);
+    let mensaje = limpia.trim_end();
     let nombre_valido = |n: &str| {
         !n.is_empty() && n.len() <= 16 && n.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
     };
-    if let Some(n) = mensaje.strip_suffix(" joined the game") {
-        return nombre_valido(n).then(|| Jugador::Entra(n.into()));
+    let (antes, entra) = if let Some(a) = mensaje.strip_suffix(" joined the game") {
+        (a, true)
+    } else if let Some(a) = mensaje.strip_suffix(" left the game") {
+        (a, false)
+    } else {
+        return None;
+    };
+    if antes.contains('<') {
+        return None;
     }
-    if let Some(n) = mensaje.strip_suffix(" left the game") {
-        return nombre_valido(n).then(|| Jugador::Sale(n.into()));
+    let nombre = antes.rsplit([' ', ':', ']', ')']).next()?;
+    nombre_valido(nombre).then(|| {
+        if entra {
+            Jugador::Entra(nombre.into())
+        } else {
+            Jugador::Sale(nombre.into())
+        }
+    })
+}
+
+/// Quita los códigos de color ANSI (`ESC [ … letra`) de una línea de consola.
+pub fn sin_ansi(linea: &str) -> String {
+    let mut s = String::with_capacity(linea.len());
+    let mut chars = linea.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                for f in chars.by_ref() {
+                    if f.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        s.push(c);
     }
-    None
+    s
 }
 
 #[cfg(test)]
@@ -478,6 +513,19 @@ mod tests {
         assert_eq!(
             jugador("[12:05:00] [Server thread/INFO]: <Pato> joined the game"),
             None
+        );
+        assert_eq!(
+            jugador("[12:05:00] [Server thread/INFO]: <Pato> yo joined the game"),
+            None
+        );
+        // Otros formatos de consola: logger entre paréntesis y colores ANSI.
+        assert_eq!(
+            jugador("[12:00:01] [Server thread/INFO] (Minecraft) Sombra joined the game"),
+            Some(Jugador::Entra("Sombra".into()))
+        );
+        assert_eq!(
+            jugador("\u{1b}[32m[12:00:01 INFO]: Sombra left the game\u{1b}[0m"),
+            Some(Jugador::Sale("Sombra".into()))
         );
     }
 
