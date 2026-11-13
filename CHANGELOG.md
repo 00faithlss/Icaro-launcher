@@ -1,5 +1,9 @@
 # Changelog
 
+## [Sin publicar]
+
+- Entrar al servidor de un amigo: si la conexión con el anfitrión se pierde mientras Minecraft carga (por ejemplo, durante la comprobación previa a Jugar), el túnel vuelve a conectar cuando el juego llega, en vez de dejarlo sin servidor. El registro de Ícaro anota cada paso: apertura del túnel, dirección con que se inicia Minecraft, reconexiones, entrada y salida del juego en ambos equipos y el motivo de cualquier fallo.
+
 ## [0.4.3] - 2026-11-13
 
 - Servidores sigue PantallaServidores del System Design: banda de 150 px con «Fase experimental» y tres pestañas (Servidores, Con amigos y Red privada) con una línea que se desliza bajo la activa, contenido que entra con fundido y las flechas izquierda y derecha para cambiar de pestaña. Nada abre un diálogo encima.
@@ -9,7 +13,7 @@
 - Unirme con un código: al escribir el código a mano, un guion o un espacio tras un grupo completo pasa al siguiente y el cursor ya no queda fuera del texto, que se desplazaba a la izquierda.
 - Instalar lo compartido ya no parpadea: el nombre del archivo y el contador se muestran como máximo 4 veces por segundo (siempre el final y cada cambio de etapa) y el nombre ocupa una sola línea de alto fijo.
 - Con amigos: al abrir una publicación se consulta quién se unió cada 5 segundos durante 3 minutos (antes tardaba hasta un minuto), y después una vez por minuto para cuidar el presupuesto del servicio. Cada persona muestra el comienzo de su clave para distinguir equipos.
-- Con amigos › Servidor: abre un servidor de Minecraft en tu equipo con los mods de la instancia que compartes, al estilo de Essential. Ícaro descarga el servidor oficial (Vanilla o Fabric), copia los mods sin los exclusivos de cliente, pide aceptar el EULA en el mismo lugar y muestra el estado, quién juega, la consola con comandos, «Jugar en mi servidor» y «Cerrar servidor», que guarda el mundo. Tus amigos lo ven abierto en lo que reciben y entran con «Entrar al servidor»: la conexión viaja cifrada por el mismo canal de Compartir, directa o por relé, sin abrir puertos ni estar en la misma red, y solo para las personas de esa instancia. «Ajustes del servidor» edita `server.properties` (mensaje, modo de juego, dificultad, jugadores, distancias, semilla, PvP, volar, extremo, bloques de comandos, lista blanca, protección del spawn y comprobar cuentas, que pide confirmar al desactivarlo para cuentas sin conexión) y la memoria, y abre la carpeta del servidor. Cerrar Ícaro con el servidor abierto lo detiene guardando el mundo antes de salir.
+- Con amigos › Servidor: inicia en tu equipo un servidor de Minecraft con los mods de la instancia que compartes. Ícaro descarga el servidor oficial (Vanilla o Fabric), copia los mods sin los exclusivos de cliente, pide aceptar el EULA en el mismo lugar y muestra el estado, quién juega, la consola con comandos, «Jugar en mi servidor» y «Cerrar servidor», que guarda el mundo. Tus amigos lo ven abierto en lo que reciben y entran con «Entrar al servidor»: la conexión viaja cifrada por el mismo canal de Compartir, directa o por relé, sin abrir puertos ni estar en la misma red, y solo para las personas de esa instancia. «Ajustes del servidor» edita `server.properties` (mensaje, modo de juego, dificultad, jugadores, distancias, semilla, PvP, volar, extremo, bloques de comandos, lista blanca, protección del spawn y comprobar cuentas, que pide confirmar al desactivarlo para cuentas sin conexión) y la memoria, y abre la carpeta del servidor. Cerrar Ícaro con el servidor abierto lo detiene guardando el mundo antes de salir.
 
 ## [0.4.2] - 2026-11-10
 
