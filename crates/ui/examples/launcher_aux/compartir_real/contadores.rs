@@ -12,6 +12,25 @@ pub struct Contadores {
     pub accesos: Result<Vec<String>, String>,
     pub invitacion: Option<Result<(u32, u32), String>>,
 }
+/// Primeras muestras tras abrir la publicación: 5 s entre una y otra, durante 3 minutos.
+pub const MUESTRAS_RAPIDAS: u32 = 36;
+const ESPERA_RAPIDA: std::time::Duration = std::time::Duration::from_secs(5);
+/// Después: una por minuto, dentro del presupuesto gratuito de 5.000 solicitudes al día.
+const ESPERA_LENTA: std::time::Duration = std::time::Duration::from_secs(60);
+/// Cuánto esperar antes de la próxima muestra de la publicación `solicitud`.
+fn espera_siguiente(b: &mut super::biblioteca::Biblioteca, solicitud: u64) -> std::time::Duration {
+    if b.muestras_de != solicitud {
+        b.muestras_de = solicitud;
+        b.muestras_rapidas = MUESTRAS_RAPIDAS;
+    }
+    if b.muestras_rapidas > 0 {
+        b.muestras_rapidas -= 1;
+        ESPERA_RAPIDA
+    } else {
+        ESPERA_LENTA
+    }
+}
+
 pub fn pedir(s: &mut Estado) -> Option<Task<Mensaje>> {
     if s.etapa != Etapa::Panel
         || s.panel
@@ -32,6 +51,10 @@ pub fn pedir(s: &mut Estado) -> Option<Task<Mensaje>> {
     s.biblioteca.cancel_contadores.cancel();
     s.biblioteca.cancel_contadores = tokio_util::sync::CancellationToken::new();
     let cancel_muestreo = s.biblioteca.cancel_contadores.clone();
+    // Al abrir una publicación (o generar un código) se mira cada pocos
+    // segundos durante unos minutos, para ver enseguida quién se une; después
+    // baja al ritmo lento que cuida el presupuesto del servicio gratuito.
+    let espera = espera_siguiente(&mut s.biblioteca, s.solicitud);
     s.biblioteca.contadores = s.biblioteca.contadores.wrapping_add(1);
     let generacion = s.biblioteca.contadores;
     Some(Task::perform(
@@ -39,9 +62,7 @@ pub fn pedir(s: &mut Estado) -> Option<Task<Mensaje>> {
             tokio::select! {
                 _ = cancel_muestreo.cancelled() => Contadores { transferencias: 0, accesos: Err("Muestreo cancelado".into()), invitacion: None },
                 resultado = async move {
-            // Dos consultas/minuto con el panel abierto: margen para invitados
-            // dentro del presupuesto gratuito de 5.000 solicitudes al día.
-            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            tokio::time::sleep(espera).await;
             let cancel = tokio_util::sync::CancellationToken::new();
             let resultado = icaro_core::diagnostico_contexto::observar("compartir", "contadores_publicacion", None, &cancel, async move {
                 let transferencias = h.transferencias();
@@ -100,5 +121,21 @@ pub fn recibidos(s: &mut Estado, id: u64, generacion: u64, resultado: Contadores
         if aceptados >= cupo {
             i.estado = v::EstadoInvitacion::Completa;
         }
+    }
+}
+
+#[cfg(test)]
+mod pruebas_ritmo {
+    use super::*;
+
+    #[test]
+    fn al_abrir_una_publicacion_se_mira_rapido_y_luego_despacio() {
+        let mut b = super::super::biblioteca::Biblioteca::default();
+        for _ in 0..MUESTRAS_RAPIDAS {
+            assert_eq!(espera_siguiente(&mut b, 7), ESPERA_RAPIDA);
+        }
+        assert_eq!(espera_siguiente(&mut b, 7), ESPERA_LENTA);
+        // Otra publicación abierta vuelve a empezar rápido.
+        assert_eq!(espera_siguiente(&mut b, 8), ESPERA_RAPIDA);
     }
 }

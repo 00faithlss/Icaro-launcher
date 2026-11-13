@@ -266,16 +266,25 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                 s.invitado.entrada = v::EstadoEntrada::Vacio;
                 s.invitado.resuelta = None;
             }
+            use iced::widget::text_input::{focus, move_cursor_to_end, Id};
+            let id_de = |k: usize| Id::new(crate::con_amigos_flujos::ID_GRUPO[k]);
+            // El campo se muestra con el valor ya limpio (sin guiones ni
+            // espacios): su cursor vuelve al final para no quedar fuera del
+            // texto y desplazarlo a la izquierda.
+            let cursor = move_cursor_to_end(id_de(i));
             if grupos.iter().all(|g| g.len() == 4) {
                 // Completo: se valida solo.
                 s.invitado.auto = true;
-                return despachar(app, v::Accion::Codigo(grupos.join("-")));
+                let validar = despachar(app, v::Accion::Codigo(grupos.join("-")));
+                return Task::batch([cursor, validar]);
             }
-            match grupos.iter().position(|g| g.len() < 4) {
-                Some(siguiente) if siguiente != i => iced::widget::text_input::focus(
-                    iced::widget::text_input::Id::new(crate::con_amigos_flujos::ID_GRUPO[siguiente]),
-                ),
-                _ => Task::none(),
+            // Un guion o un espacio tras un grupo completo pasa al siguiente.
+            let da_paso = texto_g.contains(['-', ' ']) && grupos[i].len() == 4;
+            let siguiente = grupos.iter().position(|g| g.len() < 4);
+            match siguiente {
+                Some(k) if k != i => Task::batch([cursor, focus(id_de(k)), move_cursor_to_end(id_de(k))]),
+                Some(k) if da_paso && i < 2 && k == i => Task::batch([cursor, focus(id_de(i + 1))]),
+                _ => cursor,
             }
         }
         Accion::UnirmeDescargar => {
@@ -699,7 +708,7 @@ fn publicacion_detalle<'a>(app: &'a App, modelo: &v::InstanciasCompartidas) -> E
                 p,
                 &persona.nombre,
                 icaro_core::icono_instancia::patron(&persona.huella, 0),
-                None,
+                Some(persona.huella.as_str()),
                 persona.conectado,
                 if persona.conectado { "en línea" } else { &persona.estado },
                 Some(componentes::boton_compacto(

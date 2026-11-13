@@ -46,12 +46,24 @@ impl Avance {
         }
     }
 }
+/// Tiempo mínimo entre dos avances mostrados.
+const INTERVALO_VISTA: std::time::Duration = std::time::Duration::from_millis(250);
 pub fn recibido(s: &mut Estado, id: u64, avance: Avance) {
     if s.vigente(id)
         && matches!(s.etapa, Etapa::InstalandoInvitado | Etapa::AplicandoVinculo)
         && !s.cerrar_al_terminar
     {
-        s.invitado.avance = avance;
+        // Con cientos de archivos pequeños el nombre y el contador cambiarían
+        // cada pocos milisegundos y el texto parpadea: solo se muestra una
+        // muestra cada 250 ms, además de cada cambio de fase y el final.
+        let ahora = std::time::Instant::now();
+        let fin = avance.total > 0 && avance.hechos >= avance.total;
+        let cambia = avance.fase != s.invitado.avance.fase || avance.detalle != s.invitado.avance.detalle;
+        let paso = s.invitado.avance_t.is_none_or(|t| ahora.duration_since(t) >= INTERVALO_VISTA);
+        if fin || cambia || paso {
+            s.invitado.avance = avance;
+            s.invitado.avance_t = Some(ahora);
+        }
     }
 }
 
@@ -100,4 +112,32 @@ where
         }),
         crate::Mensaje::Compartir,
     )
+}
+
+#[cfg(test)]
+mod pruebas_vista {
+    use super::*;
+
+    fn estado() -> Estado {
+        let mut s = Estado::default();
+        s.solicitud = 1;
+        s.etapa = Etapa::InstalandoInvitado;
+        s
+    }
+
+    #[test]
+    fn el_avance_mostrado_no_cambia_mas_de_cuatro_veces_por_segundo() {
+        let mut s = estado();
+        let a = |hechos, archivo: &str| Avance::nuevo(v::Fase::Descarga, hechos, 100, archivo, "Descargando");
+        recibido(&mut s, 1, a(1, "uno.jar"));
+        recibido(&mut s, 1, a(2, "dos.jar"));
+        recibido(&mut s, 1, a(3, "tres.jar"));
+        // Solo se mostró la primera muestra: el resto llegó dentro de 250 ms.
+        assert_eq!(s.invitado.avance.archivo, "uno.jar");
+        // El final y un cambio de fase pasan siempre.
+        recibido(&mut s, 1, a(100, "ultimo.jar"));
+        assert_eq!(s.invitado.avance.archivo, "ultimo.jar");
+        recibido(&mut s, 1, Avance::nuevo(v::Fase::Verificacion, 0, 5, "", "Verificando"));
+        assert_eq!(s.invitado.avance.detalle, "Verificando");
+    }
 }

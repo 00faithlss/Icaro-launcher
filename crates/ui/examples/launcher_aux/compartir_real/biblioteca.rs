@@ -15,6 +15,10 @@ pub struct Biblioteca {
     pub error: Option<String>,
     pub contadores: u64,
     pub cancel_contadores: tokio_util::sync::CancellationToken,
+    /// Muestras rápidas que quedan para la publicación abierta (ver `contadores::pedir`).
+    pub muestras_rapidas: u32,
+    /// Sesión de panel (`Estado::solicitud`) a la que pertenecen.
+    pub muestras_de: u64,
     pendiente_reconexion: bool,
 }
 impl std::fmt::Debug for Biblioteca {

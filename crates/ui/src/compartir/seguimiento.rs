@@ -224,7 +224,8 @@ pub fn progreso_sincronizacion<'a>(p: Paleta, m: &ProgresoSincronizacion) -> Ele
         EstadoProgreso::Activo(fase) => {
             c = c
                 .push(avance(p, &m.detalle, m.porcentaje))
-                .push(mono(p, &m.archivo));
+                // Una sola línea de alto fijo: un nombre largo no debe empujar el resto.
+                .push(container(mono(p, &m.archivo)).height(16).width(Length::Fill).clip(true));
             if *fase == Fase::Aplicacion {
                 c = c.push(tenue(p, "Aplicando: no se puede cancelar en este paso"));
             }

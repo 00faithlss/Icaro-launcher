@@ -9,6 +9,8 @@ use iced::Task;
 pub struct Invitado {
     /// Con amigos › Unirme: valida y avanza solo (código completo, confianza).
     pub auto: bool,
+    /// Cuándo se mostró el último avance: la vista no se repinta más de 4 veces por segundo.
+    pub avance_t: Option<std::time::Instant>,
     pub avance: super::avance::Avance,
     pub entrada: v::EstadoEntrada,
     pub resuelta: Option<tareas::Resuelta>,
@@ -30,6 +32,7 @@ impl Default for Invitado {
         Self {
             avance: Default::default(),
             auto: false,
+            avance_t: None,
             entrada: v::EstadoEntrada::Vacio,
             resuelta: None,
             visita: None,
