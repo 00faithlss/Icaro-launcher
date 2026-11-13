@@ -1,6 +1,6 @@
 # Changelog
 
-## [Sin publicar]
+## [0.4.3] - 2026-11-13
 
 - Servidores sigue PantallaServidores del System Design: banda de 150 px con «Fase experimental» y tres pestañas (Servidores, Con amigos y Red privada) con una línea que se desliza bajo la activa, contenido que entra con fundido y las flechas izquierda y derecha para cambiar de pestaña. Nada abre un diálogo encima.
 - Servidores: buscador y «Agregar servidor», que despliega el formulario en la misma página y prueba la dirección mientras se escribe (jugadores y ping si responde, aviso si está mal escrita o no responde). El servidor guardado aparece primero con un brillo breve. Cada fila muestra jugadores, versión, señal de cuatro barras y Jugar; al tocarla se abre hacia abajo con el mensaje del servidor, los mods, la instancia con que se juega, el nombre y el interruptor «Sincronizar mods al iniciar», editables. Quitar confirma en la misma fila y la fila sale deslizándose; los servidores que no responden quedan atenuados con «Probar de nuevo».
