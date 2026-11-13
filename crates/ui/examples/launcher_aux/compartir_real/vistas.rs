@@ -1,10 +1,41 @@
 // SPDX-License-Identifier: GPL-3.0-only
-use super::{modelos, Accion, Etapa};
-use crate::{App, Mensaje};
+use super::{modelos, Etapa};
+use crate::App;
 use icaro_ui::compartir as v;
 use iced::Element;
 
-pub fn vista(app: &App) -> Option<Element<'_, Mensaje>> {
+pub fn transferencias(s: &super::Estado) -> Vec<v::Transferencia> {
+    s.anfitrion.as_ref().map_or_else(Vec::new, |h| {
+        h.transferencias_activas()
+            .into_iter()
+            .map(|t| v::Transferencia {
+                nombre: format!(
+                    "Equipo {} · {}",
+                    t.invitado.chars().take(8).collect::<String>(),
+                    if t.archivo.is_empty() {
+                        "Archivo"
+                    } else {
+                        &t.archivo
+                    }
+                ),
+                fase: if t.total == 0 {
+                    "Preparando".into()
+                } else {
+                    format!("{} / {} bytes", t.enviados, t.total)
+                },
+                porcentaje: if t.total == 0 {
+                    0.
+                } else {
+                    (t.enviados as f64 / t.total as f64 * 100.).clamp(0., 100.) as f32
+                },
+            })
+            .collect()
+    })
+}
+
+/// La fase del flujo de compartir sin migas ni página: Con amigos la
+/// muestra dentro de su panel de detalle.
+pub fn fase_pura(app: &App) -> Option<Element<'_, v::Accion>> {
     let s = &app.servicios.compartir;
     let p = app.paleta();
     let vista = match s.etapa {
@@ -92,112 +123,5 @@ pub fn vista(app: &App) -> Option<Element<'_, Mensaje>> {
         | Etapa::AplicandoVinculo
         | Etapa::ErrorVinculo => super::sync_vistas::vista(p, s)?,
     };
-    let ancho: f32 = match s.etapa {
-        Etapa::Selector => 720.,
-        Etapa::Propios => 720.,
-        Etapa::Listo => 700.,
-        Etapa::Cierre => 640.,
-        Etapa::Entrada => 820.,
-        Etapa::Identidad => 680.,
-        Etapa::Destino => 720.,
-        // Publicación reparte invitación y accesos en dos columnas: cabe sin desplazar.
-        Etapa::Panel => 1080.,
-        _ => 960.,
-    };
-    // Fase de página dentro de Servidores: migas y fase centradas, sin velo.
-    let migas = [
-        v::Miga::enlace("Servidores", v::Accion::VerServidores),
-        v::Miga::enlace("Instancias compartidas", v::Accion::VerCompartidas),
-        v::Miga::actual(titulo(s.etapa)),
-    ];
-    Some(v::pagina(p, &migas, ancho, vista).map(|a| Mensaje::Compartir(Accion::Vista(a))))
-}
-
-/// Nombre de la fase en las migas.
-fn titulo(e: Etapa) -> &'static str {
-    match e {
-        Etapa::Cerrada | Etapa::Selector => "Compartir instancia",
-        Etapa::Analizando | Etapa::Revision | Etapa::Guardando | Etapa::Publicando => {
-            "Revisar publicación"
-        }
-        Etapa::Propios => "Archivos propios",
-        Etapa::Listo => "Compartida",
-        Etapa::Panel => "Publicación",
-        Etapa::Cierre => "Dejar de compartir",
-        Etapa::Entrada | Etapa::Identidad | Etapa::Destino => "Unirme con un código",
-        Etapa::RevisionInvitado | Etapa::InstalandoInvitado | Etapa::ResultadoInvitado => {
-            "Instalar instancia"
-        }
-        Etapa::ConsultandoVinculo
-        | Etapa::RevisionVinculo
-        | Etapa::AplicandoVinculo
-        | Etapa::ErrorVinculo => "Sincronizar",
-    }
-}
-
-/// Orden de la fase en su flujo: la transición avanza o vuelve según la clave.
-/// 0 es la página de Servidores y 1 Instancias compartidas.
-pub fn clave(s: &super::Estado) -> u64 {
-    match s.etapa {
-        Etapa::Cerrada if s.compartidas.is_some() => 1,
-        Etapa::Cerrada => 0,
-        Etapa::Selector => 10,
-        Etapa::Analizando | Etapa::Revision | Etapa::Guardando | Etapa::Publicando => 11,
-        Etapa::Propios => 12,
-        Etapa::Listo => 13,
-        Etapa::Panel => 14,
-        Etapa::Cierre => 15,
-        Etapa::Entrada => 20,
-        Etapa::Identidad => 21,
-        Etapa::Destino => 22,
-        Etapa::RevisionInvitado => 23,
-        Etapa::InstalandoInvitado | Etapa::ResultadoInvitado => 24,
-        Etapa::ConsultandoVinculo => 30,
-        Etapa::RevisionVinculo | Etapa::AplicandoVinculo | Etapa::ErrorVinculo => 31,
-    }
-}
-
-pub fn accesos(app: &App, ancho: f32) -> Element<'_, Mensaje> {
-    if !app.servicios.compartir.habilitado {
-        return icaro_ui::componentes::boton(
-            app.paleta(),
-            "Activar Compartir experimental",
-            icaro_ui::componentes::Variante::Secundario,
-            Some(Mensaje::Compartir(Accion::ActivarExperimental)),
-        );
-    }
-    let resumen = super::biblioteca::resumenes(
-        &app.servicios.compartir,
-        &app.servicios.instancias.registros,
-    );
-    v::accesos_servidores(app.paleta(), &resumen, ancho).map(|a| Mensaje::Compartir(Accion::Vista(a)))
-}
-
-pub fn transferencias(s: &super::Estado) -> Vec<v::Transferencia> {
-    s.anfitrion.as_ref().map_or_else(Vec::new, |h| {
-        h.transferencias_activas()
-            .into_iter()
-            .map(|t| v::Transferencia {
-                nombre: format!(
-                    "Equipo {} · {}",
-                    t.invitado.chars().take(8).collect::<String>(),
-                    if t.archivo.is_empty() {
-                        "Archivo"
-                    } else {
-                        &t.archivo
-                    }
-                ),
-                fase: if t.total == 0 {
-                    "Preparando".into()
-                } else {
-                    format!("{} / {} bytes", t.enviados, t.total)
-                },
-                porcentaje: if t.total == 0 {
-                    0.
-                } else {
-                    (t.enviados as f64 / t.total as f64 * 100.).clamp(0., 100.) as f32
-                },
-            })
-            .collect()
-    })
+    Some(vista)
 }

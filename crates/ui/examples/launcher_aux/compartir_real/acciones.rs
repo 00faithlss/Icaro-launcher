@@ -158,7 +158,7 @@ pub fn iniciar_invitacion(
     }))
 }
 /// Anula el código vigente; CompartidoListo lo usa para cambiarlo.
-pub(super) fn revocar_codigo(s: &mut Estado) -> Task<Mensaje> {
+pub(crate) fn revocar_codigo(s: &mut Estado) -> Task<Mensaje> {
     operar(s, Operacion::Codigo)
 }
 fn operar(s: &mut Estado, op: Operacion) -> Task<Mensaje> {
@@ -247,9 +247,23 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             super::avance::recibido(&mut app.servicios.compartir, id, avance)
         }
         Accion::Instalada(id, r) => super::invitado::instalada(app, id, r),
-        Accion::Resuelta(id, r) => super::invitado::resuelta(&mut app.servicios.compartir, id, r),
+        Accion::Resuelta(id, r) => {
+            super::invitado::resuelta(&mut app.servicios.compartir, id, r);
+            // Con amigos valida solo: un código bueno sigue a consultar al anfitrión.
+            let s = &app.servicios.compartir;
+            if s.invitado.auto && s.etapa == Etapa::Entrada && s.invitado.resuelta.is_some() {
+                return actualizar(app, Accion::Vista(v::Accion::Continuar));
+            }
+        }
         Accion::Visitada(id, r) => super::invitado::visitada(&mut app.servicios.compartir, id, r),
-        Accion::Confiada(id, r) => super::invitado::confiada(&mut app.servicios.compartir, id, r),
+        Accion::Confiada(id, r) => {
+            super::invitado::confiada(&mut app.servicios.compartir, id, r);
+            // «Unirme y descargar» sigue directo a revisar la instalación.
+            let s = &app.servicios.compartir;
+            if s.invitado.auto && s.etapa == Etapa::Destino && s.invitado.error.is_none() {
+                return actualizar(app, Accion::Vista(v::Accion::RevisarInstalacion));
+            }
+        }
         Accion::Recibidas(generacion, lista) => {
             return super::compartidas::recibidas(&mut app.servicios.compartir, generacion, lista)
         }

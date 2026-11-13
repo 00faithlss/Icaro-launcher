@@ -1,5 +1,7 @@
 # Cuentas sin conexión
 
+[Documentación](README.md) · [Estado y pendientes](roadmap.md)
+
 Implementación local basada en `icaro-cuenta-sin-conexion.zip`, con sus componentes CuentaSinConexion, SelectorCuenta, EstadosSesion, PrimeraEjecucion y PantallaCuenta. Sustituye el acceso anónimo de Invitado por perfiles con nombre propio. Conserva los temas Tinta/Piedra, la cabeza rayada y la iconografía del diseño, incluido `info-box`.
 
 ## Uso

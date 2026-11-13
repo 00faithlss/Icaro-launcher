@@ -178,7 +178,7 @@ la ventana con perfil real, Jugar y cierre/bandeja; no cerrar esta tarea todaví
 
 ## Tarea 9: validación conjunta y documentación
 
-**Archivos:** actualizar `docs/sincronizacion-servidores.md`, `docs/servidores.md`, `docs/desarrollo.md`, `docs/pendientes-implementacion.md`, `docs/integracion-real.md` y notas de la versión vigente solo por capacidades realmente integradas. No subir versión ni publicar release.
+**Archivos:** actualizar `docs/sincronizacion-servidores.md`, `docs/servidores.md`, `docs/desarrollo.md`, `docs/roadmap.md`, `docs/arquitectura.md` y notas de la versión vigente solo por capacidades realmente integradas. No subir versión ni publicar release.
 
 - [x] Ejecutar con APPDATA temporal las suites del núcleo y UI: 328 pruebas core y 144 UI pasadas, sin fallos; ignoradas y alcance detallados en el registro de progreso. El fallo conocido de papelera no apareció en esta ejecución.
 - [ ] Ejecutar pruebas del servicio D1 local y end-to-end aislado; `cargo build --locked -j 2 --workspace`, formato de Rust cambiado y `git diff --check`. No aplicar formato masivo a módulos ajenos.

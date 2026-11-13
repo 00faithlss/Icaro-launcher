@@ -1,5 +1,7 @@
 # Organización de datos y configuración
 
+[Documentación](README.md) · [Estado y pendientes](roadmap.md)
+
 Investigación del **12-10-2026**. La reorganización funcional está implementada para las funciones existentes del launcher. El usuario confirmó el funcionamiento de Vanilla con la estructura nueva en Windows. La validación nativa en Linux sigue pendiente.
 
 ## Qué hace Prism Launcher
@@ -117,7 +119,7 @@ La integración de loaders debe apoyarse en estas rutas compartidas. La migraci�
 
 Almacenamiento mide archivos reales fuera del hilo de dibujo, muestra todas las categorías de la raíz y ofrece Actualizar, Limpiar caché, Recuperar operaciones y traslado de papeleras antiguas. La limpieza se limita a `cache/`; no retira assets, bibliotecas, runtimes, mundos, mods, iconos ni configuración. El recorrido tiene límites y rechaza enlaces y uniones de carpetas. Los registros `logs/launcher.log` y `logs/sincronizacion.log` rotan al superar 1 MiB y conservan tres archivos anteriores cada uno. No se registran tokens ni datos de cuentas.
 
-Las exportaciones de Ícaro incluyen los ajustes portables conocidos; una selección manual de Java conserva una marca que obliga a resolverla en el PC de destino. No se exportan rutas absolutas de Java ni campos locales desconocidos. El ZIP no incluye el almacén común ni los marcadores de instalación. La importación completa y los instaladores de Forge/NeoForge están conectados; Quilt y la validación de partida/migración siguen pendientes, como se indica en `pendientes-implementacion.md`.
+Las exportaciones de Ícaro incluyen los ajustes portables conocidos; una selección manual de Java conserva una marca que obliga a resolverla en el PC de destino. No se exportan rutas absolutas de Java ni campos locales desconocidos. El ZIP no incluye el almacén común ni los marcadores de instalación. La importación completa y los instaladores de Forge/NeoForge están conectados; Quilt ya se instala en instancias propias, pero su importación de packs y la validación de partida/migración siguen pendientes; ver el [roadmap](roadmap.md).
 
 Migración local del 13-10-2026: se trasladaron 15 elementos de las papeleras internas a la papelera del sistema; `instances/.papelera` quedó retirado. No había instancias activas al ejecutar este mantenimiento.
 

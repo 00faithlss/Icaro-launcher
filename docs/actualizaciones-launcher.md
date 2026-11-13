@@ -1,5 +1,7 @@
 # Actualizaciones de Icaro Launcher
 
+[Documentación](README.md) · [Estado y pendientes](roadmap.md)
+
 El [instalador de Windows](instalador-windows.md) usa Inno Setup por usuario. El workflow compila, prueba y publica por canales: un push a `develop` publica una **beta** y un push a `main` publica una **estable**. Otras ramas y los tags no publican, y los cambios que solo tocan `docs/` o archivos Markdown no compilan. Una ejecución manual solo entrega artefactos. La primera publicación automática pasó en GitHub; cada revisión nueva requiere completar sus comprobaciones antes de estar disponible para otros equipos.
 
 La pantalla sigue `ActualizacionLauncher` del System Design: Saturno en el lateral, versión y tamaño reales, notas agrupadas y acciones **Actualizar ahora**, **Al cerrar Icaro Launcher** y **Más tarde**. Se abre desde **Ajustes → Acerca de → Actualización**; la comprobación por sí sola no interrumpe al usuario. Una nueva versión se anuncia con el banner informativo existente.

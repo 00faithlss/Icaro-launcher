@@ -1,5 +1,7 @@
 # Forge, NeoForge y Fabric API
 
+[Documentación](README.md) · [Estado y pendientes](roadmap.md)
+
 ## Instalación y lanzamiento
 
 Crear una instancia, Instalar/Jugar y preparar una nueva versión admiten Vanilla, Fabric, Forge y NeoForge. Se conserva la versión exacta guardada en loader.json; sincronizar no selecciona automáticamente otra versión. Quilt conserva su instalación mediante el perfil oficial.

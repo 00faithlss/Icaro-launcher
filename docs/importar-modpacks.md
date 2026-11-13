@@ -1,5 +1,7 @@
 # Importar modpacks locales
 
+[Documentación](README.md) · [Estado y pendientes](roadmap.md)
+
 En **Instancias → Importar**, arrastra un archivo `.mrpack` o `.zip` a **ZonaSoltar**, haz clic en ella o pulsa **Examinar**. También puedes pegar su ruta en **Archivo del modpack** y pulsar Enter. Este control selecciona el archivo, no la carpeta de destino. La zona muestra el nombre durante el arrastre y cambia al estado «Suelta para importar». Ícaro revisa el paquete antes de crear una instancia nueva; el archivo original se conserva. Cancelar el selector mantiene la zona abierta; mientras se revisa o instala un paquete, no se acepta otro archivo.
 
 La pantalla **Importar modpack** conserva el grabado y los iconos del diseño en ambos temas. Muestra cinco fases reales de revisión; las lecturas menores a 400 ms pasan directamente al resultado. En **Listo**, revisa tamaños, carpetas y archivos por descargar, cambia el nombre y elige un grupo existente antes de instalar. Java se comprueba durante la preparación de la instancia, por lo que el resumen no lo marca como instalado antes de verificarlo. Un problema impide confirmar y permite corregir el perfil o elegir otro archivo. Cancelar la revisión no crea una instancia.

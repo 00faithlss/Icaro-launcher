@@ -1,5 +1,7 @@
 # Detección de Minecraft en Discord
 
+[Documentación](README.md) · [Estado y pendientes](roadmap.md)
+
 En Windows, Ícaro inicia el juego con `javaw.exe` de la misma carpeta que el `java.exe` validado, si existe. Las comprobaciones de Java y los instaladores conservan el ejecutable de consola. Si falta `javaw.exe`, se utiliza el Java seleccionado. La salida estándar, los errores y la cancelación del juego siguen gestionados por el launcher.
 
 El [catálogo público de Discord](https://discord.com/api/v9/applications/detectable), consultado el 23-10-2026, identifica Minecraft en Windows mediante `javaw.exe` y el argumento `net.minecraft.client.main.Main`. La elección del ejecutable corrige una diferencia con ese criterio, pero los loaders pueden usar otras clases principales y la detección final depende de Discord. Esto no añade Rich Presence ni comunica cuentas, servidores o instancias a Discord.

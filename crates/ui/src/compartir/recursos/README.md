@@ -1,5 +1,7 @@
 # Grabado de EntradaInvitacion
 
+[Documentación](../../../../../docs/README.md) · [Créditos](../../../../../docs/creditos.md) · [Referencias originales](../../../../../docs/superpowers/referencias/compartir-instancia/README.md)
+
 Copias sin modificar de `assets/Detalles/puente-pasarela.webp` y su negativo,
 incluidos en `docs/superpowers/referencias/compartir-instancia/icaro-compartir-instancia.zip`.
 La preview original describe el grabado como «Pasarela colgante entre dos

@@ -20,7 +20,7 @@ pub use anfitrion::*;
 pub use compartidas::instancias_compartidas;
 pub use contenido::*;
 pub use invitado::*;
-pub use listo::{compartido_listo, CompartidoListo, EstadoCodigo, PersonaUnida};
+pub use listo::{celdas, compartido_listo, CompartidoListo, EstadoCodigo, PersonaUnida};
 pub use modelos::*;
 pub use pagina::{migas, pagina, Miga};
 pub use publicacion::{

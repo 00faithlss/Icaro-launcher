@@ -1,5 +1,7 @@
 # Instalador de Windows y distribución
 
+[Documentación](README.md) · [Estado y pendientes](roadmap.md)
+
 El instalador usa Inno Setup 6.7.3, el asistente estándar en español y los recursos existentes de Ícaro. Instala por usuario en `%LOCALAPPDATA%\Programs\Icaro Launcher`, con icono, acceso en Inicio, escritorio optativo y entrada de desinstalación. Incluye `IcaroLauncher.exe`, `icaro-sync-host.exe` y avisos de licencia.
 
 El asistente se usa en la primera instalación. Las actualizaciones iniciadas desde Ícaro ejecutan el setup oculto y silencioso en la misma ruta; la descarga, preparación y resultado se muestran en la pantalla original **Actualización** del launcher. Después del breve reinicio vuelve a ella. Ver [actualizaciones del launcher](actualizaciones-launcher.md) para el recorrido y su verificación.
@@ -26,7 +28,7 @@ Para volver a empaquetar ejecutables ya compilados se admiten `-Binario` y `-Ser
 
 ## Automatización
 
-`windows-package.yml` corre manualmente, desde `main`, ramas `vX.Y.Z` o tags `vX.Y.Z`; valida la versión de las ramas/tags y ejecuta pruebas antes de compilar. Obtiene Inno Setup del proveedor y valida su firma. Las acciones GitHub están fijadas a revisiones. La ejecución manual conserva artefactos; las automáticas publican una release y `latest.json` con hashes reales para instalada y portable, según el [contrato del actualizador](actualizaciones-launcher.md). La primera publicación remota completó pruebas, empaquetado y publicación. Las notas de la entrega se mantienen en `docs/releases`; una integración con contenido idéntico no genera otra actualización.
+[`windows-package.yml`](../.github/workflows/windows-package.yml) se ejecuta manualmente o por pushes a `develop` y `main`, salvo cambios exclusivamente documentales según sus filtros. Otras ramas y los tags no publican. Ejecuta pruebas y valida la versión antes de publicar. Obtiene Inno Setup del proveedor y valida su firma. Las acciones GitHub están fijadas a revisiones. La ejecución manual conserva artefactos; los pushes de beta/estable publican una release y `latest.json` con hashes reales para instalada y portable, según el [contrato del actualizador](actualizaciones-launcher.md). La primera publicación remota completó pruebas, empaquetado y publicación. Las notas de la entrega se mantienen en `docs/releases`; una integración con contenido idéntico no genera otra actualización.
 
 El instalador y binarios de Ícaro todavía no tienen firma digital configurada. La firma comprobada del compilador pertenece al proveedor de Inno Setup, no a Ícaro.
 

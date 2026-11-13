@@ -1,5 +1,7 @@
 # Peticiones a Modrinth
 
+[Documentación](README.md) · [Estado y pendientes](roadmap.md)
+
 La tienda, la cesta, la instalación de mods y paquetes y su revisión de actualizaciones comparten el catálogo del launcher. Conservan la caché de metadatos y la misma pausa del proveedor: instalar otro mod no crea un cliente sin los resultados de la primera operación.
 
 La comprobación de mods identificados usa `/version_files/update` por lotes de hasta 512 hashes con Minecraft, loader y canal `release`. Sus resultados se reutilizan durante cinco minutos; un hash nuevo consulta únicamente lo que falta. Se descartan candidatos de otro proyecto, incompatibles o más antiguos que la versión instalada. Los registros antiguos sin hash mantienen su comprobación por proyecto.

@@ -1,5 +1,9 @@
 # Progreso de Compartir instancias — 08-11-2026
 
+[Historial técnico](../README.md) · [Estado actual](../../roadmap.md#1-compartir-instancias)
+
+Registro acumulativo de evidencias del 07–08 de noviembre. Los apartados antiguos conservan pendientes que se resolvieron después; consultar el roadmap para continuar y las secciones fechadas para valorar cada prueba.
+
 Rama de trabajo comprobada: `v0.4.x`. Versión del workspace: `0.3.4`, sin bump.
 El plan original está en `d78e628`. La implementación se registra en `d48181f`
 (núcleo y servicio) y `f4fbf08` (interfaz experimental), por solicitud del usuario

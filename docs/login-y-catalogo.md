@@ -1,5 +1,7 @@
 # Inicio de sesión y catálogo
 
+[Documentación](README.md) · [Estado y pendientes](roadmap.md)
+
 ## Compatibilidad del navegador en Windows
 
 La apertura del inicio de sesión usa `ShellExecuteW` y la asociación HTTPS del sistema. Windows activa el navegador predeterminado, incluidos los que usan `DelegateExecute`, sin reconstruir ni ejecutar su comando del registro. El enlace completo conserva los parámetros PKCE y el retorno `icaro://oauth/microsoft`.

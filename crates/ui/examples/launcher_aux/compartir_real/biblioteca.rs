@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 use super::{biblioteca_tareas, Accion, Estado, Etapa};
 use crate::{App, Mensaje};
-use icaro_core::{
-    compartir::biblioteca::{EstadoGuardada, PublicacionGuardada},
-    instancias::Instancia,
-};
+use icaro_core::compartir::biblioteca::{EstadoGuardada, PublicacionGuardada};
+#[cfg(test)]
+use icaro_core::instancias::Instancia;
 use icaro_ui::compartir as v;
 use iced::Task;
 
@@ -16,6 +15,10 @@ pub struct Biblioteca {
     pub error: Option<String>,
     pub contadores: u64,
     pub cancel_contadores: tokio_util::sync::CancellationToken,
+    /// Muestras rápidas que quedan para la publicación abierta (ver `contadores::pedir`).
+    pub muestras_rapidas: u32,
+    /// Sesión de panel (`Estado::solicitud`) a la que pertenecen.
+    pub muestras_de: u64,
     pendiente_reconexion: bool,
 }
 impl std::fmt::Debug for Biblioteca {
@@ -66,6 +69,7 @@ pub fn recibida(
         Err(e) => s.biblioteca.error = Some(e),
     }
 }
+#[cfg(test)]
 pub fn resumenes(s: &Estado, instancias: &[Instancia]) -> Vec<v::ResumenPublicacion> {
     let mut salida: Vec<_> = s
         .biblioteca

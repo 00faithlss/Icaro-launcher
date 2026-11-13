@@ -5,38 +5,52 @@ use icaro_core::{
     servidores::{self, Servidor},
     zerotier,
 };
-use icaro_ui::{
-    componentes::{self, Variante},
-    fuentes,
-    iconos::Icono,
-    laminas::{banda_completa, DatoBanda, Lamina, ALTO_BANDA},
-    servidores::{AccionesLista, EstadoServidor},
-    tema::medida,
-};
-use iced::{
-    widget::{column, container, pick_list, row, text, text_input, Space},
-    Alignment, Element, Length, Task,
-};
+use iced::{Element, Task};
+use icaro_ui::pantalla_servidores::Pestana;
 use std::collections::BTreeMap;
+use std::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Default)]
 pub struct Estado {
-    loaded: bool,
-    loading: bool,
-    saving: bool,
+    pub(crate) loaded: bool,
+    pub(crate) loading: bool,
+    pub(crate) saving: bool,
     revision: u64,
     request: u64,
     zero_request: u64,
     pub(crate) registros: Vec<Servidor>,
-    estados: BTreeMap<String, Result<servidores::Estado, String>>,
+    pub(crate) estados: BTreeMap<String, Result<servidores::Estado, String>>,
     cancel: Option<CancellationToken>,
-    error: Option<String>,
-    editor: Option<Editor>,
+    pub(crate) error: Option<String>,
+    pub(crate) editor: Option<Editor>,
     pub visual: bool,
-    zero: Option<zerotier::Estado>,
+    pub(crate) zero: Option<zerotier::Estado>,
+    /// PantallaServidores: pestaña actual, la anterior y cuándo cambió.
+    pub(crate) pestana: Pestana,
+    pub(crate) pestana_desde: Pestana,
+    pub(crate) pestana_t: Option<Instant>,
+    pub(crate) busqueda: String,
+    /// Cuándo se abrió el formulario o la fila del editor (despliegue).
+    pub(crate) editor_t: Option<Instant>,
+    /// Fila que pide confirmar Quitar.
+    pub(crate) confirmar: Option<String>,
+    /// Fila quitada que todavía sale deslizándose, con su posición.
+    pub(crate) saliendo: Option<(Servidor, usize, Instant)>,
+    /// Servidor recién guardado: brilla 1,6 s.
+    pub(crate) nuevo: Option<(String, Instant)>,
+    nuevo_pendiente: Option<String>,
+    pub(crate) copiado: Option<(String, Instant)>,
+    prueba_gen: u64,
+    prueba_cancel: Option<CancellationToken>,
+    /// Red privada: confirmar Desconectar y operación en curso.
+    pub(crate) red_confirmar: bool,
+    pub(crate) red_ocupada: bool,
+    /// Con amigos: lo elegido y las confirmaciones.
+    pub(crate) amigos: crate::con_amigos::Estado,
+    /// Servidor alojado en este equipo y túnel hacia el de un amigo.
+    pub(crate) alojar: crate::alojamiento_real::Estado,
     pub arrastre: Option<icaro_ui::servidores::Arrastre>,
-    sobre: Option<usize>,
     toma_y: f32,
     cerrando: Option<std::time::Instant>,
 }
@@ -64,7 +78,27 @@ impl Estado {
                 as usize;
         }
     }
+    /// Hay algo de PantallaServidores animándose.
+    pub fn animando(&self, ahora: Instant) -> bool {
+        let vivo = |t: Option<Instant>, ms: u64| t.is_some_and(|t| ahora.saturating_duration_since(t).as_millis() < ms as u128);
+        vivo(self.pestana_t, MS_PESTANA)
+            || vivo(self.editor_t, MS_DESPLIEGUE)
+            || vivo(self.saliendo.as_ref().map(|s| s.2), MS_SALIDA)
+            || vivo(self.nuevo.as_ref().map(|n| n.1), MS_NUEVO)
+            || vivo(self.copiado.as_ref().map(|c| c.1), MS_COPIADO)
+    }
     pub fn avanzar(&mut self) {
+        let ahora = Instant::now();
+        let pasado = |t: Instant, ms: u64| ahora.saturating_duration_since(t).as_millis() >= ms as u128;
+        if self.saliendo.as_ref().is_some_and(|s| pasado(s.2, MS_SALIDA)) {
+            self.saliendo = None;
+        }
+        if self.nuevo.as_ref().is_some_and(|n| pasado(n.1, MS_NUEVO)) {
+            self.nuevo = None;
+        }
+        if self.copiado.as_ref().is_some_and(|c| pasado(c.1, MS_COPIADO)) {
+            self.copiado = None;
+        }
         if self
             .cerrando
             .is_some_and(|t| t.elapsed().as_millis() >= icaro_ui::tema::duracion::FAST as u128)
@@ -76,21 +110,34 @@ impl Estado {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Instancia {
-    id: String,
-    nombre: String,
+    pub(crate) id: String,
+    pub(crate) nombre: String,
 }
 impl std::fmt::Display for Instancia {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.nombre)
     }
 }
-struct Editor {
-    id: Option<String>,
-    nombre: String,
-    direccion: String,
-    instancia: Option<Instancia>,
-    error: Option<String>,
-    sincronizar: bool,
+pub(crate) struct Editor {
+    pub(crate) id: Option<String>,
+    pub(crate) nombre: String,
+    pub(crate) direccion: String,
+    pub(crate) instancia: Option<Instancia>,
+    pub(crate) error: Option<String>,
+    pub(crate) sincronizar: bool,
+    /// Prueba de la dirección mientras se escribe (solo al agregar).
+    pub(crate) prueba: Prueba,
+}
+
+/// Resultado de probar la dirección del formulario.
+#[derive(Debug, Clone, Default)]
+pub(crate) enum Prueba {
+    #[default]
+    Vacia,
+    Formato,
+    Probando,
+    Responde(servidores::Estado),
+    NoResponde,
 }
 #[derive(Clone, Debug)]
 pub enum Accion {
@@ -105,18 +152,46 @@ pub enum Accion {
     Nombre(String),
     Direccion(String),
     Instancia(Instancia),
+    /// «Sincronizar mods al iniciar»: en una fila abierta se guarda al tiro.
     Sincronizar(bool),
     Guardar,
     Guardados(u64, Result<Vec<Servidor>, String>),
     Cerrar,
     Jugar(usize),
-    Tomar(usize),
-    Sobre(Option<usize>),
     Soltar,
     CancelarOrden,
     GestionarRed,
-    EliminarPanel,
+    // PantallaServidores
+    Pestana(Pestana),
+    /// Flecha izquierda (-1) o derecha (1) sobre las pestañas.
+    PestanaVecina(i32),
+    Buscar(String),
+    /// Abre o cierra la fila de ese servidor (solo una a la vez).
+    Alternar(String),
+    /// Prueba diferida de la dirección: generación y texto.
+    Probar(u64, String),
+    Probado(u64, Result<servidores::Estado, String>),
+    CopiarDireccion(String),
+    PedirQuitar(String),
+    CancelarQuitar,
+    Quitar(String),
+    Reintentar(String),
+    PedirDesconectar,
+    CancelarDesconectar,
+    Desconectar,
+    RedHecha(Result<zerotier::Estado, String>),
+    CopiarIp(String),
+    InvitarRed,
+    Amigos(crate::con_amigos::Accion),
 }
+
+/// Duraciones de PantallaServidores (ms).
+pub const MS_PESTANA: u64 = 280;
+pub const MS_DESPLIEGUE: u64 = 300;
+pub const MS_SALIDA: u64 = 200;
+pub const MS_NUEVO: u64 = 1600;
+pub const MS_COPIADO: u64 = 1800;
+
 fn m(a: Accion) -> Mensaje {
     Mensaje::Servidores(a)
 }
@@ -154,7 +229,73 @@ fn persistir(app: &mut App, v: Vec<Servidor>) -> Task<Mensaje> {
         move |r| m(Accion::Guardados(g, r)),
     )
 }
+/// Acciones de la vista que no tocan disco ni red: también en la demo.
+fn actualizar_vista(app: &mut App, a: &Accion) -> Option<Task<Mensaje>> {
+    let reducir = app.reducir;
+    let s = &mut app.servicios.servidores;
+    match a {
+        Accion::Pestana(p) => {
+            if *p != s.pestana {
+                s.pestana_desde = s.pestana;
+                s.pestana = *p;
+                s.pestana_t = (!reducir).then(Instant::now);
+                app.ahora = Instant::now();
+            }
+            let tarea = match p {
+                Pestana::Red if !app.servicios.demo => actualizar(app, Accion::ConsultarZero),
+                Pestana::ConAmigos => crate::con_amigos::entrar(app),
+                _ => Task::none(),
+            };
+            Some(tarea)
+        }
+        Accion::PestanaVecina(paso) => {
+            let p = s.pestana.vecina(*paso);
+            Some(actualizar(app, Accion::Pestana(p)))
+        }
+        Accion::Buscar(q) => {
+            s.busqueda = q.clone();
+            Some(Task::none())
+        }
+        Accion::PedirQuitar(id) => {
+            s.confirmar = Some(id.clone());
+            Some(Task::none())
+        }
+        Accion::CancelarQuitar => {
+            s.confirmar = None;
+            Some(Task::none())
+        }
+        Accion::PedirDesconectar => {
+            s.red_confirmar = true;
+            Some(Task::none())
+        }
+        Accion::CancelarDesconectar => {
+            s.red_confirmar = false;
+            Some(Task::none())
+        }
+        _ => None,
+    }
+}
+
+/// «Play.ejemplo.cl» → «Play»; una IP queda tal cual.
+fn nombre_de(direccion: &str) -> String {
+    let host = direccion.split(':').next().unwrap_or(direccion);
+    if host.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        return direccion.to_owned();
+    }
+    let parte = host.split('.').find(|p| !p.is_empty() && *p != "play" && *p != "mc").unwrap_or(host);
+    let mut c = parte.chars();
+    c.next().map(|p| p.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
+}
+
+/// Una dirección se ve como `play.ejemplo.cl` o `10.0.0.5:25565`.
+fn formato_valido(v: &str) -> bool {
+    !v.chars().any(char::is_whitespace) && v.contains(['.', ':']) && servidores::direccion(v).is_ok()
+}
+
 pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
+    if let Some(t) = actualizar_vista(app, &a) {
+        return t;
+    }
     if app.servicios.demo {
         return Task::none();
     }
@@ -167,6 +308,130 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
         return Task::none();
     }
     match a {
+        Accion::Pestana(_) | Accion::PestanaVecina(_) | Accion::Buscar(_) | Accion::PedirQuitar(_)
+        | Accion::CancelarQuitar | Accion::PedirDesconectar | Accion::CancelarDesconectar => {}
+        Accion::Alternar(id) => {
+            let s = &mut app.servicios.servidores;
+            let abierta = s.editor.as_ref().and_then(|e| e.id.as_deref()) == Some(id.as_str());
+            s.confirmar = None;
+            if abierta {
+                // Al cerrar se guarda el nombre si cambió.
+                let cambio = s.editor.as_ref().is_some_and(|e| {
+                    s.registros.iter().any(|v| Some(&v.id) == e.id.as_ref() && v.nombre != e.nombre && !e.nombre.trim().is_empty())
+                });
+                if cambio {
+                    let t = actualizar(app, Accion::Guardar);
+                    app.servicios.servidores.editor = None;
+                    return t;
+                }
+                s.editor = None;
+                return Task::none();
+            }
+            if let Some(i) = s.registros.iter().position(|v| v.id == id) {
+                return actualizar(app, Accion::Editar(i));
+            }
+        }
+        Accion::Probar(g, direccion) => {
+            let s = &mut app.servicios.servidores;
+            if g != s.prueba_gen || s.editor.as_ref().is_none_or(|e| e.id.is_some() || e.direccion.trim() != direccion) {
+                return Task::none();
+            }
+            if let Some(c) = s.prueba_cancel.take() {
+                c.cancel();
+            }
+            let c = CancellationToken::new();
+            s.prueba_cancel = Some(c.clone());
+            return Task::perform(async move { servidores::consultar(&direccion, c).await }, move |r| m(Accion::Probado(g, r)));
+        }
+        Accion::Probado(g, r) => {
+            let s = &mut app.servicios.servidores;
+            if g == s.prueba_gen {
+                if let Some(e) = s.editor.as_mut().filter(|e| e.id.is_none()) {
+                    e.prueba = match r {
+                        Ok(estado) => Prueba::Responde(estado),
+                        Err(_) => Prueba::NoResponde,
+                    };
+                }
+            }
+        }
+        Accion::CopiarDireccion(id) => {
+            let s = &mut app.servicios.servidores;
+            if let Some(v) = s.registros.iter().find(|v| v.id == id) {
+                let dir = v.direccion.clone();
+                s.copiado = Some((id, Instant::now()));
+                app.ahora = Instant::now();
+                return iced::clipboard::write(dir);
+            }
+        }
+        Accion::Quitar(id) => {
+            let s = &mut app.servicios.servidores;
+            s.confirmar = None;
+            let Some(i) = s.registros.iter().position(|v| v.id == id) else {
+                return Task::none();
+            };
+            if s.editor.as_ref().and_then(|e| e.id.as_deref()) == Some(id.as_str()) {
+                s.editor = None;
+            }
+            let mut lista = s.registros.clone();
+            let fuera = lista.remove(i);
+            // La fila sale deslizándose aunque ya no esté en la lista.
+            if !app.reducir {
+                s.saliendo = Some((fuera, i, Instant::now()));
+                app.ahora = Instant::now();
+            }
+            return persistir(app, lista);
+        }
+        Accion::Reintentar(id) => {
+            let s = &mut app.servicios.servidores;
+            let Some(v) = s.registros.iter().find(|v| v.id == id).cloned() else {
+                return Task::none();
+            };
+            s.estados.remove(&id);
+            let g = s.request;
+            let c = s.cancel.clone().unwrap_or_default();
+            return Task::perform(async move { servidores::consultar(&v.direccion, c).await }, move |r| {
+                m(Accion::Estado(g, v.id.clone(), r))
+            });
+        }
+        Accion::Desconectar => {
+            let s = &mut app.servicios.servidores;
+            s.red_confirmar = false;
+            let Some(id) = red_conectada(s.zero.as_ref()).map(|r| r.id.clone()) else {
+                return Task::none();
+            };
+            s.red_ocupada = true;
+            return Task::perform(
+                async move { zerotier::cambiar_red(&id, zerotier::Accion::Salir, CancellationToken::new()).await },
+                |r| m(Accion::RedHecha(r)),
+            );
+        }
+        Accion::RedHecha(r) => {
+            let s = &mut app.servicios.servidores;
+            s.red_ocupada = false;
+            match r {
+                Ok(z) => s.zero = Some(z),
+                Err(e) => app.avisar_error(format!("No se pudo desconectar de la red: {e}")),
+            }
+        }
+        Accion::CopiarIp(ip) => {
+            app.servicios.servidores.copiado = Some(("ip".into(), Instant::now()));
+            app.ahora = Instant::now();
+            return iced::clipboard::write(ip);
+        }
+        Accion::InvitarRed => {
+            let Some(r) = red_conectada(app.servicios.servidores.zero.as_ref()) else {
+                return Task::none();
+            };
+            let texto = format!(
+                "Únete a mi red privada para jugar en LAN: abre ZeroTier, entra a la red {} y avísame para autorizarte.",
+                r.id
+            );
+            app.servicios.servidores.copiado = Some(("invitar".into(), Instant::now()));
+            app.ahora = Instant::now();
+            app.avisar("Invitación copiada: envíala a tu amigo.".into());
+            return iced::clipboard::write(texto);
+        }
+        Accion::Amigos(a) => return crate::con_amigos::actualizar(app, a),
         Accion::Abrir => {
             recargar_instancias(app);
             let s = &mut app.servicios.servidores;
@@ -261,12 +526,16 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                 instancia: None,
                 error: None,
                 sincronizar: false,
+                prueba: Prueba::Vacia,
             });
-            app.mod_panel = None;
-            app.anim_panel = Some(std::time::Instant::now());
-            app.servicios.servidores.cerrando = None;
+            // El formulario se despliega en la misma página.
+            let s = &mut app.servicios.servidores;
+            s.editor_t = (!app.reducir).then(Instant::now);
+            s.confirmar = None;
+            s.cerrando = None;
+            app.ahora = Instant::now();
             return iced::widget::text_input::focus(iced::widget::text_input::Id::new(
-                "servidor-nombre",
+                "servidor-direccion",
             ));
         }
         Accion::Editar(i) => {
@@ -293,13 +562,14 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                     instancia,
                     error: None,
                     sincronizar: v.sincronizar,
+                prueba: Prueba::Vacia,
                 });
-                app.mod_panel = None;
-                app.anim_panel = Some(std::time::Instant::now());
-                app.servicios.servidores.cerrando = None;
-                return iced::widget::text_input::focus(iced::widget::text_input::Id::new(
-                    "servidor-nombre",
-                ));
+                // La fila se abre hacia abajo; solo una a la vez.
+                let s = &mut app.servicios.servidores;
+                s.editor_t = (!app.reducir).then(Instant::now);
+                s.confirmar = None;
+                s.cerrando = None;
+                app.ahora = Instant::now();
             }
         }
         Accion::Nombre(v) => {
@@ -308,35 +578,73 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             }
         }
         Accion::Direccion(v) => {
-            if let Some(e) = &mut app.servicios.servidores.editor {
-                e.direccion = v;
+            let s = &mut app.servicios.servidores;
+            let Some(e) = &mut s.editor else {
+                return Task::none();
+            };
+            e.direccion = v.clone();
+            e.error = None;
+            if e.id.is_some() {
+                return Task::none();
             }
+            // Se prueba mientras se escribe: 350 ms después de la última tecla.
+            let v = v.trim().to_owned();
+            e.prueba = if v.is_empty() {
+                Prueba::Vacia
+            } else if !formato_valido(&v) {
+                Prueba::Formato
+            } else {
+                Prueba::Probando
+            };
+            let probar = matches!(e.prueba, Prueba::Probando);
+            s.prueba_gen += 1;
+            if let Some(c) = s.prueba_cancel.take() {
+                c.cancel();
+            }
+            if !probar {
+                return Task::none();
+            }
+            let g = s.prueba_gen;
+            return Task::perform(
+                async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+                    v
+                },
+                move |v| m(Accion::Probar(g, v)),
+            );
         }
         Accion::Instancia(v) => {
             if let Some(e) = &mut app.servicios.servidores.editor {
                 e.instancia = Some(v);
+                // En una fila abierta, elegir la instancia se guarda al tiro.
+                if e.id.is_some() {
+                    return actualizar(app, Accion::Guardar);
+                }
             }
         }
         Accion::Sincronizar(v) => {
             if let Some(e) = &mut app.servicios.servidores.editor {
                 e.sincronizar = v;
+                if e.id.is_some() {
+                    return actualizar(app, Accion::Guardar);
+                }
             }
         }
         Accion::Cerrar => {
             let s = &mut app.servicios.servidores;
-            if app.reducir {
-                s.editor = None;
-            } else {
-                s.cerrando = Some(std::time::Instant::now());
+            s.editor = None;
+            s.prueba_gen += 1;
+            if let Some(c) = s.prueba_cancel.take() {
+                c.cancel();
             }
-            app.anim_panel = Some(std::time::Instant::now());
         }
         Accion::Guardar => {
             let Some(e) = &mut app.servicios.servidores.editor else {
                 return Task::none();
             };
+            let nombre = if e.nombre.trim().is_empty() { nombre_de(e.direccion.trim()) } else { e.nombre.clone() };
             match servidores::nuevo(
-                e.nombre.clone(),
+                nombre,
                 e.direccion.clone(),
                 e.instancia.as_ref().map(|i| i.id.clone()),
             ) {
@@ -351,7 +659,9 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                         };
                         *old = v;
                     } else {
-                        lista.push(v);
+                        // El nuevo aparece primero en la lista.
+                        app.servicios.servidores.nuevo_pendiente = Some(v.id.clone());
+                        lista.insert(0, v);
                     }
                     return persistir(app, lista);
                 }
@@ -366,8 +676,18 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
             match r {
                 Ok(v) => {
                     s.registros = v;
-                    s.editor = None;
-                    app.avisar("Lista de servidores guardada.".into());
+                    // Agregar cierra el formulario; editar una fila la deja abierta.
+                    if s.editor.as_ref().is_some_and(|e| e.id.is_none()) {
+                        s.editor = None;
+                    } else if let Some(e) = &mut s.editor {
+                        e.error = None;
+                    }
+                    if let Some(id) = s.nuevo_pendiente.take() {
+                        if !app.reducir {
+                            s.nuevo = Some((id, Instant::now()));
+                            app.ahora = Instant::now();
+                        }
+                    }
                     return actualizar(app, Accion::Consultar);
                 }
                 Err(e) => {
@@ -387,31 +707,6 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
                 crate::red_privada_real::Accion::Abrir,
             );
         }
-        Accion::EliminarPanel => {
-            let s = &app.servicios.servidores;
-            let Some(id) = s.editor.as_ref().and_then(|e| e.id.as_ref()) else {
-                return Task::none();
-            };
-            return persistir(
-                app,
-                s.registros
-                    .iter()
-                    .filter(|v| &v.id != id)
-                    .cloned()
-                    .collect(),
-            );
-        }
-        Accion::Tomar(i) => {
-            let s = &mut app.servicios.servidores;
-            if i < s.registros.len() && s.editor.is_none() {
-                s.arrastre = Some(icaro_ui::servidores::Arrastre {
-                    origen: i,
-                    destino: i,
-                });
-                s.toma_y = app.cursor.y;
-            }
-        }
-        Accion::Sobre(i) => app.servicios.servidores.sobre = i,
         Accion::CancelarOrden => app.servicios.servidores.arrastre = None,
         Accion::Soltar => {
             let s = &mut app.servicios.servidores;
@@ -467,425 +762,148 @@ pub fn actualizar(app: &mut App, a: Accion) -> Task<Mensaje> {
     }
     Task::none()
 }
+/// PantallaServidores: banda, pestañas y la pestaña elegida.
 pub fn vista(app: &App) -> Element<'_, Mensaje> {
-    const MARGEN: f32 = icaro_ui::tema::espacio::S8;
-    let p = app.paleta();
-    let s = &app.servicios.servidores;
-    let acciones_guardados = row![
-        text("Arrastra para ordenar").size(13).color(p.text_muted),
-        Space::with_width(Length::Fill),
-        componentes::boton_con_icono(
-            p,
-            Icono::Mas,
-            "Agregar servidor",
-            Variante::Primario,
-            (!s.saving && s.loaded && s.error.is_none()).then(|| m(Accion::Nuevo)),
-            false
-        )
-    ]
-    .spacing(12)
-    .align_y(Alignment::Center);
-    let (connected, name, ip) = match &s.zero {
-        Some(zerotier::Estado::Disponible { redes, .. }) => redes
-            .iter()
-            .find(|r| r.estado == "OK")
-            .map(|r| {
-                (
-                    true,
-                    r.nombre.clone(),
-                    r.ips
-                        .first()
-                        .map(|ip| ip.split('/').next().unwrap_or(ip).to_owned())
-                        .unwrap_or_default(),
-                )
-            })
-            .unwrap_or((
-                false,
-                if redes.is_empty() {
-                    "Sin red configurada".into()
-                } else {
-                    "Esperando autorización".into()
-                },
-                String::new(),
-            )),
-        Some(zerotier::Estado::Ausente) => {
-            (false, "ZeroTier no está instalado".into(), String::new())
-        }
-        Some(zerotier::Estado::SinAcceso) => (
-            false,
-            "El servicio de ZeroTier no responde".into(),
-            String::new(),
-        ),
-        None => (false, "Comprobando ZeroTier…".into(), String::new()),
-    };
-    let network = icaro_ui::servidores::red_privada(
-        p,
-        connected,
-        &name,
-        &ip,
-        (0, 0),
-        m(Accion::GestionarRed),
-    );
-    let ancho_barra = if app.barra_colapsada() {
-        medida::BARRA_LATERAL_COLAPSADA
-    } else {
-        medida::BARRA_LATERAL
-    };
-    let ancho = app.ventana.width - ancho_barra - 2.0 * MARGEN;
-    let mut body = column![crate::compartir_real::accesos(app, ancho), network].spacing(24);
-    if !app.servicios.compartir.habilitado {
-        body = body.push(acciones_guardados);
-    }
-    if let Some(error) = &s.error {
-        body = body.push(
-            column![
-                text(error.clone()).color(p.error),
-                componentes::boton(
-                    p,
-                    "Releer lista",
-                    Variante::Secundario,
-                    (!s.loading && !s.saving).then(|| m(Accion::Abrir))
-                )
-            ]
-            .spacing(12),
-        );
-    }
-    if s.loading {
-        body = body.push(text("Cargando servidores…").color(p.text_muted));
-    } else if s.registros.is_empty() && s.error.is_none() {
-        body = body.push(icaro_ui::vacios::servidores(
-            icaro_ui::vacios::Contexto {
-                p,
-                ventana: app.ventana.width,
-                prensa: 1.,
-            },
-            m(Accion::Nuevo),
-        ));
-    }
-    let acciones = AccionesLista {
-        jugar: |i| m(Accion::Jugar(i)),
-        tomar: Some(|i| m(Accion::Tomar(i))),
-        sobre: |i| m(Accion::Sobre(i)),
-        editar: Some(|i| m(Accion::Editar(i))),
-        eliminar: None,
-        permitir_sin_estado: false,
-    };
-    let filas: Vec<_> = s
-        .registros
-        .iter()
-        .map(|v| {
-            let status = s.estados.get(&v.id);
-            let instance = v.instancia.as_ref().and_then(|id| {
-                app.servicios
-                    .instancias
-                    .registros
-                    .iter()
-                    .find(|i| &i.id == id)
-            });
-            icaro_ui::servidores::Servidor {
-                nombre: v.nombre.clone(),
-                direccion: v.direccion.clone(),
-                motd: status
-                    .and_then(|r| r.as_ref().ok())
-                    .map(|r| r.motd.replace('\n', " ")),
-                estado: match status {
-                    Some(Ok(e)) => EstadoServidor::EnLinea {
-                        jugadores: e.jugadores,
-                        maximo: e.maximo,
-                        ms: e.ms.min(u32::MAX as u64) as u32,
-                    },
-                    Some(Err(_)) => EstadoServidor::FueraDeLinea("Sin respuesta".into()),
-                    None => EstadoServidor::FueraDeLinea("Consultando…".into()),
-                },
-                vinculo: instance.map(|i| (i.nombre.clone(), v.sincronizar)),
-                version_distinta: status
-                    .and_then(|e| e.as_ref().ok())
-                    .filter(|e| {
-                        instance.is_some_and(|i| i.minecraft != e.version)
-                            && app
-                                .servicios
-                                .instancias
-                                .versiones
-                                .iter()
-                                .any(|v| v.id == e.version)
-                    })
-                    .map(|e| e.version.clone()),
-            }
-        })
-        .collect();
-    body = body.push(icaro_ui::servidores::lista_servidores(
-        p, &filas, &acciones, s.arrastre, s.sobre, None,
-    ));
-    column![
-        banda_completa(
-            p,
-            Lamina::TivoliCiudad,
-            Some((0.5, 0.4)),
-            "Servidores",
-            DatoBanda::Conteo(s.registros.len()),
-            ALTO_BANDA,
-            icaro_ui::tema::texto::DISPLAY_XL
-        ),
-        crate::suave(app, body.padding(MARGEN))
-    ]
-    .into()
+    crate::servidores_vista::vista(app)
 }
-pub fn panel(app: &App) -> Option<Element<'_, Mensaje>> {
-    use iced::widget::{mouse_area, opaque};
-    let s = &app.servicios.servidores;
-    let e = s.editor.as_ref()?;
-    if app.seccion != icaro_ui::shell::Seccion::Servidores || app.pantalla.is_some() {
-        return None;
+/// El editor ya no abre un panel lateral: agregar y editar ocurren en la página.
+pub fn panel(_app: &App) -> Option<Element<'_, Mensaje>> {
+    None
+}
+/// Primera red conectada (estado «OK») de ZeroTier.
+pub(crate) fn red_conectada(z: Option<&zerotier::Estado>) -> Option<&zerotier::Red> {
+    match z? {
+        zerotier::Estado::Disponible { redes, .. } => redes.iter().find(|r| r.estado == "OK"),
+        _ => None,
     }
-    let p = app.paleta();
-    let enabled = !s.saving && s.cerrando.is_none();
-    let field = |placeholder: &str, value: &str, f: fn(String) -> Accion, id: &str| {
-        let input = text_input(placeholder, value)
-            .id(iced::widget::text_input::Id::new(id.to_owned()))
-            .padding(12)
-            .style(icaro_ui::estilo::campo(p));
-        if enabled {
-            input.on_input(move |v| m(f(v)))
-        } else {
-            input
-        }
-    };
-    let instances: Vec<_> = app
-        .servicios
-        .instancias
-        .registros
-        .iter()
-        .map(|i| Instancia {
-            id: i.id.clone(),
-            nombre: i.nombre.clone(),
-        })
-        .collect();
-    let mut body = column![
-        componentes::etiqueta(p, "Nombre"),
-        field("Amigos", &e.nombre, Accion::Nombre, "servidor-nombre"),
-        componentes::etiqueta(p, "Dirección"),
-        field(
-            "10.147.17.1:25565",
-            &e.direccion,
-            Accion::Direccion,
-            "servidor-direccion"
-        )
-        .font(fuentes::MONO),
-        componentes::etiqueta(p, "Instancia vinculada"),
-        pick_list(instances, e.instancia.clone(), |v| m(Accion::Instancia(v)))
-            .placeholder("Selecciona una instancia")
-            .padding(12)
-            .width(Length::Fill)
-            .style(icaro_ui::estilo::selector(p))
-            .menu_style(icaro_ui::estilo::menu_selector(p)),
-        iced::widget::checkbox("Sincronizar mods al iniciar", e.sincronizar)
-            .on_toggle_maybe(enabled.then_some(|v| m(Accion::Sincronizar(v))))
-            .icon(componentes::icono_casilla())
-            .style(icaro_ui::estilo::casilla(p)),
-    ]
-    .spacing(12)
-    .padding(24);
-    if let Some(error) = &e.error {
-        body = body.push(text(error.clone()).size(13).color(p.error));
+}
+/// Flechas izquierda y derecha: pestaña vecina. Solo llegan las teclas que
+/// ningún campo de texto tomó.
+fn flechas(tecla: iced::keyboard::Key, _: iced::keyboard::Modifiers) -> Option<Mensaje> {
+    use iced::keyboard::{key::Named, Key};
+    match tecla {
+        Key::Named(Named::ArrowLeft) => Some(m(Accion::PestanaVecina(-1))),
+        Key::Named(Named::ArrowRight) => Some(m(Accion::PestanaVecina(1))),
+        _ => None,
     }
-    let rule = || {
-        container(Space::with_height(1))
-            .width(Length::Fill)
-            .style(icaro_ui::estilo::bloque(p.border))
-    };
-    let header = row![
-        text(if e.id.is_some() {
-            "Editar servidor"
-        } else {
-            "Agregar servidor"
-        })
-        .font(fuentes::TITULO)
-        .size(18)
-        .width(Length::Fill),
-        componentes::boton_con_icono(
-            p,
-            Icono::Cerrar,
-            "",
-            Variante::Fantasma,
-            enabled.then(|| m(Accion::Cerrar)),
-            true
-        )
-    ]
-    .align_y(Alignment::Center)
-    .padding(20);
-    let footer = row![
-        componentes::boton(
-            p,
-            "Eliminar",
-            Variante::Peligro,
-            (enabled && e.id.is_some()).then(|| m(Accion::EliminarPanel))
-        ),
-        Space::with_width(Length::Fill),
-        componentes::boton(
-            p,
-            "Cancelar",
-            Variante::Secundario,
-            enabled.then(|| m(Accion::Cerrar))
-        ),
-        componentes::boton(
-            p,
-            if s.saving { "Guardando…" } else { "Guardar" },
-            Variante::Primario,
-            enabled.then(|| m(Accion::Guardar))
-        )
-    ]
-    .spacing(8)
-    .padding(16)
-    .align_y(Alignment::Center);
-    let content = container(
-        column![
-            header,
-            rule(),
-            crate::desplazable_pub(body.into()),
-            rule(),
-            footer
-        ]
-        .height(Length::Fill),
-    )
-    .height(Length::Fill)
-    .width(398)
-    .style(icaro_ui::estilo::bloque(p.surface_raised));
-    let line = container(Space::with_width(2))
-        .height(Length::Fill)
-        .style(icaro_ui::estilo::bloque(p.text));
-    let t = if app.reducir {
-        0.
-    } else if let Some(t) = s.cerrando {
-        (t.elapsed().as_millis() as f32 / icaro_ui::tema::duracion::FAST as f32).clamp(0., 1.)
-    } else {
-        1. - icaro_ui::movimiento::Curva::Salida.aplicar(crate::progreso(
-            app.anim_panel,
-            app.ahora,
-            crate::MS_PANEL,
-        ))
-    };
-    let pane = icaro_ui::efectos::panel_desde_derecha(
-        opaque(row![line, content].width(400).height(Length::Fill)).into(),
-        t * 400.,
-    );
-    let capa: Element<_> = if app.ventana.width < 1100. {
-        let scrim = mouse_area(
-            container(Space::new(Length::Fill, Length::Fill))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .style(move |_| iced::widget::container::Style {
-                    background: Some(p.scrim.into()),
-                    ..Default::default()
-                }),
-        )
-        .on_press(m(Accion::Cerrar));
-        iced::widget::stack![scrim, pane].into()
-    } else {
-        pane
-    };
-    Some(
-        container(capa)
-            .padding(iced::Padding {
-                top: 38.,
-                ..iced::Padding::ZERO
-            })
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into(),
-    )
 }
 pub fn suscripcion(app: &App) -> iced::Subscription<Mensaje> {
-    if app.servicios.demo {
-        return iced::Subscription::none();
-    }
-    if app.seccion == icaro_ui::shell::Seccion::Servidores
-        && app.pantalla.is_none()
-        && app.servicios.servidores.arrastre.is_none()
-    {
-        iced::Subscription::batch([
-            iced::time::every(std::time::Duration::from_secs(30)).map(|_| m(Accion::Abrir)),
-            iced::time::every(std::time::Duration::from_secs(10)).map(|_| m(Accion::ConsultarZero)),
-        ])
+    let visible = app.seccion == icaro_ui::shell::Seccion::Servidores && app.pantalla.is_none();
+    let teclas = if visible {
+        iced::keyboard::on_key_press(flechas)
     } else {
         iced::Subscription::none()
+    };
+    if app.servicios.demo || !visible {
+        return teclas;
     }
+    // El ping se repite cada 30 s mientras la sección está a la vista.
+    iced::Subscription::batch([
+        teclas,
+        iced::time::every(std::time::Duration::from_secs(30)).map(|_| m(Accion::Abrir)),
+        iced::time::every(std::time::Duration::from_secs(10)).map(|_| m(Accion::ConsultarZero)),
+    ])
 }
+/// Escenas de PantallaServidores: `servidores` (lista), `-vacio`,
+/// `-agregar`, `-agregar-error`, `-abierto`, `-quitar`, `-sin-respuesta`,
+/// `-red`, `-red-off`, `-amigos…` (ver `con_amigos::preparar_diseno`) y
+/// `-angosto` (ventana pequeña).
 pub fn preparar_diseno(app: &mut App, scene: &str) {
-    app.servicios.compartir.habilitado = scene.starts_with("servidores-compartir");
-    if scene == "servidores-compartir-desplegado-angosto" {
-        app.colapsada = Some(false);
-    }
     if scene.ends_with("angosto") {
         app.ventana = iced::Size::new(940., 720.);
     }
     app.seccion = icaro_ui::shell::Seccion::Servidores;
     app.editor = None;
-    let i = icaro_core::instancias::Instancia {
-        id: "qa-servidores".into(),
-        nombre: "Supervivencia".into(),
-        minecraft: "26.3".into(),
-        loader: "fabric".into(),
+    let instancia = |id: &str, nombre: &str, mc: &str, loader: &str| icaro_core::instancias::Instancia {
+        id: id.into(),
+        nombre: nombre.into(),
+        minecraft: mc.into(),
+        loader: loader.into(),
         portada: 0,
         creada: 0,
     };
-    app.servicios.instancias.registros = vec![i.clone()];
+    let survival = instancia("qa-survival", "Survival 26", "1.21.1", "fabric");
+    let super_v = instancia("qa-supervivencia", "Supervivencia", "1.21.4", "vanilla");
+    let better = instancia("qa-better", "Better MC", "1.20.1", "neoforge");
+    app.servicios.instancias.registros = vec![super_v.clone(), survival.clone(), better.clone()];
     let s = &mut app.servicios.servidores;
     s.visual = true;
     s.loaded = true;
-    if scene == "servidores-vacio" {
-        s.zero = Some(zerotier::Estado::Ausente);
-        return;
-    }
-    let a = servidores::nuevo(
-        "Amigos".into(),
-        "10.147.17.1:25565".into(),
-        Some(i.id.clone()),
-    )
-    .unwrap();
-    let b = servidores::nuevo(
-        "Creativo de la U".into(),
-        "play.example.net:25570".into(),
-        None,
-    )
-    .unwrap();
-    s.estados.insert(
-        a.id.clone(),
-        Ok(servidores::Estado {
-            version: "26.3".into(),
-            protocolo: 999,
-            jugadores: 3,
-            maximo: 20,
-            motd: "Temporada 4: el nether está abierto".into(),
-            ms: 24,
-        }),
-    );
-    s.estados.insert(
-        b.id.clone(),
-        Err("No se pudo conectar; revisa la dirección, la red o ZeroTier.".into()),
-    );
-    s.registros = vec![a, b];
     s.zero = Some(zerotier::Estado::Disponible {
         version: "1.16.0".into(),
         online: true,
         redes: vec![zerotier::Red {
-            id: "1234567890abcdef".into(),
-            nombre: "Amigos".into(),
-            estado: "ACCESS_DENIED".into(),
-            ips: vec![],
+            id: "8056c2e21c000001".into(),
+            nombre: "maincra o nose".into(),
+            estado: if scene.ends_with("-red-off") { "ACCESS_DENIED" } else { "OK" }.into(),
+            ips: vec!["10.168.182.50/24".into()],
         }],
     });
-    if scene.starts_with("servidores-formulario") {
+    if scene.contains("-red") {
+        s.pestana = Pestana::Red;
+        s.pestana_desde = Pestana::Red;
+    }
+    if scene.contains("-amigos") {
+        s.pestana = Pestana::ConAmigos;
+        s.pestana_desde = Pestana::ConAmigos;
+    }
+    if scene.ends_with("-vacio") && !scene.contains("-amigos") {
+        return;
+    }
+    let estado = |jugadores, maximo, version: &str, motd: &str, ms| -> Result<servidores::Estado, String> {
+        Ok(servidores::Estado { version: version.into(), protocolo: 767, jugadores, maximo, motd: motd.into(), ms })
+    };
+    let a = servidores::nuevo("SMP de Forjador".into(), "smp.forjador.cl".into(), Some(survival.id.clone())).unwrap();
+    let b = servidores::nuevo("Hypixel".into(), "mc.hypixel.net".into(), Some(super_v.id.clone())).unwrap();
+    let c = servidores::nuevo("Server del colegio".into(), "192.168.1.40:25570".into(), Some(better.id.clone())).unwrap();
+    s.estados.insert(a.id.clone(), estado(3, 20, "1.21.1", "Temporada 4 · reinicio el domingo", 34));
+    s.estados.insert(b.id.clone(), estado(38_214, 100_000, "1.8 a 1.21.4", "SkyBlock 0.21 · Bed Wars", 128));
+    s.estados.insert(c.id.clone(), Err("No se pudo conectar.".into()));
+    let abrir = |v: &Servidor, i: Option<&icaro_core::instancias::Instancia>| Editor {
+        id: Some(v.id.clone()),
+        nombre: v.nombre.clone(),
+        direccion: v.direccion.clone(),
+        instancia: i.map(|i| Instancia { id: i.id.clone(), nombre: i.nombre.clone() }),
+        error: None,
+        sincronizar: false,
+        prueba: Prueba::Vacia,
+    };
+    if scene.ends_with("-abierto") || scene.ends_with("-quitar") {
+        s.editor = Some(abrir(&a, Some(&survival)));
+    }
+    if scene.ends_with("-quitar") {
+        s.confirmar = Some(a.id.clone());
+    }
+    if scene.ends_with("-sin-respuesta") {
+        s.editor = Some(abrir(&c, Some(&better)));
+    }
+    if scene.contains("-agregar") {
+        let error = scene.ends_with("-error");
         s.editor = Some(Editor {
             id: None,
-            nombre: "Servidor con amigos".into(),
-            direccion: "play.example.net".into(),
-            instancia: Some(Instancia {
-                id: i.id,
-                nombre: i.nombre,
-            }),
-            error: Some("Ese servidor ya está guardado.".into()),
+            nombre: String::new(),
+            direccion: if error { "play ejemplo".into() } else { "play.ejemplo.cl".into() },
+            instancia: None,
+            error: None,
             sincronizar: false,
+            prueba: if error {
+                Prueba::Formato
+            } else {
+                Prueba::Responde(servidores::Estado {
+                    version: "1.21.4".into(),
+                    protocolo: 769,
+                    jugadores: 14,
+                    maximo: 50,
+                    motd: "Bienvenidos a ejemplo".into(),
+                    ms: 46,
+                })
+            },
         });
+    }
+    s.registros = vec![a, b, c];
+    if scene.contains("-amigos") {
+        crate::con_amigos::preparar_diseno(app, scene);
+        crate::alojamiento_real::preparar_diseno(app, scene);
     }
 }
 
@@ -1021,20 +1039,56 @@ mod tests {
         assert!(a.servicios.servidores.editor.is_none());
     }
     #[test]
-    fn arrastre_cancelado_conserva_el_orden_y_espera_el_guardado() {
+    fn quitar_saca_la_fila_deslizandose_y_guarda_sin_ella() {
         let mut a = app();
-        a.cursor.y = 100.;
-        let original = a.servicios.servidores.registros.clone();
-        let _ = actualizar(&mut a, Accion::Tomar(0));
-        a.servicios.servidores.mover(194.);
-        assert_eq!(a.servicios.servidores.arrastre.unwrap().destino, 1);
-        let _ = actualizar(&mut a, Accion::CancelarOrden);
-        assert_eq!(a.servicios.servidores.registros, original);
-        let _ = actualizar(&mut a, Accion::Tomar(0));
-        a.servicios.servidores.mover(194.);
-        let _ = actualizar(&mut a, Accion::Soltar);
-        assert!(a.servicios.servidores.saving);
-        assert_eq!(a.servicios.servidores.registros, original);
+        a.reducir = false;
+        let id = a.servicios.servidores.registros[0].id.clone();
+        let _ = actualizar(&mut a, Accion::PedirQuitar(id.clone()));
+        assert_eq!(a.servicios.servidores.confirmar.as_deref(), Some(id.as_str()));
+        let _ = actualizar(&mut a, Accion::Quitar(id.clone()));
+        let s = &a.servicios.servidores;
+        assert!(s.confirmar.is_none());
+        assert!(s.saving);
+        assert_eq!(s.saliendo.as_ref().map(|(v, i, _)| (v.id.clone(), *i)), Some((id, 0)));
+    }
+    #[test]
+    fn la_direccion_se_prueba_mientras_se_escribe() {
+        let mut a = app();
+        let _ = actualizar(&mut a, Accion::Nuevo);
+        let prueba = |a: &App| a.servicios.servidores.editor.as_ref().unwrap().prueba.clone();
+        assert!(matches!(prueba(&a), Prueba::Vacia));
+        let _ = actualizar(&mut a, Accion::Direccion("play ejemplo".into()));
+        assert!(matches!(prueba(&a), Prueba::Formato));
+        let _ = actualizar(&mut a, Accion::Direccion("play.ejemplo.cl".into()));
+        assert!(matches!(prueba(&a), Prueba::Probando));
+        // Una respuesta vieja no pisa la prueba vigente.
+        let _ = actualizar(&mut a, Accion::Probado(0, Err("x".into())));
+        assert!(matches!(prueba(&a), Prueba::Probando));
+        let g = a.servicios.servidores.prueba_gen;
+        let _ = actualizar(&mut a, Accion::Probado(g, Err("x".into())));
+        assert!(matches!(prueba(&a), Prueba::NoResponde));
+        assert_eq!(nombre_de("play.ejemplo.cl"), "Ejemplo");
+        assert_eq!(nombre_de("10.0.0.5:25565"), "10.0.0.5:25565");
+    }
+    #[test]
+    fn el_interruptor_de_sincronizacion_se_guarda_en_la_fila_abierta() {
+        let mut a = app();
+        let _ = actualizar(&mut a, Accion::Editar(0));
+        assert!(!a.servicios.servidores.editor.as_ref().unwrap().sincronizar);
+        let _ = actualizar(&mut a, Accion::Sincronizar(true));
+        let s = &a.servicios.servidores;
+        // La fila sigue abierta y se pidió guardar el valor nuevo.
+        assert!(s.editor.as_ref().unwrap().sincronizar);
+        assert!(s.saving);
+    }
+    #[test]
+    fn las_flechas_cambian_de_pestana() {
+        let mut a = app();
+        let _ = actualizar(&mut a, Accion::PestanaVecina(1));
+        assert_eq!(a.servicios.servidores.pestana, Pestana::ConAmigos);
+        let _ = actualizar(&mut a, Accion::PestanaVecina(-1));
+        let _ = actualizar(&mut a, Accion::PestanaVecina(-1));
+        assert_eq!(a.servicios.servidores.pestana, Pestana::Red);
     }
     #[test]
     fn escape_cierra_panel_sin_modificar_lista_y_respeta_guardado_en_curso() {

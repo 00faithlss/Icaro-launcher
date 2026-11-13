@@ -19,6 +19,7 @@ use std::{
 use tokio_util::sync::CancellationToken;
 
 mod forge;
+pub mod servidor;
 
 const METADATA_LIMIT: u64 = 8 * 1024 * 1024;
 const FILE_LIMIT: u64 = 1024 * 1024 * 1024;

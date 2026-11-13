@@ -1,5 +1,7 @@
 # Movimiento
 
+[Documentación](README.md) · [Estado y pendientes](roadmap.md)
+
 Comportamiento de las animaciones del ejemplo `launcher`. La lógica está en [movimiento.rs](../crates/ui/src/movimiento.rs), el dibujo de los efectos en [efectos.rs](../crates/ui/src/efectos.rs) y los grabados en [laminas.rs](../crates/ui/src/laminas.rs). Las duraciones se definen en [tema.rs](../crates/ui/src/tema.rs) y en el [launcher](../crates/ui/examples/launcher.rs).
 
 ## Animaciones activas
