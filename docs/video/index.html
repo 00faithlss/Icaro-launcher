@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1920, height=1080" />
+<title>Ícaro Launcher</title>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<style>
+@font-face { font-family: "Archivo"; src: url("assets/fuentes/Archivo-Regular.ttf"); font-weight: 400; }
+@font-face { font-family: "Archivo"; src: url("assets/fuentes/Archivo-SemiBold.ttf"); font-weight: 600; }
+@font-face { font-family: "Archivo Expanded"; src: url("assets/fuentes/ArchivoExpanded-ExtraBold.ttf"); font-weight: 800; }
+@font-face { font-family: "Martian Mono"; src: url("assets/fuentes/MartianMono-Regular.ttf"); font-weight: 400; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #000; }
+#root { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #000;
+  font-family: "Archivo", sans-serif; color: #fff; }
+.clip { position: absolute; inset: 0; }
+
+/* Fondo: «La caída de Ícaro» (Blondel, 1819), la obra del icono. */
+#fondo { position: absolute; inset: 0; overflow: hidden; }
+#pintura { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 50% 50%; }
+#sombra { position: absolute; inset: 0; background: rgba(6,6,12,.32); }
+
+/* Ventana del launcher, flotando sobre la pintura. */
+#ventana { position: absolute; left: 173px; top: 86px; width: 1574px; height: 853px; border-radius: 12px; overflow: hidden;
+  background: #0a0a0a; box-shadow: 0 40px 110px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.14); opacity: 0; }
+#ventana .toma { position: absolute; left: 0; top: 0; width: 1920px; height: 1040px; transform: scale(.81979); transform-origin: 0 0; }
+#ventana video { display: block; width: 1920px; height: 1040px; }
+
+/* Texto al pie, al centro, sobre una sombra suave. */
+.texto { position: absolute; left: 0; right: 0; top: 760px; height: 200px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; opacity: 0; }
+.texto::before { content: ""; position: absolute; left: 50%; top: 50%; width: 1100px; height: 260px; margin: -130px 0 0 -550px;
+  background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,.72) 0%, rgba(0,0,0,.5) 40%, rgba(0,0,0,0) 70%); }
+.texto .etiqueta { position: relative; font-family: "Martian Mono"; font-size: 15px; letter-spacing: .32em; color: #c9cede; text-transform: uppercase; }
+.texto .frase { position: relative; margin-top: 12px; font-weight: 600; font-size: 46px; letter-spacing: -.01em; color: #fff; white-space: nowrap; }
+
+/* Entrada y cierre. */
+#icono { position: absolute; left: 896px; top: 476px; width: 128px; height: 128px; border-radius: 26px; overflow: hidden;
+  box-shadow: 0 18px 50px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.18); opacity: 0; }
+#icono img { display: block; width: 128px; height: 128px; }
+.cartel { position: absolute; left: 0; right: 0; text-align: center; white-space: nowrap; opacity: 0; }
+#nombre { top: 430px; font-family: "Archivo Expanded"; font-weight: 800; font-size: 120px; line-height: 1; letter-spacing: .01em; }
+#descarga { top: 590px; font-family: "Martian Mono"; font-size: 22px; letter-spacing: .4em; color: #e3e6ef; }
+#credito { top: 1030px; font-family: "Martian Mono"; font-size: 13px; letter-spacing: .06em; color: rgba(255,255,255,.62); }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="main" data-start="0" data-duration="78" data-width="1920" data-height="1080">
+
+  <section id="fondo" class="clip" data-start="0" data-duration="78" data-track-index="0">
+    <img id="pintura" src="assets/fondo-blondel.jpg" alt="" />
+    <div id="sombra"></div>
+  </section>
+
+  <div id="marco" class="clip">
+    <div id="ventana">
+      <div class="toma"><video id="va" src="assets/tomas/a-instancias.mp4" data-start="4" data-duration="8" data-track-index="2" muted playsinline></video></div>
+      <div class="toma"><video id="vb" src="assets/tomas/b-crear.mp4" data-start="12" data-duration="13" data-track-index="2" muted playsinline></video></div>
+      <div class="toma"><video id="vc" src="assets/tomas/c-descargas.mp4" data-start="25" data-duration="4" data-track-index="2" muted playsinline></video></div>
+      <div class="toma"><video id="vd" src="assets/tomas/d-mods.mp4" data-start="29" data-duration="18" data-track-index="2" muted playsinline></video></div>
+      <div class="toma"><video id="ve" src="assets/tomas/e-servidores.mp4" data-start="47" data-duration="8" data-track-index="2" muted playsinline></video></div>
+      <div class="toma"><video id="vf" src="assets/tomas/f-amigos.mp4" data-start="55" data-duration="6" data-track-index="2" muted playsinline></video></div>
+      <div class="toma"><video id="vg" src="assets/tomas/g-temas.mp4" data-start="61" data-duration="9" data-track-index="2" muted playsinline></video></div>
+      <div class="toma"><video id="vh" src="assets/tomas/h-cierre.mp4" data-start="70" data-duration="4" data-track-index="2" muted playsinline></video></div>
+    </div>
+  </div>
+
+  <section id="textos" class="clip" data-start="0" data-duration="78" data-track-index="3">
+    <div class="texto" id="t1"><div class="etiqueta">Instancias</div><div class="frase">Todas tus partidas, en un solo lugar</div></div>
+    <div class="texto" id="t2"><div class="etiqueta">Crear</div><div class="frase">Una instancia nueva en cuatro pasos</div></div>
+    <div class="texto" id="t3"><div class="etiqueta">Instalación</div><div class="frase">Minecraft, el loader y Java, solos</div></div>
+    <div class="texto" id="t4"><div class="etiqueta">Descargas</div><div class="frase">Listo en un momento</div></div>
+    <div class="texto" id="t5"><div class="etiqueta">Mods</div><div class="frase">El catálogo de Modrinth, integrado</div></div>
+    <div class="texto" id="t6"><div class="etiqueta">Mods</div><div class="frase">Varios a la vez, con sus dependencias</div></div>
+    <div class="texto" id="t7"><div class="etiqueta">Mods</div><div class="frase">Cada mod, en su instancia</div></div>
+    <div class="texto" id="t8"><div class="etiqueta">Servidores</div><div class="frase">Jugadores y latencia, en vivo</div></div>
+    <div class="texto" id="t9"><div class="etiqueta">Con amigos · experimental</div><div class="frase">Comparte una instancia con un código</div></div>
+    <div class="texto" id="t10"><div class="etiqueta">Apariencia</div><div class="frase">Tinta o Piedra, como prefieras</div></div>
+  </section>
+
+  <section id="extremos" class="clip" data-start="0" data-duration="78" data-track-index="4">
+    <div id="icono"><img src="assets/icono.png" alt="" /></div>
+    <div class="cartel" id="nombre">ÍCARO LAUNCHER</div>
+    <div class="cartel" id="descarga">DESCÁRGALO GRATIS</div>
+    <div class="cartel" id="credito">LA CAÍDA DE ÍCARO · M.-J. BLONDEL, 1819 · FOTO: MARIE-LAN NGUYEN / WIKIMEDIA COMMONS, CC BY 2.5</div>
+  </section>
+</div>
+
+<script>
+window.__timelines = window.__timelines || {};
+const tl = gsap.timeline({ paused: true });
+
+// La pintura se acerca muy despacio durante todo el video.
+tl.fromTo("#pintura", { scale: 1.02 }, { scale: 1.1, duration: 78, ease: "none" }, 0);
+
+// Entrada: el icono sobre la pintura y, después, la ventana del launcher.
+tl.fromTo("#icono", { opacity: 0, scale: .92 }, { opacity: 1, scale: 1, duration: .9, ease: "power2.out" }, .4)
+  .to("#icono", { opacity: 0, scale: 1.04, duration: .5, ease: "power2.in" }, 3.1)
+  .fromTo("#credito", { opacity: 0 }, { opacity: 1, duration: .8 }, .6)
+  .to("#credito", { opacity: 0, duration: .5 }, 3.2)
+  .fromTo("#ventana", { opacity: 0, y: 26, scale: .975 }, { opacity: 1, y: 0, scale: 1, duration: .9, ease: "power3.out" }, 3.5);
+
+// Textos al pie: aparecen suaves y se van solos.
+function texto(id, t0, t1) {
+  const s = "#" + id;
+  tl.fromTo(s, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: .55, ease: "power2.out" }, t0)
+    .to(s, { opacity: 0, y: -6, duration: .45, ease: "power2.in" }, t1 - .45);
+}
+texto("t1", 5.6, 11.4);
+texto("t2", 13.0, 20.2);
+texto("t3", 20.8, 24.6);
+texto("t4", 25.4, 28.6);
+texto("t5", 31.8, 37.6);
+texto("t6", 38.2, 43.6);
+texto("t7", 44.0, 46.7);
+texto("t8", 48.0, 54.5);
+texto("t9", 55.6, 60.6);
+texto("t10", 62.0, 69.4);
+
+// Cierre: la ventana se retira y quedan el nombre y la invitación.
+tl.to("#ventana", { opacity: 0, y: 20, scale: .975, duration: .7, ease: "power2.in" }, 73.4)
+  .to("#sombra", { backgroundColor: "rgba(6,6,12,.62)", duration: 1.0, ease: "power1.inOut" }, 73.6)
+  .fromTo("#nombre", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: .9, ease: "power3.out" }, 74.3)
+  .fromTo("#descarga", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: .8, ease: "power3.out" }, 74.8)
+  .to("#credito", { opacity: 1, duration: .8 }, 75.0);
+
+window.__timelines.main = tl;
+</script>
+</body>
+</html>

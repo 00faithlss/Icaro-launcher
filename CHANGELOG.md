@@ -15,6 +15,7 @@
 - Con amigos: «Personas» muestra el nombre de jugador de cada amigo (cuenta Microsoft o sin conexión) en vez de «Equipo», y «en línea» mientras está conectado, por ejemplo jugando en tu servidor. El nombre llega cuando el amigo revisa la publicación con esta versión; es solo una etiqueta y el acceso sigue dependiendo de su equipo.
 - Mods, modpacks y demás listas: al cambiar de pestaña la página ya no queda pegada abajo ni se detiene a media altura al subir.
 - Agregar mods y modpacks: «Mostrar 20 · 30 · 50 · 100» pasa arriba, junto al orden de los resultados.
+- README: video de Ícaro en uso (crear una instancia, instalar mods, servidores, compartir con amigos y temas), con su proyecto en `docs/video`.
 
 ## [0.4.4] - 2026-11-13
 

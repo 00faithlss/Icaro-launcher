@@ -49,6 +49,7 @@ El soporte opcional de skins locales descarga **authlib-injector 1.2.8 (compilac
 | Martian Mono | [Evil Martians](https://github.com/evilmartians/mono) | [SIL Open Font License 1.1](https://github.com/evilmartians/mono/blob/main/OFL.txt) |
 | Pixelarticons | [Gerrit Halfmann](https://github.com/halfmage/pixelarticons) | [MIT](../crates/ui/assets/iconos/LICENSE-pixelarticons.txt) |
 | Fotografía de *La caída de Ícaro*, utilizada en el icono | Marie-Lan Nguyen / Wikimedia Commons; obra de Merry-Joseph Blondel | [CC BY 2.5](https://creativecommons.org/licenses/by/2.5/), con recorte y adaptación a grises. [Fuente y cambios](../crates/ui/assets/icono/FUENTES-Y-LICENCIAS.md) |
+| Fotografía de *La caída de Ícaro*, fondo del video del README | Marie-Lan Nguyen / Wikimedia Commons; obra de Merry-Joseph Blondel | [CC BY 2.5](https://creativecommons.org/licenses/by/2.5/), con recorte y reducción de tamaño. [Proyecto del video](video/README.md) |
 
 Las obras y reproducciones utilizadas en los grabados conservan las condiciones de sus respectivas fuentes. La atribución del icono se recoge al comienzo de esta guía.
 

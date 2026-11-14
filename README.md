@@ -6,6 +6,10 @@ Un launcher de Minecraft Java escrito en Rust, con instancias independientes, mo
 
 [![Licencia: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-red.svg)](LICENSE)
 
+[![Video de Ícaro: crear una instancia, instalar mods, servidores, compartir con amigos y temas](docs/media/icaro-launcher-video.jpg)](docs/media/icaro-launcher.mp4)
+
+*Ícaro en uso, en poco más de un minuto: pulsa la imagen para ver el video.*
+
 ## Empezar
 
 1. Descarga el **instalador** o el **ZIP portable** desde [Releases](https://github.com/00faithlss/Icaro-launcher/releases/latest). Las betas aparecen por separado como *Pre-release*.
@@ -29,13 +33,13 @@ Vanilla, Fabric y Quilt usan perfiles oficiales; Forge y NeoForge admiten los in
 
 ## Compartir con amigos
 
-**Compartir instancias es experimental.** Permite elegir contenido, generar una invitación y revisar los cambios antes de sincronizar, conservando los archivos personales. La sincronización del contenido no sustituye una conexión LAN o un servidor de Minecraft.
+**Compartir instancias es experimental.** Se activa desde **Servidores → Con amigos**. Permite elegir qué compartir, generar un código de invitación de 12 caracteres y revisar los cambios antes de sincronizar, conservando los archivos personales. Quien comparte ve a cada persona por su nombre de jugador y si está en línea.
 
-En el código actual se activa desde **Servidores → Con amigos**; la beta 0.4.2 publicada utiliza la navegación anterior de Servidores. Hay pruebas locales del recorrido y del servicio remoto de invitaciones; faltan la validación entre dos equipos y una partida real con amigos. Consulta la [guía de Compartir](docs/compartir-instancias.md).
+Para jugar juntos, el anfitrión puede abrir un servidor dedicado en su equipo con la misma instancia (Vanilla o Fabric): los invitados entran desde Ícaro sin abrir puertos ni compartir una IP. Hay pruebas locales del recorrido y del servicio remoto de invitaciones; falta validarlo más entre equipos distintos. Consulta la [guía de Compartir](docs/compartir-instancias.md) y la de [alojar un servidor](docs/alojar-servidor.md).
 
 ## Roadmap
 
-El trabajo actual se desarrolla en **`v0.4.x`**, con versión de workspace **0.4.2** y cambios posteriores a la beta de ese número. `develop` es el canal de publicación beta y `main`, el estable. Las funciones descritas corresponden al código de esta rama; la versión que descargues puede tener un alcance anterior.
+El trabajo actual se desarrolla en **`v0.4.x`**, con versión de workspace **0.4.4** y cambios posteriores a la beta de ese número. `develop` es el canal de publicación beta y `main`, el estable. Las funciones descritas corresponden al código de esta rama; la versión que descargues puede tener un alcance anterior.
 
 El [roadmap](docs/roadmap.md) reúne lo implementado, los pendientes y la evidencia necesaria para cerrarlos. Las prioridades son validar Compartir entre equipos, completar las partidas con loaders y Linux, avanzar en mundos/respaldos y comprobar el ciclo completo de actualización Windows. El [changelog](CHANGELOG.md) conserva los cambios por versión.
 
@@ -60,4 +64,4 @@ El [índice de documentación](docs/README.md) organiza las guías de cuentas, i
 
 El código se distribuye bajo [GNU GPL-3.0-only](LICENSE). Las bibliotecas, fuentes, iconos e imágenes conservan sus propias licencias; sus atribuciones están en [Créditos](docs/creditos.md).
 
-El icono utiliza una fotografía de *La caída de Ícaro*, de Merry-Joseph Blondel: © Marie-Lan Nguyen / Wikimedia Commons, [CC BY 2.5](https://creativecommons.org/licenses/by/2.5/), con recorte y adaptación a grises.
+El icono utiliza una fotografía de *La caída de Ícaro*, de Merry-Joseph Blondel: © Marie-Lan Nguyen / Wikimedia Commons, [CC BY 2.5](https://creativecommons.org/licenses/by/2.5/), con recorte y adaptación a grises. El video del README usa la misma fotografía de fondo, con recorte y reducción de tamaño.

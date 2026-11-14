@@ -1,0 +1,4 @@
+renders/
+.hyperframes/
+# Clips grabados del launcher: pesan ~40 MB y no se versionan.
+assets/tomas/
